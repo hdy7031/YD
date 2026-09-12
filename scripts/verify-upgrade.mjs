@@ -1,0 +1,18 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import initSqlJs from 'sql.js';
+import {validateState} from '../src/core.ts';
+import {snapshot} from '../src/live.ts';
+const [directory,backup,receipt]=process.argv.slice(2);
+const old=JSON.parse(fs.readFileSync(backup,'utf8')).state,SQL=await initSqlJs();
+const db=new SQL.Database(fs.readFileSync(path.join(directory,'dayhub.sqlite')));
+const state=validateState(JSON.parse(db.exec('SELECT body FROM app_state WHERE id=1')[0].values[0][0]));db.close();
+assert.equal(state.settings.liveVersion,2);
+for(const key of ['tasks','events','notices','exceptions'])assert.deepEqual(state[key],old[key],`${key}应保持不变`);
+assert.deepEqual(state.courses.map(({activity,...c})=>c),old.courses.map(({activity,...c})=>c));
+assert.deepEqual(state.profiles.map(({tentative,...p})=>p),old.profiles.map(({tentative,...p})=>p));
+assert.equal(state.reminders.length,old.reminders.length);
+assert.equal(state.courses.filter(c=>c.activity==='research').length,4);
+const result={verifiedAt:new Date().toISOString(),database:path.join(directory,'dayhub.sqlite'),courses:state.courses.length,researchSlots:4,reminders:state.reminders.length,backup,live:snapshot(state,Date.now()),migrationBackups:fs.readdirSync(path.join(directory,'backups')).filter(n=>n.startsWith('before-v02'))};
+fs.writeFileSync(receipt,JSON.stringify(result,null,2));console.log(JSON.stringify({courses:result.courses,researchSlots:4,reminders:result.reminders,migrationBackups:result.migrationBackups,receipt},null,2));

@@ -1,0 +1,126 @@
+// Custom companion renderer: frame resolution, crossfade and the light motion
+// layer. No business judgement happens here — the frame comes straight from the
+// companion display projection the main process already resolved.
+import React,{useEffect,useRef,useState} from 'react';
+import { companionRailLabel, type CompanionDisplay, type CompanionDisplayState } from '../companion-display.ts';
+import { companionTone } from '../companion-colors.ts';
+import { companionFrame, type CompanionAssets } from '../companion-frame.ts';
+import { petSpriteFor } from '../companion-layout.ts';
+import { presenceStateFor, type LiveSnapshot } from '../live.ts';
+const h=React.createElement;
+const api=()=>window.dayhub;
+
+// Assets are fetched once per window and reused for every state switch, so a
+// crossfade never waits for disk or IPC.
+const decode=(url:string)=>new Promise<void>(resolve=>{
+  const image=new Image();
+  image.onload=()=>resolve();
+  image.onerror=()=>resolve();
+  image.src=url;
+});
+export function useCompanionAssets():CompanionAssets|null{
+  const [assets,set]=useState<CompanionAssets|null>(null);
+  const request=useRef(0);
+  useEffect(()=>{
+    let active=true;const token=++request.current;
+    // 素材在一次运行内不会变化，每个窗口只取一次，避免每次改动都搬运整包图片。
+    // 收到后先把六帧全部解码完成再交给界面：状态切换是纯内存切换，
+    // 不会出现“先显示破图，再补上真图”的闪动。
+    void api().companionAssets().then(async value=>{
+      if(value?.available)await Promise.all(Object.values(value.images).map(decode));
+      if(active&&token===request.current)set(value);
+    }).catch(()=>{if(active&&token===request.current)set(null);});
+    return()=>{active=false;};
+  },[]);
+  return assets;
+}
+
+export function companionImage(assets:CompanionAssets|null,display?:CompanionDisplay):string|undefined{
+  if(!assets?.available||!display)return undefined;
+  return companionFrame(assets.images,display.asset,display.fallbacks);
+}
+
+interface Layer { key:number; url:string; state?:CompanionDisplayState }
+
+// Two stacked layers: the outgoing frame fades out while the incoming frame
+// fades in over ~150ms. The old layer is dropped afterwards, so repeated state
+// changes cannot leave residue or blur. While the window is being dragged the
+// swap is postponed: the pointer interaction always outranks the clock, so a
+// pose change can never appear under the cursor mid-drag.
+export function useCrossfade(url:string|undefined,duration:number,frozen=false,state?:CompanionDisplayState){
+  const [layers,setLayers]=useState<Layer[]>([]);
+  const applied=useRef<string|undefined>(undefined);
+  const counter=useRef(0);
+  useEffect(()=>{
+    if(!url){setLayers([]);applied.current=undefined;return;}
+    if(frozen)return;
+    if(applied.current===url)return;
+    applied.current=url;
+    counter.current+=1;
+    const layer:Layer={key:counter.current,url,state};
+    setLayers(previous=>[...previous.slice(-1),layer]);
+  },[url,frozen,state]);
+  useEffect(()=>{
+    if(layers.length<2)return;
+    const timer=window.setTimeout(()=>setLayers(previous=>previous.slice(-1)),duration);
+    return()=>window.clearTimeout(timer);
+  },[layers,duration]);
+  return layers;
+}
+
+interface ArtProps {
+  assets:CompanionAssets|null;
+  display?:CompanionDisplay;
+  animate:boolean;
+  reduceMotion:boolean;
+  frozen?:boolean;
+}
+
+// 同一个 stage 里只换帧、不换舞台：每帧按 companion-layout.ts 里的
+// PET 调参表摆放（底边中点锚点 + 每个姿态允许的少量偏移），
+// 因此换动作时人物的桌面落点基本不动。
+export function CustomCompanionArt({assets,display,animate,reduceMotion,frozen=false}:ArtProps){
+  const url=companionImage(assets,display);
+  const motion=animate&&!reduceMotion;
+  const layers=useCrossfade(url,motion?150:0,frozen,display?.state);
+  const [nudging,setNudging]=useState(false);
+  const nudgeId=display?.nudgeId??0;
+  const seen=useRef(nudgeId);
+  useEffect(()=>{
+    if(nudgeId===seen.current)return;
+    seen.current=nudgeId;
+    if(!motion)return;
+    setNudging(true);
+    const timer=window.setTimeout(()=>setNudging(false),1500);
+    return()=>window.clearTimeout(timer);
+  },[nudgeId,motion]);
+  const className='companion-figure'+(motion?' is-breathing':'')+(nudging?' is-nudging':'');
+  return h('div',{className,role:'img','aria-label':display?`专属角色桌宠 · ${display.label}`:'专属角色桌宠','data-asset-slot':display?.state??'idle','data-asset-key':display?.asset??'idle'},
+    h('div',{className:'companion-body'},...layers.map((layer,index)=>{
+      const tuning=petSpriteFor(layer.state);
+      return h('img',{
+        key:layer.key,
+        className:'companion-frame '+(index===layers.length-1?'is-current':'is-leaving'),
+        src:layer.url,
+        alt:'',
+        draggable:false,
+        decoding:'async',
+        style:{'--pet-scale':tuning.scale,'--pet-x':tuning.offsetX+'px','--pet-y':tuning.offsetY+'px'} as React.CSSProperties,
+      });
+    })));
+}
+
+// Low key D / Y rail: a letter and a coloured dot per person, plus a very small
+// pending badge. Everything else belongs to the mini panel behind a click.
+//
+// 颜色唯一来源是 companion-colors.ts：同一个状态（语义）永远同一个颜色，
+// 与是 D 还是 Y 无关，也不存在“空闲却显示红色”的兜底分支。
+export function CompanionRail({live}:{live:LiveSnapshot|null}){
+  const rows=(live?.people||[]).map(person=>h('span',{className:'rail-chip',key:person.person,title:`${person.alias} · ${companionRailLabel(person)}`},
+    h('b',null,person.alias),
+    h('i',{className:`rail-dot tone-${companionTone(presenceStateFor(person))}`,'data-tone':companionTone(presenceStateFor(person)),'aria-hidden':true})));
+  const summary=(live?.people||[]).map(person=>`${person.alias} ${companionRailLabel(person)}`).join('、');
+  const night=!!live?.display.nightly;
+  return h('div',{className:'companion-rail'+(night?' is-night':''),role:'status','aria-label':live?`${summary}${live.pending?` · ${live.pending} 条待处理提醒`:''}${night?' · 夜间休息中':''}`:'双方状态'},
+    ...rows,live?.pending?h('span',{className:'rail-count',title:`${live.pending} 条待处理提醒`},String(live.pending)):null);
+}

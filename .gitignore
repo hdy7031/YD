@@ -1,0 +1,17 @@
+node_modules/
+dist/
+release/
+test-data/
+*.log
+.build-cache/
+__pycache__/
+*.pyc
+
+# 私人运行与开发数据：文件保留在本机磁盘，但不再进入版本库，
+# 也不再被正式测试或验收脚本依赖（v0.3 Phase 0 起）。
+ingest/
+deliverables/
+scripts/build-2026-autumn-schedule.mjs
+scripts/verify-2026-autumn-schedule.mjs
+scripts/seed-v028-smoke.mjs
+scripts/verify-v028-smoke.mjs

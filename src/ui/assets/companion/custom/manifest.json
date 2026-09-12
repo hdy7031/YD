@@ -1,0 +1,84 @@
+{
+  "format": "dayhub-companion",
+  "version": 1,
+  "character": "专属角色桌宠",
+  "canvas": {
+    "width": 412,
+    "height": 411
+  },
+  "baseline": 397,
+  "bodyHeight": 373,
+  "sheet": {
+    "file": "character-sheet.png",
+    "columns": 5,
+    "rows": 2,
+    "figures": 10
+  },
+  "generatedFrom": "character-sheet.png",
+  "sourceSha256": "c2f3bb897862ff7f9954d6898cb5a0ab8f68b156b9ea0f7e759b132516f3ad35",
+  "extraSources": {},
+  "extraSourceSha256": {},
+  "missing": [],
+  "states": {
+    "idle": {
+      "file": "idle.png",
+      "label": "默认 / 安静待机",
+      "note": "自然站立，双手放松",
+      "slot": "第 1 行第 1 格"
+    },
+    "busy_class": {
+      "file": "busy_class.png",
+      "label": "阅读 / 教学类状态",
+      "note": "戴眼镜，一手执书一手持教鞭",
+      "slot": "第 1 行第 2 格"
+    },
+    "busy_work": {
+      "file": "busy_work.png",
+      "label": "学习 / 记录类状态",
+      "note": "抱笔记本与笔，思考神态",
+      "slot": "第 1 行第 3 格"
+    },
+    "relaxed": {
+      "file": "relaxed.png",
+      "label": "喝水 / 饮品状态",
+      "note": "端着带盖水杯，轻松伸展",
+      "slot": "第 1 行第 4 格"
+    },
+    "reminder": {
+      "file": "reminder.png",
+      "label": "白天 / 活跃提示状态",
+      "note": "身体前倾，抬手温和提示，身旁一个暖金色提示光点（太阳意象）",
+      "slot": "第 1 行第 5 格"
+    },
+    "happy": {
+      "file": "happy.png",
+      "label": "开心 / 激励状态",
+      "note": "轻庆祝，笑容与少量星光",
+      "slot": "第 2 行第 1 格"
+    },
+    "night_sleep": {
+      "file": "night_sleep.png",
+      "label": "夜间睡觉",
+      "note": "抱着月亮坐在云朵上入睡",
+      "slot": "第 2 行第 2 格"
+    },
+    "eating": {
+      "file": "eating.png",
+      "label": "吃饭",
+      "note": "端着碗用筷子吃饭",
+      "slot": "第 2 行第 3 格"
+    },
+    "nap": {
+      "file": "nap.png",
+      "label": "午睡",
+      "note": "趴在粉色枕头上午睡",
+      "slot": "第 2 行第 4 格"
+    },
+    "wake_up": {
+      "file": "wake_up.png",
+      "label": "刚睡醒 / 伸懒腰",
+      "note": "揉眼并伸展手臂",
+      "slot": "第 2 行第 5 格"
+    }
+  }
+}

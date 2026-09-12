@@ -1,0 +1,209 @@
+/* Dual Presence Orb — isolated from the legacy companion skin. */
+.pet-body.pet-body,
+.pet-body #root {
+  background:transparent !important;
+}
+
+.pet-dock.orb-mode {
+  position:relative;
+  display:block;
+  width:100vw;
+  height:100vh;
+  padding:0;
+  overflow:hidden;
+}
+
+.pet-dock.orb-mode .pet-handle {
+  position:absolute;
+  inset:0;
+  display:block;
+  width:auto;
+  height:auto;
+  aspect-ratio:1 / 1;
+  box-sizing:border-box;
+  max-width:none;
+  padding:0;
+  overflow:visible;
+  border:0;
+  border-radius:50%;
+  background:transparent !important;
+  box-shadow:none;
+  cursor:grab;
+  touch-action:none;
+  -webkit-tap-highlight-color:transparent;
+}
+
+.pet-dock.orb-mode .pet-handle:active { cursor:grabbing; }
+.pet-dock.orb-mode .pet-handle:focus,
+.pet-dock.orb-mode .pet-handle:focus-visible { outline:0; box-shadow:none; }
+
+.presence-orb {
+  --orb-edge:rgba(255,255,255,.15);
+  position:absolute;
+  inset:0;
+  display:grid;
+  place-items:center;
+  width:100%;
+  height:100%;
+  aspect-ratio:1 / 1;
+  box-sizing:border-box;
+  border-radius:50%;
+  contain:layout paint style;
+}
+
+.presence-surface {
+  isolation:isolate;
+  position:relative;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  /* 取宽高里较小的一边：Windows 在 125%/150% 下会把透明窗口对齐到物理像素，
+     客户端尺寸偶尔会比请求值大 1px，圆形本体因此必须按短边成圆，不能变形。 */
+  width:min(calc(100% - 6px),calc(100vh - 6px));
+  height:min(calc(100% - 6px),calc(100vh - 6px));
+  aspect-ratio:1 / 1;
+  box-sizing:border-box;
+  overflow:hidden;
+  border:1px solid var(--orb-edge);
+  border-radius:50%;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.035) 0%,rgba(255,255,255,0) 29%),
+    linear-gradient(154deg,rgba(53,164,154,.82) 0%,rgba(27,131,126,.86) 52%,rgba(14,94,101,.90) 100%);
+  box-shadow:
+    0 2px 5px rgba(4,20,27,.12),
+    0 0 2px rgba(4,20,27,.07),
+    inset 0 1px 0 rgba(255,255,255,.075),
+    inset 0 -1px 0 rgba(2,25,32,.055);
+  -webkit-backdrop-filter:blur(18px) saturate(112%);
+  backdrop-filter:blur(18px) saturate(112%);
+  transform:translateZ(0) scale(1);
+  transform-origin:center;
+  transition:transform 190ms ease-out,border-color 190ms ease-out,box-shadow 190ms ease-out;
+}
+
+.pet-handle:hover .presence-surface {
+  border-color:rgba(255,255,255,.19);
+  box-shadow:
+    0 3px 7px rgba(4,20,27,.15),
+    0 0 3px rgba(4,20,27,.08),
+    inset 0 1px 0 rgba(255,255,255,.095),
+    inset 0 -1px 0 rgba(2,25,32,.055);
+  transform:translateZ(0) scale(1.035);
+}
+
+.pet-handle:active .presence-surface,
+.pet-dock.is-dragging .presence-surface {
+  box-shadow:
+    0 3px 7px rgba(4,20,27,.16),
+    0 0 3px rgba(4,20,27,.09),
+    inset 0 1px 0 rgba(255,255,255,.095);
+  transform:translateZ(0) scale(.97);
+  transition-duration:120ms;
+}
+
+.presence-zone {
+  --status:#70dcc0;
+  --status-rgb:112,220,192;
+  position:relative;
+  z-index:2;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  min-width:0;
+  padding:0;
+  transition:background-color 180ms ease-out;
+}
+
+.presence-zone:hover { background:rgba(255,255,255,.047); }
+/* 状态色与 status rail 使用同一套语义：空闲绿、即将琥珀、忙碌橙、专注蓝、冲突红。 */
+.presence-zone.state-upcoming { --status:#e0b463; --status-rgb:224,180,99; }
+.presence-zone.state-busy { --status:#e9b36b; --status-rgb:233,179,107; }
+.presence-zone.state-focus { --status:#8eb9f4; --status-rgb:142,185,244; }
+.presence-zone.state-dnd { --status:#dc8377; --status-rgb:220,131,119; }
+.presence-zone.state-offline { --status:#9ca9ac; --status-rgb:156,169,172; }
+
+.identity-mark {
+  display:grid;
+  place-items:center;
+  width:17px;
+  height:14px;
+  color:rgba(239,250,249,.54);
+  font:500 10px/1 "Segoe UI Variable Display","Segoe UI",sans-serif;
+  font-variation-settings:"wght" 500;
+  letter-spacing:.035em;
+  opacity:.76;
+  text-rendering:geometricPrecision;
+  transition:opacity 180ms ease-out,transform 180ms ease-out;
+}
+
+.presence-zone:hover .identity-mark { opacity:.9; }
+
+.status-core {
+  position:relative;
+  display:grid;
+  place-items:center;
+  width:16px;
+  height:16px;
+}
+
+.status-ring,
+.status-dot { position:absolute; display:block; border-radius:50%; }
+.status-ring {
+  inset:1px;
+  border:1px solid rgba(var(--status-rgb),.24);
+  box-shadow:none;
+  opacity:.72;
+}
+.status-dot {
+  width:6px;
+  height:6px;
+  background:var(--status);
+  box-shadow:0 0 3px rgba(var(--status-rgb),.25);
+}
+
+.motion .state-idle .status-dot { animation:presence-breathe 2.9s ease-in-out infinite; }
+.motion .state-idle .status-ring { animation:presence-ring 2.9s ease-in-out infinite; }
+.motion .state-focus .status-dot { animation:presence-breathe 3.1s ease-in-out infinite; }
+.motion .state-focus .status-ring { animation:presence-ring 3.1s ease-in-out infinite; }
+
+@keyframes presence-breathe {
+  0%,100% { opacity:.78; box-shadow:0 0 2px rgba(var(--status-rgb),.18); }
+  50% { opacity:1; box-shadow:0 0 4px rgba(var(--status-rgb),.30); }
+}
+@keyframes presence-ring { 0%,100% { opacity:.48; } 50% { opacity:.74; } }
+
+.tip-body,
+.tip-body #root {
+  display:grid;
+  place-items:center;
+  width:100%;
+  height:100%;
+  min-height:0;
+  overflow:hidden;
+  background:transparent !important;
+  user-select:none;
+}
+
+.presence-tip {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:48px;
+  height:24px;
+  padding:0 8px;
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:8px;
+  color:rgba(248,252,252,.90);
+  background:linear-gradient(145deg,rgba(29,49,55,.80),rgba(15,32,39,.77));
+  box-shadow:0 5px 14px rgba(0,10,15,.18),inset 0 1px 0 rgba(255,255,255,.045);
+  -webkit-backdrop-filter:blur(18px) saturate(112%);
+  backdrop-filter:blur(18px) saturate(112%);
+  font:450 10.5px/1 "Segoe UI Variable Text","Microsoft YaHei UI",sans-serif;
+  letter-spacing:.025em;
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .presence-surface,.presence-zone,.identity-mark { transition:none; }
+  .motion .status-dot,.motion .status-ring { animation:none !important; }
+}

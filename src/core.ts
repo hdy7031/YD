@@ -1,0 +1,183 @@
+import { migrateInbox, receive, confirmDraft } from './inbox.ts';
+import { validDraft } from './inbox-types.ts';
+import type { State, Profile, Course, Task, Event, Notice, Exception, Occurrence, Reminder, Command, Entity, SchedulePackage } from './types.ts';
+export const DAY = 86400000;
+export function showPanelOnLaunch(openedAtLogin:boolean, setupComplete:boolean){return !openedAtLogin||!setupComplete;}
+export const id = () => globalThis.crypto.randomUUID();
+export function dateOf(time: number): string { return new Date(time + 8 * 3600000).toISOString().slice(0, 10); }
+export function epoch(value: string|null): number { if(value===null)return NaN; return Date.parse(value.length === 10 ? value + 'T00:00:00+08:00' : (/[zZ]$|[+-]\d{2}:\d{2}$/.test(value) ? value : value + (value.length===16 ? ':00' : '') + '+08:00')); }
+export function addDays(date: string, days: number): string { return dateOf(epoch(date) + days * DAY); }
+export function weekday(date: string): number { return new Date(date + 'T12:00:00Z').getUTCDay() || 7; }
+export function initial(now = Date.now()): State {
+  const date = dateOf(now), monday = addDays(date, 1 - weekday(date));
+  const profile = (pid: 'me' | 'partner', name: string): Profile => ({ id: pid, name, startDate: monday, weeks: 20, periods: [{start:'08:00',end:'08:45'},{start:'08:55',end:'09:40'},{start:'10:00',end:'10:45'},{start:'10:55',end:'11:40'},{start:'14:00',end:'14:45'},{start:'14:55',end:'15:40'},{start:'16:00',end:'16:45'},{start:'16:55',end:'17:40'}], updatedAt: now });
+  return { version: 1, profiles: [profile('me','我'), profile('partner','Ta')], courses: [], exceptions: [], events: [], tasks: [], notices: [], reminders: [], settings: { launch: false, setup: false }, lastTick: now };
+}
+function assert(v: unknown, message: string): asserts v { if (!v) throw new Error(message); }
+function text(v: unknown, max = 20000): v is string { return typeof v === 'string' && v.length <= max; }
+function date(v: unknown): v is string { return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(epoch(v)) && dateOf(epoch(v)) === v; }
+function time(v: unknown): v is string { return typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v); }
+function stamp(v: unknown): v is string { return typeof v === 'string' && date(v.slice(0,10)) && v[10]==='T' && time(v.slice(11)); }
+function base(v: any) { assert(v && text(v.id, 100) && /^[\w-]+$/.test(v.id), '记录编号无效'); }
+function common(v: any) {
+  assert(text(v.title,200) && v.title.trim(), '请填写标题（最多 200 字）'); assert(text(v.notes), '备注无效');
+  assert(Array.isArray(v.reminders) && v.reminders.length <= 10 && v.reminders.every((n: unknown)=>Number.isInteger(n) && Number(n)>=0 && Number(n)<=525600), '提醒提前量应为 0—525600 分钟');
+  assert(Array.isArray(v.checklist) && v.checklist.length<=100 && v.checklist.every((c:any)=>c && text(c.id,100) && text(c.text,1000) && typeof c.done==='boolean'), '准备清单无效');
+  assert(v.sourceId===undefined || (text(v.sourceId,100) && /^[\w-]+$/.test(v.sourceId)), '来源无效');
+}
+export function validate(entity: Entity, v: any, state: State) {
+  base(v);
+  assert(v.createdAt===undefined||Number.isFinite(v.createdAt),'创建时间无效');
+  assert(v.sourceInboxItemId===undefined||state.notices.some(n=>n.id===v.sourceInboxItemId),'来源通知不存在');
+  if(entity==='profiles') {
+    assert(['me','partner'].includes(v.id) && text(v.name,40) && v.name.trim(), '姓名无效');
+    assert(v.shortAlias===undefined || (text(v.shortAlias,8)&&v.shortAlias.trim()), '短代号应为 1—8 字');
+    assert(date(v.startDate) && weekday(v.startDate)===1, '学期起始日必须是第一教学周的周一');
+    assert(Number.isInteger(v.weeks) && v.weeks>=1 && v.weeks<=60, '教学周数应为 1—60');
+    assert(Array.isArray(v.periods) && v.periods.length>0 && v.periods.length<=24, '请配置 1—24 节作息');
+    v.periods.forEach((p:any,i:number)=>assert(time(p.start) && time(p.end) && p.start<p.end && (!i || v.periods[i-1].end<=p.start), '节次时间无效、重叠或未按顺序排列'));
+    for(const c of state.courses.filter(c=>c.person===v.id)) assert(c.last<=v.periods.length && c.weeks.every(w=>w<=v.weeks), '现有课程超出新作息或教学周范围，请先编辑课程');
+  } else if(entity==='courses') {
+    assert(v.activity===undefined||['teaching','research'].includes(v.activity),'课程活动类型无效'); common(v); const p=state.profiles.find(p=>p.id===v.person); assert(p, '请选择课表所属人');
+    assert(Number.isInteger(v.weekday) && v.weekday>=1 && v.weekday<=7, '星期无效');
+    assert(Number.isInteger(v.first) && Number.isInteger(v.last) && v.first>=1 && v.last>=v.first && v.last<=p.periods.length, '课程节次超出作息范围');
+    assert(Array.isArray(v.weeks) && v.weeks.length>0 && v.weeks.length<=60 && new Set(v.weeks).size===v.weeks.length && v.weeks.every((w:any)=>Number.isInteger(w)&&w>=1&&w<=p.weeks), '教学周次无效或重复');
+    assert(text(v.place,300), '地点无效');
+  } else if(entity==='events') { common(v); assert(stamp(v.start)&&(v.end===null||v.end===''||stamp(v.end)&&epoch(v.end)>epoch(v.start)), '结束时间必须晚于开始时间'); assert(text(v.place,300), '地点无效'); }
+  else if(entity==='tasks') { common(v); assert(v.due==='' || stamp(v.due), '截止时间无效'); assert(typeof v.done==='boolean', '完成状态无效'); }
+  else if(entity==='notices') { assert(v.parseStatus===undefined||['UNPARSED','PARSING','NEEDS_REVIEW','CONFIRMED','FAILED','IGNORED'].includes(v.parseStatus),'解析状态无效');assert(v.parsedData===undefined||validDraft(v.parsedData),'草稿格式无效'); assert(text(v.title,200)&&text(v.text,200000), '通知内容过长或无效'); assert(v.originalText===undefined || text(v.originalText,200000),'原文无效');assert(['inbox','later','archived'].includes(v.state), '收件箱状态无效'); assert(v.image===undefined || /^[a-f0-9]{64}\.png$/.test(v.image), '图片编号无效'); }
+  else if(entity==='exceptions') {
+    const c=state.courses.find(c=>c.id===v.courseId); assert(c && date(v.date), '课程或原日期无效');
+    const p=state.profiles.find(p=>p.id===c.person)!; const week=Math.floor((epoch(v.date)-epoch(p.startDate))/DAY/7)+1;
+    assert(weekday(v.date)===c.weekday && c.weeks.includes(week), '原日期不属于该课程的教学周');
+    assert(typeof v.cancelled==='boolean', '停课状态无效');
+    assert(v.cancelled || (stamp(v.start)&&stamp(v.end)&&epoch(v.end)>epoch(v.start)), '调课起止时间无效');
+    assert(v.place===undefined || text(v.place,300), '地点无效');
+  } else throw new Error('未知记录类型');
+}
+export function occurrences(state: State, from: number, to: number, person?: string, options: {includeCancelled?:boolean} = {}): Occurrence[] {
+  const result: Occurrence[]=[];
+  for(const c of state.courses) {
+    if(person && c.person!==person) continue;
+    const p=state.profiles.find(p=>p.id===c.person)!;
+    for(const w of c.weeks) {
+      const d=addDays(p.startDate,(w-1)*7+c.weekday-1), ex=state.exceptions.find(e=>e.courseId===c.id&&e.date===d);
+      if(ex?.cancelled && !options.includeCancelled) continue;
+      const start=epoch(ex?.start || `${d}T${p.periods[c.first-1].start}`), end=epoch(ex?.end || `${d}T${p.periods[c.last-1].end}`);
+      if(start<to && end>from) result.push({id:`c:${c.id}:${d}`,target:`courses:${c.id}`,title:c.title,start,end,place:ex?.place??c.place,notes:c.notes,person:c.person,kind:'course',courseId:c.id,date:d,checklist:c.checklist,sourceId:ex?.sourceInboxItemId||c.sourceId,sourceInboxItemId:ex?.sourceInboxItemId,createdAt:c.createdAt??c.updatedAt,updatedAt:ex?.updatedAt??c.updatedAt,cancelled:!!ex?.cancelled,rescheduled:!!ex&&!ex.cancelled&&(ex.start!==undefined||ex.end!==undefined||ex.place!==undefined)});
+    }
+  }
+  if(!person||person==='me') for(const e of state.events) { const start=epoch(e.start),end=e.end?epoch(e.end):start; if(start<to&&(e.end?end>from:start>=from)) result.push({id:`e:${e.id}`,target:`events:${e.id}`,title:e.title,start,end,place:e.place,notes:e.notes,person:'me',kind:'event',checklist:e.checklist,sourceId:e.sourceId,sourceInboxItemId:e.sourceInboxItemId,createdAt:e.createdAt??e.updatedAt,updatedAt:e.updatedAt,endUnknown:!e.end}); }
+  return result.sort((a,b)=>a.start-b.start || a.id.localeCompare(b.id));
+}
+export function conflicts(items: Occurrence[]): Set<string> {
+  const ids=new Set<string>();
+  for(let i=0;i<items.length;i++) for(let j=i+1;j<items.length && items[j].start<items[i].end;j++) if(items[i].person===items[j].person && items[i].start<items[j].end){ids.add(items[i].id);ids.add(items[j].id);}
+  return ids;
+}
+function generate(state: State, now: number, target?: string): Reminder[] {
+  const out: Reminder[]=[];
+  for(const o of occurrences(state, -Infinity, Infinity,'me')) {
+    if(target && target!==o.target) continue;
+    const item=o.kind==='course'?state.courses.find(c=>c.id===o.courseId)!:state.events.find(e=>`events:${e.id}`===o.target)!;
+    for(const min of new Set(item.reminders)){const due=o.start-min*60000; if(due>=now) out.push({id:`${o.id}:${due}`,target:o.target,occurrence:o.id,title:o.title,due,status:'scheduled',createdAt:now,updatedAt:now});}
+  }
+  for(const task of state.tasks){if(task.done||!task.due||(target&&target!==`tasks:${task.id}`))continue; for(const min of new Set(task.reminders)){const due=epoch(task.due)-min*60000;if(due>=now)out.push({id:`t:${task.id}:${due}`,target:`tasks:${task.id}`,title:task.title,due,status:'scheduled',createdAt:now,updatedAt:now});}}
+  return out;
+}
+export function reschedule(state: State, now: number, target?: string, occurrence?: string) {
+  const affected=(r:Reminder)=>(!target||r.target===target)&&(!occurrence||r.occurrence===occurrence);
+  for(const r of state.reminders)if(affected(r)&&(r.status==='scheduled'||r.status==='due')){r.status='cancelled';r.cancelReason=state.tasks.some(t=>`tasks:${t.id}`===r.target&&t.done)?'completed':'time_changed';r.updatedAt=now;}
+  const previous=new Map(state.reminders.map(r=>[r.id,r]));
+  for(const fresh of generate(state,now,target))if(!occurrence||fresh.occurrence===occurrence){const old=previous.get(fresh.id);if(!old)state.reminders.push(fresh);else if(old.status==='cancelled')Object.assign(old,fresh,{createdAt:old.createdAt??fresh.createdAt});}
+}
+export function tick(state: State, now: number): {due: Reminder[]; missed: boolean; changed: boolean} {
+  const due=state.reminders.filter(r=>r.status==='scheduled'&&r.due<=now), missed=now-state.lastTick>90000;
+  for(const r of due){r.status='due';r.firedAt=now;r.updatedAt=now;}state.lastTick=now;
+  return {due,missed,changed:due.length>0};
+}
+export function apply(state: State, cmd: Command, now=Date.now()): State {
+  const s=structuredClone(state); assert(cmd && typeof cmd.type==='string', '操作无效');
+  if(cmd.type==='inbound')return receive(s,cmd.payload,cmd.id,now);
+  if(cmd.type==='review')return confirmDraft(s,cmd,now);
+  if(cmd.type==='inboxStatus'||cmd.type==='draft'){
+    const n=s.notices.find(n=>n.id===cmd.noticeId);assert(n,'原通知不存在');assert(n.parseStatus!=='CONFIRMED','已处理通知不能再次创建');
+    if(cmd.type==='draft'){assert(validDraft(cmd.draft),'草稿格式无效');assert(n.parseStatus!=='PARSING','正在整理，请稍后');n.parsedData=structuredClone(cmd.draft);n.detectedType=cmd.draft.type;n.parseStatus='NEEDS_REVIEW';}
+    else {n.parseStatus=cmd.status;n.state=cmd.status==='IGNORED'?'archived':'inbox';}
+    n.updatedAt=now;return s;
+  }
+  if(cmd.type==='save'){
+    const entity=cmd.entity; const v=structuredClone(cmd.value) as any; if(entity==='events'&&v&&v.end==='')v.end=null; validate(entity,v,s); v.updatedAt=now;
+    if(['courses','events','tasks'].includes(entity)&&v.sourceId) assert(s.notices.some(n=>n.id===v.sourceId), '来源通知不存在');
+    const list=s[entity] as any[];
+    if(entity==='exceptions'){const existing=s.exceptions.find(e=>e.courseId===v.courseId&&e.date===v.date);if(existing)v.id=existing.id;}
+    const index=list.findIndex(r=>r.id===v.id), old=list[index]; v.createdAt=old?.createdAt??old?.updatedAt??now;
+    if(entity==='notices'&&old){v.originalText=old.originalText??old.text;v.createdAt=old.createdAt??old.updatedAt;}
+    if(v.sourceId)v.sourceInboxItemId=v.sourceId;
+    if(index<0)list.push(v);else list[index]={...old,...v};
+    const keys: Record<string,string[]>={profiles:['startDate','weeks','periods'],courses:['person','weekday','first','last','weeks','reminders'],events:['start','end','reminders'],tasks:['due','done','reminders']};
+    const timingChanged=!old||(keys[entity]||[]).some(k=>JSON.stringify(old[k])!==JSON.stringify(v[k]));
+    for(const r of s.reminders)if(r.target===`${entity}:${v.id}`&&v.title&&r.title!==v.title){r.title=v.title;r.updatedAt=now;}
+    if(entity==='profiles'&&timingChanged)for(const c of s.courses.filter(c=>c.person===v.id))reschedule(s,now,`courses:${c.id}`);
+    if(entity==='courses') {s.profiles.find(p=>p.id===v.person)!.updatedAt=now;if(timingChanged)reschedule(s,now,`${entity}:${v.id}`);}
+    if((entity==='events'||entity==='tasks')&&timingChanged)reschedule(s,now,`${entity}:${v.id}`);
+    if(entity==='exceptions'){s.profiles.find(p=>p.id===s.courses.find(c=>c.id===v.courseId)!.person)!.updatedAt=now;reschedule(s,now,`courses:${v.courseId}`,`c:${v.courseId}:${v.date}`);}
+  }else if(cmd.type==='delete'){
+    assert(['courses','events','tasks','notices','exceptions'].includes(cmd.entity),'此记录不可删除');
+    const list=s[cmd.entity] as any[], previous=list.find(v=>v.id===cmd.id);assert(previous,'记录不存在');
+    if(cmd.entity==='notices'){assert(previous.parseStatus!=='CONFIRMED'&&!previous.targetEntityId&&![...s.tasks,...s.events,...s.courses,...s.exceptions].some(v=>('sourceId' in v&&v.sourceId===cmd.id)||('sourceInboxItemId' in v&&v.sourceInboxItemId===cmd.id)),'已确认或关联事务的来源通知不能删除');assert(previous.parseStatus!=='PARSING','正在整理，请稍后删除');}
+    list.splice(list.indexOf(previous),1);s.reminders=s.reminders.filter(r=>r.target!==`${cmd.entity}:${cmd.id}`);
+    if(cmd.entity==='courses') {s.exceptions=s.exceptions.filter(e=>e.courseId!==cmd.id);s.profiles.find(p=>p.id===previous.person)!.updatedAt=now;}
+    if(cmd.entity==='exceptions'){reschedule(s,now,`courses:${previous.courseId}`,`c:${previous.courseId}:${previous.date}`);s.profiles.find(p=>p.id===s.courses.find(c=>c.id===previous.courseId)!.person)!.updatedAt=now;}
+  }else if(cmd.type==='convert'){
+    assert(s.notices.some(n=>n.id===cmd.noticeId),'原通知不存在');
+    if(s.tasks.some(t=>t.sourceId===cmd.noticeId))return s;
+    const task={...(cmd.task as object),sourceId:cmd.noticeId,updatedAt:now} as Task;validate('tasks',task,s);assert(!s.tasks.some(t=>t.id===task.id),'任务编号已存在');s.tasks.push(task);reschedule(s,now,`tasks:${task.id}`);Object.assign(s.notices.find(n=>n.id===cmd.noticeId)!,{parseStatus:'CONFIRMED',state:'archived',targetEntityType:'tasks',targetEntityId:task.id,processedAt:now,updatedAt:now});
+  }else if(cmd.type==='ack'||cmd.type==='snooze'){
+    const r=s.reminders.find(r=>r.id===cmd.id);assert(r&&r.status==='due','提醒已处理或不存在');r.status=cmd.type==='ack'?'acknowledged':'snoozed';r.handledAt=now;r.updatedAt=now;
+    if(cmd.type==='snooze'){const minutes=cmd.minutes??10;assert([10,30,60].includes(minutes),'延后时间无效');s.reminders.push({...r,id:`s:${id()}`,due:now+minutes*60000,status:'scheduled',firedAt:undefined,handledAt:undefined,snoozedFrom:r.id,snoozeMinutes:minutes,createdAt:now,updatedAt:now});}
+  }else if(cmd.type==='settings'){
+    assert(cmd.launch===undefined||typeof cmd.launch==='boolean','设置无效');assert(cmd.setup===undefined||typeof cmd.setup==='boolean','设置无效');assert(cmd.trayResident===undefined||typeof cmd.trayResident==='boolean','设置无效');
+    if(cmd.pet!==undefined){
+      const pet={mode:'custom',size:'medium',animate:true,reduceMotion:false,bubbles:true,duration:8,pausedUntil:0,miniPanel:true,rememberPosition:true,...s.settings.pet,...cmd.pet};
+      // 0.2.20 起不再提供小猫桌宠：旧客户端的 'pet' 请求统一落到默认形象。
+      if(pet.mode==='pet')pet.mode='custom';
+      assert(['custom','orb'].includes(pet.mode)&&['small','medium','large'].includes(pet.size)&&typeof pet.animate==='boolean'&&typeof pet.reduceMotion==='boolean'&&typeof pet.bubbles==='boolean'&&Number.isInteger(pet.duration)&&pet.duration>=3&&pet.duration<=30&&Number.isFinite(pet.pausedUntil)&&pet.pausedUntil>=0&&typeof pet.miniPanel==='boolean'&&typeof pet.rememberPosition==='boolean'&&typeof pet.nightRest==='boolean','桌宠设置无效');
+      s.settings.pet=pet as any;
+    }
+    if(cmd.launch!==undefined)s.settings.launch=cmd.launch;if(cmd.setup!==undefined)s.settings.setup=cmd.setup;if(cmd.trayResident!==undefined)s.settings.trayResident=cmd.trayResident;
+  }else if(cmd.type==='importSchedule'){
+    const value=cmd.value as SchedulePackage;
+    assert(value?.format==='dayhub-schedule'&&value.version===1&&text(value.termName,80)&&value.termName.trim(),'课表文件格式或学期名称无效');
+    assert(Array.isArray(value.profiles)&&value.profiles.length>=1&&value.profiles.length<=2,'课表文件应包含一至两个人的学期设置');
+    assert(Array.isArray(value.courses)&&value.courses.length<=500,'课表文件课程数量无效');
+    const people=new Set(value.profiles.map(p=>p.id));
+    assert(people.size===value.profiles.length&&[...people].every(p=>p==='me'||p==='partner'),'课表人员重复或无效');
+    const removed=new Set(s.courses.filter(c=>people.has(c.person)).map(c=>c.id));
+    s.courses=s.courses.filter(c=>!people.has(c.person));
+    s.exceptions=s.exceptions.filter(e=>!removed.has(e.courseId));
+    s.reminders=s.reminders.filter(r=>![...removed].some(courseId=>r.target===`courses:${courseId}`));
+    for(const raw of value.profiles){const profile={...s.profiles.find(p=>p.id===raw.id),...structuredClone(raw),updatedAt:now};const index=s.profiles.findIndex(p=>p.id===profile.id);s.profiles[index]=profile;validate('profiles',profile,s);}
+    const ids=new Set(s.courses.map(c=>c.id));
+    for(const raw of value.courses){assert(people.has(raw.person),'课程所属人不在本次导入范围');assert(!ids.has(raw.id),'课表文件中的课程编号重复');const course={...structuredClone(raw),updatedAt:now};validate('courses',course,s);s.courses.push(course);ids.add(course.id);reschedule(s,now,`courses:${course.id}`);}
+    s.settings.setup=true;
+  }else throw new Error('不支持的操作');
+  return migrateInbox(s);
+}
+export function validateState(value: unknown): State {
+  const s=value as State; assert(s && s.version===1,'备份版本不支持');
+  for(const key of ['profiles','courses','events','tasks','notices','exceptions','reminders'] as const)assert(Array.isArray(s[key])&&s[key].length<=50000,'备份记录无效或过大');
+  migrateInbox(s);
+  assert(s.profiles.length===2 && new Set(s.profiles.map(p=>p.id)).size===2,'备份缺少双方作息');
+  for(const key of ['profiles','courses','events','tasks','notices','exceptions'] as Entity[]){assert(new Set(s[key].map(v=>v.id)).size===s[key].length,'记录编号重复');for(const v of s[key]){validate(key,v,s);assert(Number.isFinite(v.updatedAt),'更新时间无效');}}
+  for(const item of [...s.courses,...s.tasks,...s.events])assert(!item.sourceId||s.notices.some(n=>n.id===item.sourceId),'备份来源关联缺失');
+  assert(s.settings&&typeof s.settings.launch==='boolean'&&typeof s.settings.setup==='boolean'&&Number.isFinite(s.lastTick),'备份设置无效');
+  if(s.settings.pet){const p=s.settings.pet;assert(['custom','pet','orb'].includes(p.mode)&&['small','medium','large'].includes(p.size)&&typeof p.animate==='boolean'&&(p.reduceMotion===undefined||typeof p.reduceMotion==='boolean')&&typeof p.bubbles==='boolean'&&Number.isInteger(p.duration)&&p.duration>=3&&p.duration<=30&&Number.isFinite(p.pausedUntil)&&p.pausedUntil>=0&&(p.miniPanel===undefined||typeof p.miniPanel==='boolean')&&(p.rememberPosition===undefined||typeof p.rememberPosition==='boolean'),'桌宠设置无效');}
+  if(s.settings.trayResident!==undefined)assert(typeof s.settings.trayResident==='boolean','托盘设置无效');
+  if(s.bubbleHistory)assert(Array.isArray(s.bubbleHistory)&&s.bubbleHistory.length<=50000&&s.bubbleHistory.every(x=>text(x.id,20000)&&Number.isFinite(x.at)),'气泡记录无效');
+  if(s.settings.orb)assert(Number.isFinite(s.settings.orb.x)&&Number.isFinite(s.settings.orb.y),'悬浮球位置无效');
+  const targets=new Set([...s.courses.map(v=>`courses:${v.id}`),...s.events.map(v=>`events:${v.id}`),...s.tasks.map(v=>`tasks:${v.id}`)]);
+  assert(new Set(s.reminders.map(r=>r.id)).size===s.reminders.length,'提醒编号重复');
+  for(const r of s.reminders)assert(text(r.id,200)&&text(r.title,200)&&Number.isFinite(r.due)&&targets.has(r.target)&&['scheduled','due','acknowledged','snoozed','cancelled'].includes(r.status),'备份提醒无效');
+  return s;
+}

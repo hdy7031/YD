@@ -1,0 +1,167 @@
+// Packaged-build verification for 0.2.20 desk pet.
+//
+// Runs release/win-unpacked/YD.exe with an isolated DAYHUB_TEST_DATA directory
+// (the single-instance lock is per userData, so an installed YD is untouched)
+// and drives the real packaged renderer through the Chrome DevTools protocol:
+// ten-state assets, rail, fixed canvas, drag anchor and the new scheduled
+// states / settings copy.
+//
+// Run: node verify-v0220-packaged.cjs
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const root = __dirname;
+const exe = path.join(root, 'release', 'win-unpacked', 'YD.exe');
+const output = path.join(root, 'test-data', 'v0220-packaged-' + Date.now());
+const port = 9336;
+fs.mkdirSync(output, { recursive: true });
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const report = [], notes = [];
+const check = (name, ok) => {
+  if (!ok) throw new Error('packaged check failed: ' + name);
+  report.push(name);
+};
+
+async function cdpTargets() {
+  for (let i = 0; i < 120; i++) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/json/list`);
+      const targets = await response.json();
+      const pages = targets.filter((t) => t.type === 'page');
+      if (pages.length >= 5) return pages;
+    } catch { /* 端口还没起来 */ }
+    await wait(500);
+  }
+  throw new Error('打包版未在 60 秒内暴露调试端口');
+}
+
+class Session {
+  constructor(url) {
+    this.id = 0;
+    this.pending = new Map();
+    this.socket = new WebSocket(url);
+    this.socket.addEventListener('message', (event) => {
+      const message = JSON.parse(event.data);
+      const resolver = this.pending.get(message.id);
+      if (resolver) { this.pending.delete(message.id); resolver(message); }
+    });
+    this.ready = new Promise((resolve, reject) => {
+      this.socket.addEventListener('open', () => resolve());
+      this.socket.addEventListener('error', (error) => reject(error));
+    });
+  }
+  send(method, params = {}) {
+    const id = ++this.id;
+    this.socket.send(JSON.stringify({ id, method, params }));
+    return new Promise((resolve) => this.pending.set(id, resolve));
+  }
+  async eval(expression) {
+    const response = await this.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+    if (response.result?.exceptionDetails) throw new Error(response.result.exceptionDetails.text + ' ' + (response.result.exceptionDetails.exception?.description ?? ''));
+    return response.result?.result?.value;
+  }
+  close() { try { this.socket.close(); } catch { /* ignore */ } }
+}
+
+(async () => {
+  if (!fs.existsSync(exe)) throw new Error('未找到打包版可执行文件：' + exe);
+  const version = require(path.join(root, 'package.json')).version;
+  check('打包版按 0.2.20 构建', version === '0.2.20');
+  const logFile = path.join(output, 'dayhub.log');
+  const child = spawn(exe, [`--remote-debugging-port=${port}`], {
+    env: { ...process.env, DAYHUB_TEST_DATA: output },
+    detached: false,
+    stdio: 'ignore',
+  });
+  const sessions = [];
+  try {
+    const pages = await cdpTargets();
+    check('打包版启动并暴露 5 个真实窗口', pages.length >= 5);
+    const panelTarget = pages.find((t) => !t.url.includes('#') && t.url.includes('index.html'));
+    const orbTarget = pages.find((t) => t.url.endsWith('#orb'));
+    check('打包版包含主窗口与桌宠窗口', !!panelTarget && !!orbTarget);
+    const panel = new Session(panelTarget.webSocketDebuggerUrl);
+    const orb = new Session(orbTarget.webSocketDebuggerUrl);
+    sessions.push(panel, orb);
+    await panel.ready; await orb.ready;
+
+    // ---- 素材：十态名单、缺帧说明、无猫 --------------------------------
+    const bundle = await panel.eval('window.dayhub.companionAssets().then(a=>({available:a.available,count:Object.keys(a.images).length,reason:a.reason,source:a.source,frames:Object.keys(a.manifest?.states??{}),missing:a.missing??[]}))');
+    check('打包版素材来源指向 app.asar 内的 assets/companion/custom', /app\.asar|assets[\\/]companion[\\/]custom/.test(bundle.source));
+    check('打包版十态素材名单完整（已有 + 缺失 = 10）', bundle.frames.length + bundle.missing.length === 10);
+    check('打包版无猫相关素材或文案', !bundle.frames.some((k) => /cat|kitty/i.test(k)) && !/小猫/.test(bundle.reason));
+    check('打包版夜间睡觉素材随包发布且可解码', await panel.eval("window.dayhub.companionAssets().then(a=>typeof a.images.night_sleep==='string'&&a.images.night_sleep.startsWith('data:image/png;base64,')&&a.images.night_sleep.length>10000)") === true);
+    notes.push(`打包版素材：已有 ${bundle.frames.length}，缺失 ${bundle.missing.join('/') || '无'}`);
+
+    const selfCheck = await (async () => {
+      for (let i = 0; i < 40; i++) {
+        const value = await orb.eval("(()=>({stage:!!document.querySelector('.sprite-stage'),inner:!!document.querySelector('.sprite-inner'),rail:!!document.querySelector('.status-rail'),chips:document.querySelectorAll('.companion-rail .rail-chip').length,letters:[...document.querySelectorAll('.companion-rail .rail-chip b')].map(e=>e.textContent).join(''),slot:document.querySelector('.companion-figure')?.dataset.assetSlot,img:(()=>{const s=document.querySelector('.companion-frame.is-current');return !!s&&s.complete&&s.naturalWidth>0})(),filter:getComputedStyle(document.querySelector('.companion-rail')).backdropFilter}))()");
+        if (value.img && value.chips === 2) return value;
+        await wait(300);
+      }
+      return null;
+    })();
+    check('打包版三层结构完整且状态栏常驻', !!selfCheck && selfCheck.stage && selfCheck.inner && selfCheck.rail);
+    check('打包版 D / Y 状态点渲染正确', selfCheck.letters === 'DY');
+    check('打包版角色帧已解码完成并带状态槽', selfCheck.img === true && !!selfCheck.slot);
+    check('打包版状态栏不使用 backdrop-filter', !selfCheck.filter || selfCheck.filter === 'none');
+    check('打包版没有小猫形象', await orb.eval("!document.querySelector('.pet-art')&&!/小猫/.test(document.body.textContent)") === true);
+
+    // ---- 固定画布：换姿态不动窗口 ----------------------------------------
+    const before = await orb.eval('({x:window.screenX,y:window.screenY,w:innerWidth,h:innerHeight})');
+    const box = await orb.eval("(()=>{const s=document.querySelector('.sprite-stage').getBoundingClientRect();return {w:Math.round(s.width),h:Math.round(s.height)}})()");
+    const after = await orb.eval('({x:window.screenX,y:window.screenY,w:innerWidth,h:innerHeight})');
+    check('打包版画布尺寸稳定', box.w > 0 && box.h > 0 && after.w === before.w && after.h === before.h);
+    const anchor = await orb.eval("(()=>{const img=document.querySelector('.companion-frame.is-current'),s=getComputedStyle(img);return {fit:s.objectFit,position:s.objectPosition,transition:s.transitionDuration}})()");
+    check('打包版角色使用 contain + 底边锚点', anchor.fit === 'contain' && /50% 100%|center bottom/.test(anchor.position));
+    check('打包版切换动画在 120–180ms', Number.parseFloat(anchor.transition) >= 0.12 && Number.parseFloat(anchor.transition) <= 0.18);
+
+    // ---- 设置页文案与开关 ------------------------------------------------
+    await panel.eval("window.dayhub.window('settings')");
+    await wait(500);
+    const settingsText = await panel.eval("document.querySelector('.pet-settings').textContent");
+    check('打包版设置页不再提供小猫桌宠', !settingsText.includes('小猫') && settingsText.includes('专属角色桌宠') && settingsText.includes('玻璃悬浮球'));
+    // 素材齐全时是“会根据当前状态自动切换动作”，缺帧时说明“暂用相近动作代替”；
+    // 两种都是用户语言，不允许出现“已接入 / N 个状态 / 第一版”这类工程说法。
+    check('打包版设置页说明仍是用户语言', /专属角色 · (会根据当前状态自动切换动作|.+动作素材缺失，暂用相近动作代替)/.test(settingsText) && !/已接入|第一版|开发中|fixture/.test(await panel.eval("document.querySelector('.page-settings').textContent")));
+    check('打包版动态效果只有标准 / 减少', await panel.eval("(()=>{const g=document.querySelector('[aria-label=\"桌宠动态效果\"]');return !!g&&g.querySelectorAll('button').length===2})()") === true);
+    check('打包版作息时间表为 23:30–07:30 / 11:30 / 12:30', /23:30–07:30/.test(settingsText) && settingsText.includes('07:30–07:50') && settingsText.includes('11:30–12:00') && settingsText.includes('12:30–14:00'));
+    check('打包版夜间开关可关闭并持久化', await panel.eval("window.dayhub.change({type:'settings',pet:{nightRest:false}}).then(s=>s.settings.pet.nightRest===false)") === true);
+
+    // ---- 拖动：真实指针序列 + 主进程窗口移动 ------------------------------
+    const dragBefore = await orb.eval('({x:window.screenX,y:window.screenY,w:innerWidth,h:innerHeight})');
+    await orb.eval(`(()=>{const el=document.querySelector('.pet-handle');el.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerId:5,button:0,buttons:1,clientX:30,clientY:60,screenX:${dragBefore.x + 60},screenY:${dragBefore.y + 60}}));return true})()`);
+    const during = await orb.eval("(()=>({dragging:document.querySelector('.pet-dock').classList.contains('is-dragging'),transform:getComputedStyle(document.querySelector('.sprite-inner')).transform,animation:getComputedStyle(document.querySelector('.companion-body')).animationName}))()");
+    await orb.eval(`(()=>{const el=document.querySelector('.pet-handle');el.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:5,buttons:1,clientX:0,clientY:60,screenX:${dragBefore.x - 40},screenY:${dragBefore.y + 60}}));return true})()`);
+    await wait(200);
+    const moved = await orb.eval('({x:window.screenX,y:window.screenY,w:innerWidth,h:innerHeight})');
+    await orb.eval(`document.querySelector('.pet-handle').dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:5,button:0,clientX:0,clientY:60,screenX:${dragBefore.x - 40},screenY:${dragBefore.y + 60}}))`);
+    await wait(300);
+    const afterDrag = await orb.eval("(()=>({dragging:document.querySelector('.pet-dock').classList.contains('is-dragging'),rail:document.querySelectorAll('.companion-rail .rail-chip').length,animation:getComputedStyle(document.querySelector('.companion-body')).animationName}))()");
+    check('打包版拖动期间 is-dragging 生效且动画冻结', during.dragging === true && during.transform === 'none' && during.animation === 'none');
+    check('打包版拖动真的移动窗口且尺寸不变', moved.x < dragBefore.x && Math.abs(moved.w - dragBefore.w) <= 2 && Math.abs(moved.h - dragBefore.h) <= 2);
+    check('打包版拖动后状态栏仍在且动画恢复', afterDrag.rail === 2 && afterDrag.dragging === false && afterDrag.animation !== 'none');
+    check('打包版拖动位置落盘', await panel.eval('window.dayhub.get().then(s=>!!s.settings.orb&&Number.isFinite(s.settings.orb.x))') === true);
+
+    // ---- 日志 ------------------------------------------------------------
+    const log = fs.readFileSync(logFile, 'utf8');
+    check('打包版日志记录素材状态', /桌宠素材/.test(log));
+    check('打包版日志无资源加载失败 / 渲染进程退出', !/页面加载失败|预加载失败|渲染进程退出|ERR_FILE_NOT_FOUND|Failed to load resource/.test(log));
+    check('打包版使用隔离数据目录', log.includes(output));
+    const asar = path.join(root, 'release', 'win-unpacked', 'resources', 'app.asar');
+    notes.push(`app.asar 大小：${fs.statSync(asar).size} 字节`);
+    fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ version, passed: report, notes, exe }, null, 2));
+    console.log(JSON.stringify({ output, passed: report.length, notes }, null, 2));
+  } finally {
+    for (const session of sessions) session.close();
+    try { child.kill(); } catch { /* ignore */ }
+    await wait(1500);
+    try { require('node:child_process').execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* 已退出 */ }
+  }
+})().catch((error) => {
+  fs.writeFileSync(path.join(output, 'failure.txt'), error.stack ?? String(error));
+  console.error(error);
+  process.exit(1);
+});

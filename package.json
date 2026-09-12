@@ -1,0 +1,67 @@
+{
+  "name": "dayhub",
+  "productName": "YD",
+  "version": "0.2.20",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0"
+  },
+  "description": "YD · Your Day —— 本地优先的日程中枢，离线可用的 Windows 课表、待办与提醒",
+  "author": "YD",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "assets:companion": "python scripts/companion-assets.py",
+    "start": "npm run build && electron .",
+    "test": "node --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "dist": "npm run build && electron-builder --win nsis --x64"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/sql.js": "^1.4.9",
+    "electron": "44.2.0",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  },
+  "build": {
+    "appId": "cn.dayhub.desktop",
+    "productName": "YD",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "native/ocr.ps1",
+      "node_modules/sql.js/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "native/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "brand/exports/yd.ico",
+      "artifactName": "YD-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "YD"
+    }
+  }
+}
