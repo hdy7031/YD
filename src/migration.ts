@@ -25,7 +25,8 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { pack } from './backup.ts';
 import { DOMAIN_VERSION, stateDomainVersion } from './domain.ts';
-import { effectiveRole, getCompanionProfile, requireSelfProfile } from './people.ts';
+import { effectiveRole, getCompanionProfile, requireSelfProfile, resolvePetSubject } from './people.ts';
+import { emptyRoutine, legacyDefaultRoutine } from './routine.ts';
 import type { Store } from './store.ts';
 import type { Course, State } from './types.ts';
 
@@ -36,6 +37,8 @@ export { DOMAIN_VERSION, stateDomainVersion as domainVersion };
 export const IDENTITY_DOMAIN_VERSION = 2;
 /** v2 → v3：会议归属到人 + v0.2 时代的一次性历史归一化。 */
 export const PERSON_AWARE_DOMAIN_VERSION = 3;
+/** v3 → v4：每个档案拥有自己的 RoutineProfile（Phase 2A；桌宠消费方仍在 2B 切换）。 */
+export const ROUTINE_DOMAIN_VERSION = 4;
 
 /**
  * v0.2 时代的一次性兼容规则（原先散落在 migrateLive() 里的私人业务分支）。
@@ -87,11 +90,30 @@ export function personAwareMigrationV3(state: State): State {
   return state;
 }
 
+/**
+ * v3 → v4：给每个档案补上 RoutineProfile。
+ *
+ * 只有当前桌宠主体（resolvePetSubject：有同行者 → 同行者；Solo → 本人）会拿到
+ * 0.2.x 桌宠写死的时间表，作为 source = 'legacy-default' 的默认作息；其他人的规则为空。
+ * 这一步不虚构"所有人的真实作息"，不碰课程 / 会议 / 待办 / 提醒 / 调课 / 通知 / 设置，
+ * 且幂等：已经有 routine 的档案原样保留。
+ */
+export function routineProfileMigrationV4(state: State, now: number): State {
+  const subjectId = resolvePetSubject(state).id;
+  state.profiles = state.profiles.map(profile => ({
+    ...profile,
+    routine: profile.routine ?? (profile.id === subjectId ? legacyDefaultRoutine(now) : emptyRoutine(now)),
+  }));
+  state.settings.domainVersion = ROUTINE_DOMAIN_VERSION;
+  return state;
+}
+
 // 每一步的 `to` 写成字面量：提升 DOMAIN_VERSION 时必须追加新步骤，
 // 由 tests/identity.test.ts 守住“最后一个步骤的 to === DOMAIN_VERSION”。
 export const migrationSteps: MigrationStep[] = [
   { from: 1, to: IDENTITY_DOMAIN_VERSION, id: 'identity-roles', migrate: identityRoleMigration },
   { from: IDENTITY_DOMAIN_VERSION, to: PERSON_AWARE_DOMAIN_VERSION, id: 'person-aware', migrate: personAwareMigrationV3 },
+  { from: PERSON_AWARE_DOMAIN_VERSION, to: ROUTINE_DOMAIN_VERSION, id: 'routine-profile', migrate: routineProfileMigrationV4 },
 ];
 
 export interface MigrationStep {

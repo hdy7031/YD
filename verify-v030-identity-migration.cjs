@@ -1,8 +1,8 @@
-// YD v0.3 Phase 1A/1B 隔离运行时验收：身份与归属迁移（v1 → v2 → v3）。
+// YD v0.3 Phase 1A/1B/2A 隔离运行时验收：身份、归属与作息迁移（v1 → v2 → v3 → v4）。
 //
 // 把 tests/fixtures/v020-synthetic.sqlite（v0.2.20 形态、没有 role / domainVersion）
 // 放进隔离数据目录，启动真实 Electron 应用，验证：
-//   1. 启动流程里的 migration gate 真的把身份语义升级到 v3（角色 + 会议归属）；
+//   1. 启动流程里的 migration gate 真的把语义升级到 v4（角色 + 会议归属 + 每人作息）；
 //   2. 迁移前生成 before-v030 备份（.dayhub / .sqlite / .json）；
 //   3. 档案 id、课程、待办、会议、通知、调课、提醒全部保持不变；
 //   4. 双人界面行为冻结（状态行、桌宠状态条、导航项数）。
@@ -43,11 +43,20 @@ app.whenReady().then(async () => {
     await wait(300);
 
     const state = await panel.webContents.executeJavaScript('window.dayhub.get()');
-    check('领域版本升级到 3', state.settings.domainVersion === 3, String(state.settings.domainVersion));
+    check('领域版本升级到 4', state.settings.domainVersion === 4, String(state.settings.domainVersion));
     check('本人档案 role=self', state.profiles.find(p => p.id === 'me')?.role === 'self');
     check('同行者档案 role=companion', state.profiles.find(p => p.id === 'partner')?.role === 'companion');
     check('旧会议自动归属工作区本人', state.events.length > 0 && state.events.every(event => event.person === 'me'));
     check('档案 id 未被重写', state.profiles.map(p => p.id).join(',') === 'me,partner', state.profiles.map(p => p.id).join(','));
+    // Phase 2A：每个档案都有合法作息；只有桌宠主体（同行者）拿到 0.2.x 默认时间表。
+    const companionRoutine = state.profiles.find(p => p.id === 'partner')?.routine;
+    const selfRoutine = state.profiles.find(p => p.id === 'me')?.routine;
+    check('每个档案都带 RoutineProfile', state.profiles.every(p => !!p.routine && Array.isArray(p.routine.rules)));
+    check('桌宠主体获得 legacy 默认作息（5 条，含 23:30–07:30 睡眠）',
+      companionRoutine?.source === 'legacy-default' && companionRoutine.rules.length === 5 &&
+      companionRoutine.rules.some(r => r.kind === 'sleep' && r.start === '23:30' && r.end === '07:30' && r.days.length === 7 && r.enabled),
+      JSON.stringify(companionRoutine?.rules?.map(r => `${r.kind} ${r.start}-${r.end}`)));
+    check('本人不被虚构作息（空规则）', selfRoutine?.source === 'user' && selfRoutine.rules.length === 0, JSON.stringify(selfRoutine));
     check('课程数量与归属不变', state.courses.length === 15 && [...new Set(state.courses.map(c => c.person))].sort().join(',') === 'me,partner',
       `${state.courses.length} 门 · ${[...new Set(state.courses.map(c => c.person))].join(',')}`);
     check('业务集合数量不变',
@@ -59,8 +68,8 @@ app.whenReady().then(async () => {
       backups.some(n => n.endsWith('.dayhub')) && backups.some(n => n.endsWith('.sqlite')) && backups.some(n => n.endsWith('.json')),
       backups.join(','));
     const receipt = JSON.parse(fs.readFileSync(path.join(output, 'backups', backups.find(n => n.endsWith('.json'))), 'utf8'));
-    check('备份回执记录 v1 → v3 与迁移前数量',
-      receipt.fromDomainVersion === 1 && receipt.targetDomainVersion === 3 && receipt.counts.courses === 15 && receipt.counts.reminders === 3);
+    check('备份回执记录 v1 → v4 与迁移前数量',
+      receipt.fromDomainVersion === 1 && receipt.targetDomainVersion === 4 && receipt.counts.courses === 15 && receipt.counts.reminders === 3);
 
     check('双人状态行仍然渲染两条', await panel.webContents.executeJavaScript("document.querySelectorAll('.dual-status .person-status').length===2"));
     check('导航仍然是七项', await panel.webContents.executeJavaScript("document.querySelectorAll('.nav-item').length===7"));

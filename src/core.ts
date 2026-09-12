@@ -2,7 +2,9 @@ import { migrateInbox, receive, confirmDraft } from './inbox.ts';
 import { validDraft } from './inbox-types.ts';
 import { DOMAIN_VERSION, stateDomainVersion } from './domain.ts';
 import { isProfileRole, requireSelfProfile, roleCounts } from './people.ts';
+import { assertRoutineProfile, emptyRoutine, legacyDefaultRoutine } from './routine.ts';
 import type { State, Profile, PersonId, ProfileRole, Course, Task, Event, Notice, Exception, Occurrence, Reminder, Command, Entity, SchedulePackage } from './types.ts';
+import type { RoutineProfile } from './routine.ts';
 export const DAY = 86400000;
 export function showPanelOnLaunch(openedAtLogin:boolean, setupComplete:boolean){return !openedAtLogin||!setupComplete;}
 export const id = () => globalThis.crypto.randomUUID();
@@ -13,8 +15,11 @@ export function weekday(date: string): number { return new Date(date + 'T12:00:0
 export function initial(now = Date.now()): State {
   const date = dateOf(now), monday = addDays(date, 1 - weekday(date));
   // 默认首次启动仍然是当前的双人体验（本人 + 同行者）；由 Onboarding 决定几个人的事情留到后续阶段。
-  const profile = (pid: PersonId, role: ProfileRole, name: string): Profile => ({ id: pid, role, name, startDate: monday, weeks: 20, periods: [{start:'08:00',end:'08:45'},{start:'08:55',end:'09:40'},{start:'10:00',end:'10:45'},{start:'10:55',end:'11:40'},{start:'14:00',end:'14:45'},{start:'14:55',end:'15:40'},{start:'16:00',end:'16:45'},{start:'16:55',end:'17:40'}], updatedAt: now });
-  return { version: 1, profiles: [profile('me','self','我'), profile('partner','companion','Ta')], courses: [], exceptions: [], events: [], tasks: [], notices: [], reminders: [], settings: { domainVersion: DOMAIN_VERSION, launch: false, setup: false }, lastTick: now };
+  const profile = (pid: PersonId, role: ProfileRole, name: string, routine: RoutineProfile): Profile => ({ id: pid, role, name, routine, startDate: monday, weeks: 20, periods: [{start:'08:00',end:'08:45'},{start:'08:55',end:'09:40'},{start:'10:00',end:'10:45'},{start:'10:55',end:'11:40'},{start:'14:00',end:'14:45'},{start:'14:55',end:'15:40'},{start:'16:00',end:'16:45'},{start:'16:55',end:'17:40'}], updatedAt: now });
+  // v4 起每个档案都必须带 RoutineProfile：本人从空规则开始；同行者沿用 0.2.x 的默认
+  // 桌宠时间表（由 routine.ts 的统一 factory 生成，这里不写 magic time）。
+  const profiles = [profile('me','self','我', emptyRoutine(now)), profile('partner','companion','Ta', legacyDefaultRoutine(now))];
+  return { version: 1, profiles, courses: [], exceptions: [], events: [], tasks: [], notices: [], reminders: [], settings: { domainVersion: DOMAIN_VERSION, launch: false, setup: false }, lastTick: now };
 }
 function assert(v: unknown, message: string): asserts v { if (!v) throw new Error(message); }
 function text(v: unknown, max = 20000): v is string { return typeof v === 'string' && v.length <= max; }
@@ -36,6 +41,9 @@ export function validate(entity: Entity, v: any, state: State) {
     assert(text(v.name,40) && v.name.trim(), '姓名无效');
     assert(v.role===undefined || isProfileRole(v.role), '个人角色无效');
     assert(v.shortAlias===undefined || (text(v.shortAlias,8)&&v.shortAlias.trim()), '短代号应为 1—8 字');
+    // 作息规则随档案一起保存；缺省表示"这次保存不带 routine"（由合并语义保留旧值），
+    // 整个 State 的"每个档案都必须有合法 RoutineProfile"不变式见 validateState。
+    if(v.routine!==undefined)assertRoutineProfile(v.routine,'个人作息');
     assert(date(v.startDate) && weekday(v.startDate)===1, '学期起始日必须是第一教学周的周一');
     assert(Number.isInteger(v.weeks) && v.weeks>=1 && v.weeks<=60, '教学周数应为 1—60');
     assert(Array.isArray(v.periods) && v.periods.length>0 && v.periods.length<=24, '请配置 1—24 节作息');
@@ -177,7 +185,13 @@ export function apply(state: State, cmd: Command, now=Date.now()): State {
     s.courses=s.courses.filter(c=>!people.has(c.person));
     s.exceptions=s.exceptions.filter(e=>!removed.has(e.courseId));
     s.reminders=s.reminders.filter(r=>![...removed].some(courseId=>r.target===`courses:${courseId}`));
-    for(const raw of value.profiles){const profile={...s.profiles.find(p=>p.id===raw.id),...structuredClone(raw),updatedAt:now};const index=s.profiles.findIndex(p=>p.id===profile.id);s.profiles[index]=profile;validate('profiles',profile,s);}
+    for(const raw of value.profiles){
+      const incoming=structuredClone(raw);
+      // 课表包只承载学期与节次（见 SchedulePackage 类型）：即使旧文件里混进了 routine，
+      // 导入课表也绝不覆盖用户自己的作息规则。
+      delete (incoming as {routine?:unknown}).routine;
+      const profile={...s.profiles.find(p=>p.id===raw.id),...incoming,updatedAt:now};const index=s.profiles.findIndex(p=>p.id===profile.id);s.profiles[index]=profile;validate('profiles',profile,s);
+    }
     const ids=new Set(s.courses.map(c=>c.id));
     for(const raw of value.courses){assert(people.has(raw.person),'课程所属人不在本次导入范围');assert(!ids.has(raw.id),'课表文件中的课程编号重复');const course={...structuredClone(raw),updatedAt:now};validate('courses',course,s);s.courses.push(course);ids.add(course.id);reschedule(s,now,`courses:${course.id}`);}
     s.settings.setup=true;
@@ -198,6 +212,8 @@ export function validateState(value: unknown): State {
   if(stateDomainVersion(s)>=2)for(const p of s.profiles)assert(isProfileRole(p.role),'个人档案缺少角色，请重新迁移或从备份恢复');
   // v3 起会议必须归属某个档案；更早的数据由 eventPerson() 回退到本人。
   if(stateDomainVersion(s)>=3)for(const e of s.events)assert(e.person!==undefined,'会议缺少所属人，请重新迁移或从备份恢复');
+  // v4 起每个档案都必须带自己的作息（规则本身可以为空；旧版本由迁移补齐）。
+  if(stateDomainVersion(s)>=4)for(const p of s.profiles)assertRoutineProfile(p.routine,'个人作息');
   for(const key of ['profiles','courses','events','tasks','notices','exceptions'] as Entity[]){assert(new Set(s[key].map(v=>v.id)).size===s[key].length,'记录编号重复');for(const v of s[key]){validate(key,v,s);assert(Number.isFinite(v.updatedAt),'更新时间无效');}}
   for(const item of [...s.courses,...s.tasks,...s.events])assert(!item.sourceId||s.notices.some(n=>n.id===item.sourceId),'备份来源关联缺失');
   assert(s.settings&&typeof s.settings.launch==='boolean'&&typeof s.settings.setup==='boolean'&&Number.isFinite(s.lastTick),'备份设置无效');

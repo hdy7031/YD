@@ -16,7 +16,7 @@ import { v020Synthetic } from './fixtures/v020-synthetic.ts';
 import { syntheticSchedule, syntheticScheduleFile } from './fixtures/synthetic.ts';
 import { v3SoloSynthetic } from './fixtures/v3-solo-synthetic.ts';
 import { getCompanionProfile } from '../src/people.ts';
-import { DOMAIN_VERSION } from '../src/domain.ts';
+import { ROUTINE_DOMAIN_VERSION } from '../src/migration.ts';
 
 const testsDir = fileURLToPath(new URL('./', import.meta.url));
 const root = path.join(testsDir, '..');
@@ -100,7 +100,10 @@ test('提交的 Solo fixture 与构造器一致，且确实是 1 人工作区', 
   assert.equal(state.profiles[0].role, 'self');
   assert.equal(state.profiles[0].id, 'alex', 'Solo fixture 刻意使用自定义 id（不是 me）');
   assert.equal(getCompanionProfile(state), undefined);
-  assert.equal(state.settings.domainVersion, DOMAIN_VERSION);
+  // 这份 fixture 刻意停在 v3（Phase 2A 之前）：它既是 Solo 兼容回归的输入，
+  // 也是 v3 → v4 迁移测试与 runtime-audit-solo 的"迁移前数据库"。
+  assert.equal(state.settings.domainVersion, ROUTINE_DOMAIN_VERSION - 1);
+  assert.ok(state.profiles.every(profile => profile.routine === undefined), 'v3 fixture 不应带 routine');
   assert.ok(state.courses.length > 0 && state.events.length > 0 && state.tasks.length > 0 && state.reminders.length > 0);
   assert.ok(state.events.every(event => event.person === 'alex'), '会议归属本人');
 });

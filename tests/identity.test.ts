@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { apply, initial, validateState } from '../src/core.ts';
 import { personStatus, profileAlias, snapshot } from '../src/live.ts';
 import { companionId, effectiveRole, getCompanionProfile, getProfileById, getSelfProfile, personAlias, requireSelfProfile, roleCounts } from '../src/people.ts';
-import { DOMAIN_VERSION, IDENTITY_DOMAIN_VERSION, identityRoleMigration, migrationSteps } from '../src/migration.ts';
+import { DOMAIN_VERSION, IDENTITY_DOMAIN_VERSION, PERSON_AWARE_DOMAIN_VERSION, ROUTINE_DOMAIN_VERSION, identityRoleMigration, migrationSteps } from '../src/migration.ts';
 import type { Course, PersonId, Profile, ProfileRole, State } from '../src/types.ts';
 import { v020Synthetic } from './fixtures/v020-synthetic.ts';
 
@@ -140,6 +140,8 @@ test('迁移注册与领域版本一致：步骤连续、无重复、最后一�
   }
   assert.equal(expected, DOMAIN_VERSION);
   assert.equal(IDENTITY_DOMAIN_VERSION, 2);
+  assert.equal(PERSON_AWARE_DOMAIN_VERSION, 3);
+  assert.equal(ROUTINE_DOMAIN_VERSION, 4);
   assert.equal(new Set(migrationSteps.map(step => step.id)).size, migrationSteps.length);
 });
 
