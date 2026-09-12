@@ -80,7 +80,7 @@ test('正式测试与公共验收脚本不再读取 ingest/ 私人数据', () =>
   // 本文件自身在注释与断言里提到该路径，跳过它。
   const self = 'fixture-baseline.test.ts';
   for (const name of testFiles) if (name !== self) assert.doesNotMatch(fs.readFileSync(path.join(testsDir, name), 'utf8'), /ingest\//, `tests/${name}`);
-  const publicScripts = ['runtime-audit.cjs', 'ui-shots.cjs', 'ui-catalog.cjs', 'verify-v0216.cjs', 'scripts/visual-v021.cjs', 'scripts/visual-v0217.cjs', 'scripts/visual-v022.cjs'];
+  const publicScripts = ['runtime-audit.cjs', 'runtime-audit-solo.cjs', 'verify-v030-routine-pet.cjs', 'ui-shots.cjs', 'ui-catalog.cjs', 'verify-v0216.cjs', 'scripts/visual-v021.cjs', 'scripts/visual-v0217.cjs', 'scripts/visual-v022.cjs'];
   for (const name of publicScripts) assert.doesNotMatch(fs.readFileSync(path.join(root, name), 'utf8'), /ingest\//, name);
 });
 

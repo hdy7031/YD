@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { apply, epoch, initial, validateState } from '../src/core.ts';
-import { companionSchedule, type ScheduledPetState } from '../src/companion-display.ts';
+import { getScheduledPetState, type ScheduledPetState } from '../src/companion-display.ts';
 import {
   activeRoutine, assertRoutineProfile, assertRoutineRule, emptyRoutine, legacyDefaultRoutine,
   nextRoutineBoundary, routineKindPriority, routineOccurrences,
@@ -233,7 +233,19 @@ test('导入课表永远不覆盖作息规则（课表包不携带 routine）', 
   assert.deepEqual(guarded.profiles.map(profile => profile.routine), before.profiles.map(profile => profile.routine));
 });
 
-test('legacy 默认作息与 0.2.x 桌宠写死的时间表逐分钟一致', () => {
+// 0.2.x 写死的时间表（历史契约，只允许留在测试里）：
+// Phase 2B 之后桌宠只读 Routine，因此这里锁定"legacy 默认作息走完整条新链路
+// （routine → 桌宠适配器）后与旧行为逐分钟一致"。
+const legacyPetTable: { state: ScheduledPetState; start: number; end: number }[] = [
+  { state: 'night_sleep', start: 23 * 60 + 30, end: 24 * 60 },
+  { state: 'night_sleep', start: 0, end: 7 * 60 + 30 },
+  { state: 'wake_up', start: 7 * 60 + 30, end: 7 * 60 + 50 },
+  { state: 'eating', start: 11 * 60 + 30, end: 12 * 60 },
+  { state: 'nap', start: 12 * 60 + 30, end: 14 * 60 },
+  { state: 'wake_up', start: 14 * 60, end: 14 * 60 + 20 },
+];
+
+test('legacy 默认作息走桌宠适配器后与 0.2.x 写死的时间表逐分钟一致', () => {
   const legacy = legacyDefaultRoutine(0);
   assert.equal(legacy.source, 'legacy-default');
   assert.deepEqual(legacy.rules.map(item => [item.id, item.kind, item.start, item.end]), [
@@ -252,12 +264,10 @@ test('legacy 默认作息与 0.2.x 桌宠写死的时间表逐分钟一致', () 
   legacy.rules[0].days.push(1);
   assert.equal(legacyDefaultRoutine(0).rules[0].days.length, 7);
 
-  const kindToScheduled: Partial<Record<RoutineKind, ScheduledPetState>> = { sleep: 'night_sleep', wake: 'wake_up', meal: 'eating', nap: 'nap' };
-  const scheduledAt = (minutes: number) => companionSchedule.find(slot => minutes >= slot.startMinutes && minutes < slot.endMinutes)?.state ?? null;
+  const scheduledAt = (minutes: number) => legacyPetTable.find(slot => minutes >= slot.start && minutes < slot.end)?.state ?? null;
   const reference = legacyDefaultRoutine(0);
   for (let minutes = 0; minutes < 1440; minutes += 1) {
     const time = `${MONDAY}T${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
-    const hit = activeRoutine(reference, at(time));
-    assert.equal(hit ? kindToScheduled[hit.kind] ?? null : null, scheduledAt(minutes), `第 ${minutes} 分钟（${time}）`);
+    assert.equal(getScheduledPetState(reference, at(time)), scheduledAt(minutes), `第 ${minutes} 分钟（${time}）`);
   }
 });

@@ -1,5 +1,6 @@
 // Focused 0.2.20 desk pet acceptance: real Electron runtime, isolated data dir.
-// 覆盖：十态素材、本机时间四态边界、优先级、固定画布与落点、无猫残留、版本号。
+// 覆盖：十态素材、四态时间边界（Phase 2B 起由 profile.routine 驱动，默认迁移用户与旧行为逐分钟一致）、
+// 优先级、固定画布与落点、无猫残留、版本号。
 const {app,BrowserWindow}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const output=path.join(__dirname,'test-data',`v0220-pet-${Date.now()}`);fs.mkdirSync(output,{recursive:true});
@@ -10,7 +11,7 @@ const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const deadline=setTimeout(()=>{fs.writeFileSync(path.join(output,'failure.txt'),'0.2.20 pet acceptance timeout');app.exit(1);},120000);
 require('./dist/main.cjs');
 
-// 受控虚拟时钟：保持时间正常流动，只把“当前本机时间”平移到指定时刻。
+// 受控虚拟时钟：保持时间正常流动，只把“当前时间”平移到指定时刻（本机为 Asia/Shanghai，与北京时间一致）。
 const realNow=Date.now.bind(Date);
 let simAnchor=realNow(),realAnchor=realNow();
 const setClock=(hour,minute)=>{
@@ -57,7 +58,7 @@ app.whenReady().then(async()=>{
     check('设置页只剩专属角色与悬浮球',await run("(()=>{const t=document.querySelector('.pet-settings')?.textContent??'';return !!t&&!t.includes('小猫')&&t.includes('专属角色桌宠')&&t.includes('玻璃悬浮球')})()"));
     check('源码与文案里不再回退到猫',!fs.readFileSync(path.join(__dirname,'src','companion-assets.ts'),'utf8').includes('小猫'));
 
-    /* ---------- C. 时间状态（本机时间，左闭右开） ---------- */
+    /* ---------- C. 时间状态（默认迁移作息，左闭右开） ---------- */
     const stateAt=async(hour,minute)=>{
       setClock(hour,minute);
       await wait(1300);            // 主进程每秒重算一次并广播

@@ -1,6 +1,6 @@
 import { pendingReminders } from './selectors.ts';
 import { occurrences, epoch, dateOf, DAY } from './core.ts';
-import { companionDisplay, type CompanionDisplay, type ScheduledPetState } from './companion-display.ts';
+import { companionDisplay, getScheduledPetState, type CompanionDisplay, type ScheduledPetState } from './companion-display.ts';
 import { defaultAliasFor, effectiveRole, personAlias, resolvePetSubject } from './people.ts';
 import type { State, PersonId, ProfileRole, Occurrence } from './types.ts';
 
@@ -19,7 +19,8 @@ export interface PetPreferences {
   miniPanel:boolean;
   // Keep the dragged position across restarts.
   rememberPosition:boolean;
-  // 夜间（23:30–06:30）没有更高优先级的安排时，桌宠进入睡觉姿态。
+  // 作息里的 sleep 时段（由每个人的 Routine 决定）没有更高优先级的安排时，
+  // 桌宠进入睡觉姿态；关闭它只影响视觉，不改动作息数据。
   nightRest:boolean;
 }
 export const petDefaults:PetPreferences={mode:'custom',size:'medium',animate:true,reduceMotion:false,bubbles:true,duration:8,pausedUntil:0,miniPanel:true,rememberPosition:true,nightRest:true};
@@ -106,8 +107,11 @@ export function snapshot(s:State,now:number,display?:{reminderSince?:number;nudg
   // 身份语义来自 role，而不是固定的 me / partner。
   const people=s.profiles.map(profile=>personStatus(s,now,profile.id)),pending=pendingReminders(s).length;
   const preferences={...petDefaults,...s.settings.pet};
-  const subject=resolvePetSubject(s).id;
-  return {now,source:'北京时间 · Windows 系统时钟（未联网校准）',people,pending,preferences,subject,display:companionDisplay({people,pending,now,subjectId:subject,nightRest:preferences.nightRest,...display})};
+  const subject=resolvePetSubject(s);
+  // 时间状态的唯一来源：桌宠主体自己的 Routine。主进程的 clock 只是同一纯函数的缓存，
+  // 因此这里不传 scheduled 时也能算出完全一致的结果（托盘、测试、渲染层都用同一条路径）。
+  const scheduled=display?.scheduled===undefined?getScheduledPetState(subject.routine,now):display.scheduled;
+  return {now,source:'北京时间 · Windows 系统时钟（未联网校准）',people,pending,preferences,subject:subject.id,display:companionDisplay({people,pending,now,subjectId:subject.id,nightRest:preferences.nightRest,...display,scheduled})};
 }
 export interface BubbleEvent { id:string; at:number; text:string }
 export function bubbleEvents(s:State,from:number,to:number):BubbleEvent[]{

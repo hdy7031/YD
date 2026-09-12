@@ -5,7 +5,7 @@ import { pendingReminders as selectPendingReminders, attentionSummary } from '..
 import { useLive, Titlebar, DesktopPet, Bubble, Mini, PresenceTip, PetMenu, StatusRows, PetSettings } from './companion.ts';
 import { BrandGlyph } from './brand.ts';
 import { ScheduleGrid, ManagementOverview, EmptyState } from './views.ts';
-import { getCompanionProfile, requireSelfProfile } from '../people.ts';
+import { getCompanionProfile, requireSelfProfile, resolvePetSubject } from '../people.ts';
 import { personOptions, profileLabelFor, shellTabs, tabShortcuts, tabWidthPolicy } from './shell.ts';
 import type { ShellTab } from './shell.ts';
 import React, { useState, useEffect, useRef } from 'react';
@@ -315,7 +315,7 @@ function App(){
       kind==='inbox'?h(InboxHub,{state:s,saved:set,selected:selectedNotice,select:setSelectedNotice,open}):null,
       kind==='reminders'?h(React.Fragment,null,h('p',{className:'muted page-intro'},'这里只计入已到提醒时间、尚未处理的提醒；未来预约提醒不计入。处理提醒不会将待办自动标记完成。'),...pendingReminders.map(r=>h('article',{className:'entry',key:r.id},h('h3',null,r.title),h('p',{className:'muted'},`${fmt(r.due,true)} 到提醒时间 · 未处理`),h('div',{className:'actions'},b('已处理',()=>change({type:'ack',id:r.id}),'primary',pending),...([10,30,60] as const).map(minutes=>b(minutes===60?'1 小时后':`${minutes} 分钟后`,()=>change({type:'snooze',id:r.id,minutes}),'secondary',pending)),b('打开事项',()=>{const [entity,i]=r.target.split(':');const item=(s[entity as Entity] as any[]).find(v=>v.id===i);if(item)open(entity as Entity,item);},'ghost')))),!pendingReminders.length?h('div',{className:'page-empty-stage'},h(EmptyState,{title:'没有未处理提醒',description:'已到提醒时间且尚未处理的提醒会显示在这里。未来预约提醒不计入，确认提醒也不会自动完成待办。'})):null):null,
       kind==='settings'?h('div',{className:'settings-stack'},
-        h(PetSettings,{live,settings:s.settings}),
+        h(PetSettings,{live,settings:s.settings,routine:resolvePetSubject(s).routine}),
         h('section',{className:'entry'},h('h2',null,'学校作息'),h('div',{className:'actions'},...s.profiles.map(p=>b(`${p.name}的学期与节次`,()=>open('profiles',p),'secondary')))),
         h('section',{className:'entry'},h('h2',null,'运行与提醒'),h('p',{className:'muted'},'退出应用、关机或休眠时暂停提醒，恢复后汇总遗漏事项。系统通知是否可见受 Windows 通知设置影响。'),b('发送测试通知',async()=>{try{say(await api.testNotification());}catch(e){err(msg(e));}},'secondary')),
         h('section',{className:'entry'},h('h2',null,'本地备份'),h('p',{className:'muted'},'备份包含双方课表、日程、待办、原始通知图片和提醒状态。请妥善保存备份文件。'),h('div',{className:'actions'},b('导出完整备份',async()=>{try{const file=await api.backup();if(file)say('备份已导出：'+file);}catch(e){err(msg(e));}},'primary'),b('从备份恢复',async()=>{try{const result=await api.restore();if(result){set(result);say('备份已恢复。恢复前的数据已自动备份在应用数据目录。');}}catch(e){err(msg(e));}},'secondary'))),

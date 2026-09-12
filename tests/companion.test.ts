@@ -6,7 +6,8 @@ import path from 'node:path';
 import {initial,apply,epoch} from '../src/core.ts';
 import {migrateLive,snapshot,personStatus,petDefaults} from '../src/live.ts';
 import {CompanionTimeline,companionBusinessState,companionDisplay,companionDisplayAssets,companionRailLabel,reminderHoldMs,reminderNudgeMs} from '../src/companion-display.ts';
-import {withinNightRest,nightRestWindow,getScheduledPetState,nextPetScheduleBoundary,PetScheduleClock,companionSchedule,resolvePetState} from '../src/companion-display.ts';
+import {getScheduledPetState,nextPetScheduleBoundary,PetScheduleClock,petRoutineSummary,resolvePetState,routineKindToPetState} from '../src/companion-display.ts';
+import {emptyRoutine,legacyDefaultRoutine,type RoutineProfile,type RoutineRule} from '../src/routine.ts';
 import {companionTone,companionToneOf,companionToneColors} from '../src/companion-colors.ts';
 import {presenceStateFor,presenceMeta,statusLabel} from '../src/live.ts';
 import {resolveCompanionAssets,companionRequiredStates} from '../src/companion-assets.ts';
@@ -137,78 +138,81 @@ test('0.2.16 状态颜色只有一套：语义相同必然同色，空闲不会�
   assert.equal(companionTone('upcoming'),'upcoming');
 });
 
-// 本机时间构造：所有时间状态都按 LOCAL TIME 判断，测试也用本机时间生成时间戳。
+// 北京时间构造：Routine 领域统一按 UTC+8 判定（src/routine.ts）。
 // 基准 2027-03-01（周一，Alex 学期首日）：dayOffset 0 = 当日，-1 = 前一天周日，1 = 次日。
-const local=(hour:number,minute:number,second=0,dayOffset=0)=>new Date(2027,2,1+dayOffset,hour,minute,second).getTime();
+const local=(hour:number,minute:number,second=0,dayOffset=0)=>Date.UTC(2027,2,1+dayOffset,hour-8,minute,second);
+// 0.2.x 的默认桌宠时间表：迁移后它就是"当前桌宠主体"的 Routine（source = legacy-default）。
+const legacyRoutine=legacyDefaultRoutine(0);
+// 测试用的自定义作息构造。
+const rule=(over:Partial<RoutineRule>&{id:string}):RoutineRule=>({kind:'custom',label:'自定义',start:'09:00',end:'10:00',days:[1,2,3,4,5,6,7],enabled:true,priority:10,...over});
+const routineOf=(...rules:RoutineRule[]):RoutineProfile=>({source:'user',updatedAt:1,rules});
+const withRoutine=(s:ReturnType<typeof base>,id:string,routine:RoutineProfile)=>({...s,profiles:s.profiles.map(profile=>profile.id===id?{...profile,routine}:profile)});
 
 test('0.2.20 时间状态边界全部左闭右开：07:29/07:30 · 07:49/07:50 · 11:29/11:30/11:59/12:00 · 12:29/12:30/13:59/14:00 · 23:29/23:30/23:59/00:00',()=>{
-  assert.deepEqual(companionSchedule.map(slot=>[slot.state,slot.startMinutes,slot.endMinutes]),[
-    ['night_sleep',1410,1440],
-    ['night_sleep',0,450],
-    ['wake_up',450,470],
-    ['eating',690,720],
-    ['nap',750,840],
-    ['wake_up',840,860],
+  // 0.2.x 的时间表现在只以"迁移默认作息"的形式存在（LEGACY_DEFAULT_ROUTINE_TIMES），
+  // 这里锁定它的形状：迁移后的默认用户必须逐分钟与旧行为一致。
+  assert.deepEqual(legacyRoutine.rules.map(entry=>[entry.kind,entry.start,entry.end]),[
+    ['sleep','23:30','07:30'],
+    ['wake','07:30','07:50'],
+    ['meal','11:30','12:00'],
+    ['nap','12:30','14:00'],
+    ['wake','14:00','14:20'],
   ]);
   // 早晨：睡 -> 刚睡醒 -> 正常
-  assert.equal(getScheduledPetState(local(7,29)),'night_sleep');
-  assert.equal(getScheduledPetState(local(7,29,59)),'night_sleep');
-  assert.equal(getScheduledPetState(local(7,30)),'wake_up');
-  assert.equal(getScheduledPetState(local(7,49)),'wake_up');
-  assert.equal(getScheduledPetState(local(7,49,59)),'wake_up');
-  assert.equal(getScheduledPetState(local(7,50)),null);
+  assert.equal(getScheduledPetState(legacyRoutine,local(7,29)),'night_sleep');
+  assert.equal(getScheduledPetState(legacyRoutine,local(7,29,59)),'night_sleep');
+  assert.equal(getScheduledPetState(legacyRoutine,local(7,30)),'wake_up');
+  assert.equal(getScheduledPetState(legacyRoutine,local(7,49)),'wake_up');
+  assert.equal(getScheduledPetState(legacyRoutine,local(7,49,59)),'wake_up');
+  assert.equal(getScheduledPetState(legacyRoutine,local(7,50)),null);
   // 中午：吃饭 11:30–12:00
-  assert.equal(getScheduledPetState(local(11,29)),null);
-  assert.equal(getScheduledPetState(local(11,29,59)),null);
-  assert.equal(getScheduledPetState(local(11,30)),'eating');
-  assert.equal(getScheduledPetState(local(11,59)),'eating');
-  assert.equal(getScheduledPetState(local(11,59,59)),'eating');
-  assert.equal(getScheduledPetState(local(12,0)),null);
+  assert.equal(getScheduledPetState(legacyRoutine,local(11,29)),null);
+  assert.equal(getScheduledPetState(legacyRoutine,local(11,29,59)),null);
+  assert.equal(getScheduledPetState(legacyRoutine,local(11,30)),'eating');
+  assert.equal(getScheduledPetState(legacyRoutine,local(11,59)),'eating');
+  assert.equal(getScheduledPetState(legacyRoutine,local(11,59,59)),'eating');
+  assert.equal(getScheduledPetState(legacyRoutine,local(12,0)),null);
   // 午后：午睡 12:30–14:00
-  assert.equal(getScheduledPetState(local(12,29)),null);
-  assert.equal(getScheduledPetState(local(12,30)),'nap');
-  assert.equal(getScheduledPetState(local(13,59)),'nap');
-  assert.equal(getScheduledPetState(local(13,59,59)),'nap');
+  assert.equal(getScheduledPetState(legacyRoutine,local(12,29)),null);
+  assert.equal(getScheduledPetState(legacyRoutine,local(12,30)),'nap');
+  assert.equal(getScheduledPetState(legacyRoutine,local(13,59)),'nap');
+  assert.equal(getScheduledPetState(legacyRoutine,local(13,59,59)),'nap');
   // 午睡结束后还有一小段“刚睡醒”，14:20 才真正回到普通状态
-  assert.equal(getScheduledPetState(local(14,0)),'wake_up');
-  assert.equal(getScheduledPetState(local(14,19,59)),'wake_up');
-  assert.equal(getScheduledPetState(local(14,20)),null);
+  assert.equal(getScheduledPetState(legacyRoutine,local(14,0)),'wake_up');
+  assert.equal(getScheduledPetState(legacyRoutine,local(14,19,59)),'wake_up');
+  assert.equal(getScheduledPetState(legacyRoutine,local(14,20)),null);
   // 夜间跨日：23:30 开始，次日 07:30 结束
-  assert.equal(getScheduledPetState(local(23,29)),null);
-  assert.equal(getScheduledPetState(local(23,29,59)),null);
-  assert.equal(getScheduledPetState(local(23,30)),'night_sleep');
-  assert.equal(getScheduledPetState(local(23,59)),'night_sleep');
-  assert.equal(getScheduledPetState(local(0,0,0,1)),'night_sleep');
-  assert.equal(getScheduledPetState(local(0,0,0,1)),'night_sleep');
-  assert.equal(getScheduledPetState(local(6,0,0,1)),'night_sleep');
+  assert.equal(getScheduledPetState(legacyRoutine,local(23,29)),null);
+  assert.equal(getScheduledPetState(legacyRoutine,local(23,29,59)),null);
+  assert.equal(getScheduledPetState(legacyRoutine,local(23,30)),'night_sleep');
+  assert.equal(getScheduledPetState(legacyRoutine,local(23,59)),'night_sleep');
+  assert.equal(getScheduledPetState(legacyRoutine,local(0,0,0,1)),'night_sleep');
+  assert.equal(getScheduledPetState(legacyRoutine,local(0,0,0,1)),'night_sleep');
+  assert.equal(getScheduledPetState(legacyRoutine,local(6,0,0,1)),'night_sleep');
   // 白天普通时段没有任何时间状态
-  for(const hour of [8,10,15,18,21])assert.equal(getScheduledPetState(local(hour,0)),null);
+  for(const hour of [8,10,15,18,21])assert.equal(getScheduledPetState(legacyRoutine,local(hour,0)),null);
   // 两个刚睡醒窗口都是同一个状态：早上起床后与午睡结束后。
-  assert.deepEqual(companionSchedule.filter(slot=>slot.state==='wake_up').map(slot=>[slot.startMinutes,slot.endMinutes]),[[450,470],[840,860]]);
-  // 夜间窗口与旧 API 保持一致
-  assert.deepEqual(nightRestWindow,{startMinutes:1410,endMinutes:450});
-  assert.equal(withinNightRest(local(23,29)),false);
-  assert.equal(withinNightRest(local(23,30)),true);
-  assert.equal(withinNightRest(local(7,29)),true);
-  assert.equal(withinNightRest(local(7,30)),false);
-  assert.equal(withinNightRest(local(12,0)),false);
+  assert.deepEqual(legacyRoutine.rules.filter(entry=>entry.kind==='wake').map(entry=>[entry.start,entry.end]),[['07:30','07:50'],['14:00','14:20']]);
 });
 
 test('0.2.20 下一个时间边界只在真正的切换点触发重算',()=>{
-  assert.equal(nextPetScheduleBoundary(local(11,0)),local(11,30));
-  assert.equal(nextPetScheduleBoundary(local(11,30)),local(12,0));
-  assert.equal(nextPetScheduleBoundary(local(12,10)),local(12,30));
-  assert.equal(nextPetScheduleBoundary(local(14,30)),local(23,30));
+  assert.equal(nextPetScheduleBoundary(legacyRoutine,local(11,0)),local(11,30));
+  assert.equal(nextPetScheduleBoundary(legacyRoutine,local(11,30)),local(12,0));
+  assert.equal(nextPetScheduleBoundary(legacyRoutine,local(12,10)),local(12,30));
+  assert.equal(nextPetScheduleBoundary(legacyRoutine,local(14,30)),local(23,30));
   // 23:40 之后的下一个边界是次日 07:30
-  assert.equal(nextPetScheduleBoundary(local(23,40)),new Date(2027,2,2,7,30).getTime());
+  assert.equal(nextPetScheduleBoundary(legacyRoutine,local(23,40)),local(7,30,0,1));
+  // 没有作息（或规则全部停用）时既没有时间状态，也没有边界——不会每秒空转。
+  assert.equal(nextPetScheduleBoundary(undefined,local(11,0)),Number.POSITIVE_INFINITY);
+  assert.equal(nextPetScheduleBoundary(emptyRoutine(1),local(11,0)),Number.POSITIVE_INFINITY);
   const clock=new PetScheduleClock();
-  assert.equal(clock.read(local(11,0)),null);
-  assert.equal(clock.read(local(11,20)),null);
-  assert.equal(clock.read(local(11,30)),'eating');
-  assert.equal(clock.read(local(11,45)),'eating');
-  assert.equal(clock.read(local(12,5)),null);
+  assert.equal(clock.read(legacyRoutine,local(11,0)),null);
+  assert.equal(clock.read(legacyRoutine,local(11,20)),null);
+  assert.equal(clock.read(legacyRoutine,local(11,30)),'eating');
+  assert.equal(clock.read(legacyRoutine,local(11,45)),'eating');
+  assert.equal(clock.read(legacyRoutine,local(12,5)),null);
   clock.reset();
-  assert.equal(clock.read(local(23,45)),'night_sleep');
+  assert.equal(clock.read(legacyRoutine,local(23,45)),'night_sleep');
 });
 
 test('0.2.20 时间状态优先级：业务忙碌与提醒压过时间状态，夜间睡觉不会被空闲顶掉',()=>{
@@ -220,6 +224,9 @@ test('0.2.20 时间状态优先级：业务忙碌与提醒压过时间状态，�
   assert.equal(live.display.state,'night_sleep');
   assert.equal(live.display.asset,'night_sleep');
   assert.equal(live.display.nightly,true);
+  // 时间状态来自桌宠主体（同行者）自己的 Routine，而不是任何全局常量。
+  assert.equal(live.display.scheduled,'night_sleep');
+  const nightScheduled=live.display.scheduled;
   // 关闭夜间自动睡觉后回到普通状态，但吃饭 / 午睡 / 刚睡醒仍然按时间生效
   const off=migrateLive({...structuredClone(s),settings:{...s.settings,pet:{...petDefaults,nightRest:false}}});
   assert.equal(snapshot(off,night).display.state,'idle');
@@ -235,15 +242,139 @@ test('0.2.20 时间状态优先级：业务忙碌与提醒压过时间状态，�
   assert.equal(snapshot(nightMeeting,night).display.state,'busy_work');
   assert.equal(snapshot(nightMeeting,night).display.nightly,false);
   // 待处理提醒优先级最高：午睡时段也保持提醒姿态，但仍然记录时间状态
-  const pendingLive=companionDisplay({people:people(s,night),pending:1,now:night,reminderSince:night,nudgeId:1,subjectId:subjectOf(s)});
+  const pendingLive=companionDisplay({people:people(s,night),pending:1,now:night,reminderSince:night,nudgeId:1,subjectId:subjectOf(s),scheduled:nightScheduled});
   assert.equal(pendingLive.state,'reminder');
   assert.equal(pendingLive.base,'night_sleep');
   assert.equal(pendingLive.nightly,true);
   // 提醒保持窗口结束后回到时间状态而不是普通空闲
-  const settled=resolvePetState({people:people(s,night),pending:1,now:night+reminderHoldMs+1000,reminderSince:night,subjectId:subjectOf(s)});
+  const settled=resolvePetState({people:people(s,night),pending:1,now:night+reminderHoldMs+1000,reminderSince:night,subjectId:subjectOf(s),scheduled:nightScheduled});
   assert.equal(settled.state,'night_sleep');
   // 白天普通时段仍然是普通状态
   assert.equal(snapshot(s,local(10,0,0,-1)).display.state,'idle');
+});
+
+/* ----------------------------------------------------------------------------
+ * Phase 2B：桌宠时间状态由 Profile.routine 驱动。
+ * 0.2.x 的固定时间表已经删除，只剩迁移默认值与上面的历史契约测试。
+ * -------------------------------------------------------------------------- */
+test('2B 自定义作息驱动桌宠：sleep 01:00–09:00 与 meal 13:00–13:30（旧时间表完全不生效）',()=>{
+  const routine=routineOf(
+    rule({id:'my-sleep',kind:'sleep',label:'睡觉',start:'01:00',end:'09:00'}),
+    rule({id:'my-meal',kind:'meal',label:'午饭',start:'13:00',end:'13:30'}),
+  );
+  const s=withRoutine(base(),'partner',routine);
+  // 旧时间表的 23:30–07:30 之外：凌晨 02:00 在旧实现里是普通状态，现在必须睡觉。
+  assert.equal(snapshot(s,local(2,0,0,-1)).display.state,'night_sleep');
+  assert.equal(snapshot(s,local(8,59,0,-1)).display.state,'night_sleep');
+  assert.equal(snapshot(s,local(9,0,0,-1)).display.state,'idle');
+  // 旧时间表的 11:30–12:00 吃饭时段不再生效；新规则的 13:15 必须吃饭。
+  assert.equal(snapshot(s,local(11,45,0,-1)).display.state,'idle');
+  assert.equal(snapshot(s,local(13,15,0,-1)).display.state,'eating');
+  assert.equal(snapshot(s,local(13,30,0,-1)).display.state,'idle');
+  // 旧的午睡 / 刚睡醒窗口也随旧时间表一起消失。
+  for(const [hour,minute] of [[12,45],[14,5]] as const)assert.equal(snapshot(s,local(hour,minute,0,-1)).display.state,'idle',`${hour}:${minute}`);
+});
+
+test('2B 停用的规则不产生时间状态与边界；重新启用后立即恢复',()=>{
+  const nap=rule({id:'my-nap',kind:'nap',label:'午睡',start:'13:00',end:'14:00'});
+  const off=withRoutine(base(),'partner',routineOf({...nap,enabled:false}));
+  assert.equal(snapshot(off,local(13,15,0,-1)).display.state,'idle');
+  assert.equal(snapshot(off,local(13,15,0,-1)).display.scheduled,null);
+  assert.equal(nextPetScheduleBoundary(routineOf({...nap,enabled:false}),local(9,0,0,-1)),Number.POSITIVE_INFINITY);
+  const on=withRoutine(base(),'partner',routineOf(nap));
+  assert.equal(snapshot(on,local(13,15,0,-1)).display.state,'nap');
+});
+
+test('2B 空作息：没有时间状态、没有边界，业务状态与空闲照常',()=>{
+  const empty=withRoutine(base(),'partner',emptyRoutine(1));
+  const now=local(12,45,0,-1);
+  const live=snapshot(empty,now);
+  assert.equal(live.display.scheduled,null);
+  assert.equal(live.display.state,'idle');
+  assert.equal(live.display.nightly,false);
+  assert.equal(nextPetScheduleBoundary(emptyRoutine(1),now),Number.POSITIVE_INFINITY);
+  const clock=new PetScheduleClock();
+  assert.equal(clock.read(emptyRoutine(1),now),null);
+  assert.equal(clock.read(undefined,now),null);
+  // 商务课程仍然压过"没有时间状态"的桌宠：周二 10:00 同行者在课上。
+  const busy=withRoutine(base(),'partner',emptyRoutine(1));
+  assert.equal(snapshot(busy,epoch('2027-02-23T10:00')).display.state,'busy_class');
+});
+
+test('2B 运行中改掉作息立即生效：clock 缓存键跟着规则内容走',()=>{
+  const clock=new PetScheduleClock();
+  const before=emptyRoutine(1);
+  const after=routineOf(rule({id:'my-meal',kind:'meal',label:'午饭',start:'21:00',end:'22:00'}));
+  const now=local(21,30,0,-1);
+  assert.equal(clock.read(before,now),null);
+  // 同一时刻、同一 clock 实例：规则变了就必须重算，而不是等到下个边界或重启。
+  assert.equal(clock.read(after,now),'eating');
+  assert.equal(clock.read(before,now),null);
+  // 规则内容相同但 updatedAt 变了（用户重新保存）同样视为变化。
+  assert.equal(clock.read({...after,updatedAt:2},now),'eating');
+});
+
+test('2B 主体沿用身份层：Together 看同行者作息，Solo 看本人作息',()=>{
+  // Together：桌宠主体是同行者（Sam），改本人的作息不影响桌宠。
+  const together=withRoutine(base(),'me',routineOf(rule({id:'self-nap',kind:'nap',label:'午睡',start:'15:00',end:'15:30'})));
+  assert.equal(subjectOf(together),'partner');
+  assert.equal(snapshot(together,local(15,10,0,-1)).display.state,'idle');
+  const companionNap=withRoutine(together,'partner',routineOf(rule({id:'partner-nap',kind:'nap',label:'午睡',start:'15:00',end:'15:30'})));
+  assert.equal(snapshot(companionNap,local(15,10,0,-1)).display.state,'nap');
+  // Solo：同行者不存在时主体回落到本人，桌宠用本人的作息。
+  const solo=structuredClone(base());
+  solo.profiles=solo.profiles.filter(profile=>profile.role==='self');
+  solo.courses=solo.courses.filter(course=>course.person===solo.profiles[0].id);
+  solo.events=[];solo.reminders=[];
+  solo.profiles[0].routine=routineOf(rule({id:'self-nap',kind:'nap',label:'午睡',start:'15:00',end:'15:30'}));
+  assert.equal(resolvePetSubject(solo).id,solo.profiles[0].id);
+  assert.equal(snapshot(solo,local(15,10,0,-1)).display.state,'nap');
+  assert.equal(snapshot(solo,local(12,45,0,-1)).display.state,'idle');
+});
+
+test('2B 业务忙碌压过 Routine：上课与吃饭 / 午睡重叠时仍然是上课',()=>{
+  // 周二 10:00 同行者在上课；把吃饭规则放在同一时段，桌宠必须显示上课。
+  const meal=routineOf(rule({id:'meal-overlap',kind:'meal',label:'午饭',start:'10:00',end:'11:00'}));
+  const s=withRoutine(base(),'partner',meal);
+  const busy=snapshot(s,epoch('2027-02-23T10:10'));
+  assert.equal(busy.display.state,'busy_class');
+  assert.equal(busy.display.scheduled,'eating',"时间状态照实记录，但被业务状态压过");
+  // 进行中的会议同理。
+  const meeting=apply(s,{type:'save',entity:'events',value:{id:'meal-meeting',title:'临时会议',start:'2027-02-28T10:00',end:'2027-02-28T11:00',notes:'',place:'',reminders:[],checklist:[]}},epoch('2027-02-28T09:00'));
+  assert.equal(snapshot(meeting,local(10,30,0,-1)).display.state,'busy_work');
+  assert.equal(snapshot(meeting,local(10,30,0,-1)).display.scheduled,'eating');
+});
+
+test('2B 没有视觉表达的 kind 不伪造姿态（focus / commute / custom）',()=>{
+  const routine=routineOf(
+    rule({id:'focus',kind:'focus',label:'专注',start:'09:00',end:'10:00'}),
+    rule({id:'commute',kind:'commute',label:'通勤',start:'08:00',end:'08:30'}),
+    rule({id:'custom',kind:'custom',label:'阅读',start:'15:00',end:'16:00'}),
+  );
+  assert.equal(routineKindToPetState('focus'),null);
+  assert.equal(routineKindToPetState('commute'),null);
+  assert.equal(routineKindToPetState('custom'),null);
+  assert.deepEqual(['sleep','wake','meal','nap'].map(kind=>routineKindToPetState(kind as RoutineRule['kind'])),['night_sleep','wake_up','eating','nap']);
+  const s=withRoutine(base(),'partner',routine);
+  for(const [hour,minute] of [[8,10],[9,30],[15,30]] as const)assert.equal(snapshot(s,local(hour,minute,0,-1)).display.state,'idle',`${hour}:${minute}`);
+  // 这些时段也不会制造边界（只有真正会换姿态的规则才算切换点）。
+  assert.equal(nextPetScheduleBoundary(routine,local(7,0,0,-1)),Number.POSITIVE_INFINITY);
+});
+
+test('2B 设置页文案由作息生成：默认迁移用户与自定义用户各自准确',()=>{
+  assert.deepEqual(petRoutineSummary(legacyDefaultRoutine(0)),{
+    sleep:'23:30–07:30',
+    states:'07:30–07:50 起床、11:30–12:00 午饭、12:30–14:00 午睡、14:00–14:20 午睡后起床',
+  });
+  assert.deepEqual(petRoutineSummary(undefined),{sleep:'',states:''});
+  assert.deepEqual(petRoutineSummary(emptyRoutine(1)),{sleep:'',states:''});
+  // 自定义作息与停用规则都不会在文案里留下旧时间。
+  const custom=routineOf(
+    rule({id:'late-sleep',kind:'sleep',label:'睡觉',start:'01:00',end:'09:00'}),
+    rule({id:'nap-off',kind:'nap',label:'午睡',start:'12:30',end:'14:00',enabled:false}),
+    rule({id:'read',kind:'custom',label:'阅读',start:'20:00',end:'21:00'}),
+  );
+  assert.deepEqual(petRoutineSummary(custom),{sleep:'01:00–09:00',states:''});
 });
 
 test('0.2.15 状态短文案保持低打扰且不暴露关系称呼',()=>{

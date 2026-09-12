@@ -7,6 +7,7 @@
 // it, so the pet, the bubble and the mini panel can never disagree.
 import type { PersonStatus } from './live.ts';
 import type { PersonId } from './types.ts';
+import { activeRoutine, nextRoutineBoundary, type RoutineKind, type RoutineProfile, type RoutineRule } from './routine.ts';
 
 export type CompanionDisplayState =
   | 'idle' | 'upcoming' | 'busy_class' | 'busy_work' | 'reminder' | 'gentle'
@@ -38,94 +39,92 @@ export const companionDisplayAssets: Record<CompanionDisplayState, CompanionDisp
   wake_up: { asset: 'wake_up', fallbacks: ['relaxed', 'idle'], label: '刚睡醒' },
 };
 
-// 桌宠时间状态：全部按本机 LOCAL TIME 判断，区间左闭右开 [start, end)。
+// 桌宠时间状态。数据来源只有一个：当前桌宠主体（people.resolvePetSubject）
+// 自己的 Profile.routine —— 这里不再有任何写死的生活作息时间表。
+// 时间语义（左闭右开、跨午夜、跨周、时区）全部由 src/routine.ts 决定。
 export type ScheduledPetState = 'night_sleep' | 'wake_up' | 'eating' | 'nap';
-export interface PetScheduleSlot { state: ScheduledPetState; startMinutes: number; endMinutes: number }
 
-export const companionSchedule: PetScheduleSlot[] = [
-  // 夜间跨日，拆成两段写法而不是 hour 比较：[23:30,24:00) + [00:00,07:30)
-  { state: 'night_sleep', startMinutes: 23 * 60 + 30, endMinutes: 24 * 60 },
-  { state: 'night_sleep', startMinutes: 0, endMinutes: 7 * 60 + 30 },
-  // 刚睡醒 / 伸懒腰
-  { state: 'wake_up', startMinutes: 7 * 60 + 30, endMinutes: 7 * 60 + 50 },
-  // 吃饭
-  { state: 'eating', startMinutes: 11 * 60 + 30, endMinutes: 12 * 60 },
-  // 午睡
-  { state: 'nap', startMinutes: 12 * 60 + 30, endMinutes: 14 * 60 },
-  // 午睡后的“刚睡醒”：复用同一个 wake_up 姿态与素材，不新增状态，
-  // 避免状态表里出现两个语义相同的刚睡醒。
-  { state: 'wake_up', startMinutes: 14 * 60, endMinutes: 14 * 60 + 20 },
-];
-
-// 把当前时间标准化为“当天分钟数”，跨午夜区间因此不需要特殊分支。
-export function localMinutes(now: number): number {
-  const date = new Date(now);
-  return date.getHours() * 60 + date.getMinutes();
-}
-
-// 唯一的时间状态判断入口：组件、useEffect、窗口都只调用它。
-export function getScheduledPetState(now: number): ScheduledPetState | null {
-  const minutes = localMinutes(now);
-  return scheduledStateAtMinutes(minutes);
-}
-
-function scheduledStateAtMinutes(minutes: number): ScheduledPetState | null {
-  for (const slot of companionSchedule) if (minutes >= slot.startMinutes && minutes < slot.endMinutes) return slot.state;
-  return null;
-}
-
-// 真正会“换姿态”的分钟点：区间起点与终点里只有状态发生变化的那些
-// （例如 24:00 与 00:00 同属夜间睡觉，不算切换点）。
-export const petStateChangeMinutes: number[] = [...new Set(
-  companionSchedule.flatMap(slot => [slot.startMinutes % 1440, slot.endMinutes % 1440]),
-)].filter(minute => scheduledStateAtMinutes((minute + 1439) % 1440) !== scheduledStateAtMinutes(minute))
-  .sort((a, b) => a - b);
-
-// 下一个时间边界的本机时间戳。主进程只在跨过边界、时钟明显跳变或系统从睡眠
-// 恢复时重算时间状态，不用秒级定时器反复重建，也不会被 stale timer 卡住。
-export function nextPetScheduleBoundary(now: number): number {
-  const date = new Date(now);
-  const dayStart = (offset: number) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + offset).getTime();
-  let next = Number.POSITIVE_INFINITY;
-  for (const offset of [0, 1]) for (const minute of petStateChangeMinutes) {
-    const at = dayStart(offset) + minute * 60000;
-    if (at > now && at < next) next = at;
+// Routine kind → 桌宠时间状态的**唯一**映射。没有可靠视觉表达的 kind
+// （commute / focus / custom）返回 null：不为“有个画面”伪造语义，
+// 这些时段继续交给 business / reminder / idle 决定姿态。
+export function routineKindToPetState(kind: RoutineKind): ScheduledPetState | null {
+  switch (kind) {
+    case 'sleep': return 'night_sleep';
+    case 'wake': return 'wake_up';
+    case 'meal': return 'eating';
+    case 'nap': return 'nap';
+    default: return null;
   }
-  return next;
 }
 
-// 夜间的“自动休息”只覆盖 night_sleep（23:30–07:30）；起床、吃饭、午睡属于
-// 日常作息，始终按时间生效。
-export const nightRestWindow = { startMinutes: 23 * 60 + 30, endMinutes: 7 * 60 + 30 };
-export const nightRestText = '23:30–07:30';
-
-export function withinNightRest(now: number, window = nightRestWindow): boolean {
-  const minutes = localMinutes(now);
-  const { startMinutes, endMinutes } = window;
-  return startMinutes <= endMinutes
-    ? minutes >= startMinutes && minutes < endMinutes
-    : minutes >= startMinutes || minutes < endMinutes;
+/**
+ * 某个人此刻的时间状态：只读他自己的 Routine，不再读任何全局常量。
+ * 没有规则、规则被停用或 kind 没有对应姿态时返回 null。
+ */
+export function getScheduledPetState(routine: RoutineProfile | undefined, now: number): ScheduledPetState | null {
+  const hit = activeRoutine(routine, now);
+  return hit ? routineKindToPetState(hit.kind) : null;
 }
 
-// 只在需要时重算的轻量时钟：启动立即算一次，之后跨边界 / 时钟跳变 / 恢复时算。
+/**
+ * 下一个需要重算的时刻（规则区间的起点或终点）。只统计真正会切换姿态的 kind：
+ * 只有 focus / commute / custom 的作息不会产生边界，桌宠也就不会为它们空转。
+ */
+export function nextPetScheduleBoundary(routine: RoutineProfile | undefined, now: number): number {
+  if (!routine) return Number.POSITIVE_INFINITY;
+  const visual: RoutineProfile = { ...routine, rules: routine.rules.filter(rule => routineKindToPetState(rule.kind) !== null) };
+  return nextRoutineBoundary(visual, now) ?? Number.POSITIVE_INFINITY;
+}
+
+// 缓存键包含规则内容本身：运行中改掉作息（同一次会话里保存档案，不重启应用）
+// 会让下一次 read 立即重算，而不是沿用旧规则算出的边界。
+function routineScheduleKey(routine: RoutineProfile | undefined): string {
+  if (!routine) return 'none';
+  const rules = routine.rules.map(rule => `${rule.id},${rule.kind},${rule.start},${rule.end},${rule.days.join('.')},${rule.enabled ? 1 : 0},${rule.priority}`).join(';');
+  return `${routine.updatedAt}|${rules}`;
+}
+
+// 只在需要时重算的轻量时钟：启动立即算一次，之后跨边界 / 作息变化 / 时钟跳变 /
+// 系统恢复时重算。rules=[] 时 next 是 Infinity，不会空转。
 export class PetScheduleClock {
   private state: ScheduledPetState | null = null;
-  private next = 0;
+  private next = Number.POSITIVE_INFINITY;
   private last = 0;
+  private key = '';
   private ready = false;
 
-  read(now: number, options: { force?: boolean; maxAgeMs?: number } = {}): ScheduledPetState | null {
+  read(routine: RoutineProfile | undefined, now: number, options: { force?: boolean; maxAgeMs?: number } = {}): ScheduledPetState | null {
     const maxAge = options.maxAgeMs ?? 30000;
-    if (!this.ready || options.force === true || now >= this.next || now < this.last || now - this.last >= maxAge) {
-      this.state = getScheduledPetState(now);
-      this.next = nextPetScheduleBoundary(now);
+    const key = routineScheduleKey(routine);
+    if (!this.ready || options.force === true || key !== this.key || now >= this.next || now < this.last || now - this.last >= maxAge) {
+      this.state = getScheduledPetState(routine, now);
+      this.next = nextPetScheduleBoundary(routine, now);
       this.last = now;
+      this.key = key;
       this.ready = true;
     }
     return this.state;
   }
 
-  reset() { this.ready = false; this.state = null; this.next = 0; this.last = 0; }
+  reset() { this.ready = false; this.state = null; this.next = Number.POSITIVE_INFINITY; this.last = 0; this.key = ''; }
+}
+
+// 设置页文案用的作息摘要：只列出真正会变成桌宠姿态的规则，文字由作息数据生成，
+// 因此用户改了作息（或迁移自 0.2.x 的默认作息）时说明文字自动跟着变。
+export interface PetRoutineSummary {
+  /** 睡觉时段（HH:mm–HH:mm，多个用「、」连接）；没有则为空字符串。 */
+  sleep: string;
+  /** 其余会切换姿态的时段，形如「07:30–07:50 起床」；没有则为空字符串。 */
+  states: string;
+}
+
+export function petRoutineSummary(routine: RoutineProfile | undefined): PetRoutineSummary {
+  const rules: RoutineRule[] = (routine?.rules ?? []).filter(rule => rule.enabled && routineKindToPetState(rule.kind) !== null);
+  const window = (rule: RoutineRule) => `${rule.start}–${rule.end}`;
+  return {
+    sleep: rules.filter(rule => rule.kind === 'sleep').map(window).join('、'),
+    states: rules.filter(rule => rule.kind !== 'sleep').map(rule => `${window(rule)} ${rule.label}`).join('、'),
+  };
 }
 
 // The reminder pose holds for a while, then the pet settles back into the real
@@ -227,7 +226,8 @@ export interface CompanionDisplayInput {
   nudgeId?: number;
   // 设置页开关：关闭后夜间不再进入睡觉姿态。
   nightRest?: boolean;
-  // 主进程缓存的时间状态；缺省时按当前时间现算（纯函数，测试与托盘直接可用）。
+  // 时间状态由调用方传入：live.snapshot() 按桌宠主体的 Routine 计算，
+  // 主进程传入的是同一个纯函数的缓存。缺省表示这条投影没有时间状态。
   scheduled?: ScheduledPetState | null;
 }
 
@@ -249,7 +249,8 @@ export interface PetStateResolution {
 //   5. 普通即将开始 / 空闲。
 // night_sleep 只会被真正的业务状态覆盖，不会被 idle 或普通装饰状态顶掉。
 export function resolvePetState(input: CompanionDisplayInput): PetStateResolution {
-  const scheduled = input.scheduled === undefined ? getScheduledPetState(input.now) : input.scheduled;
+  // 这里不再自己读时间表：没有传入 scheduled 就没有时间状态。
+  const scheduled = input.scheduled === undefined ? null : input.scheduled;
   const business = companionBusinessState(input.people, input.now, input.subjectId);
   const planned = scheduled && (scheduled !== 'night_sleep' || input.nightRest !== false) ? scheduled : null;
   // 业务忙碌（上课 / 教研 / 会议 / 活动）与刚结束的庆祝压过时间状态；

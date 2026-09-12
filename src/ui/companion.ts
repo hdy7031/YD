@@ -4,7 +4,8 @@ import type { PersonId } from '../types.ts';
 import {clockText,petDefaults,presenceMeta,presenceStateFor,statusLabel} from '../live.ts';
 import {companionTone} from '../companion-colors.ts';
 import {companionFrame,companionRail} from '../companion-layout.ts';
-import {nightRestText} from '../companion-display.ts';
+import {petRoutineSummary} from '../companion-display.ts';
+import type {RoutineProfile} from '../routine.ts';
 import {CompanionRail,CustomCompanionArt,useCompanionAssets} from './companion-custom.ts';
 import type {CompanionMenuItem} from '../companion-menu.ts';
 import {BrandGlyph} from './brand.ts';
@@ -186,7 +187,7 @@ const motionOptions:['standard'|'reduced',string,string][]=[
   ['reduced','减少','几乎静止，只在状态变化时淡入'],
 ];
 
-export function PetSettings({live,settings}:{live:LiveSnapshot|null;settings?:{launch:boolean;trayResident?:boolean}}){
+export function PetSettings({live,settings,routine}:{live:LiveSnapshot|null;settings?:{launch:boolean;trayResident?:boolean};routine?:RoutineProfile}){
   const [error,setError]=useState('');const [busy,setBusy]=useState(false);
   const assets=useCompanionAssets();
   const p=live?.preferences??petDefaults;
@@ -197,6 +198,7 @@ export function PetSettings({live,settings}:{live:LiveSnapshot|null;settings?:{l
   const check=(label:string,checked:boolean,onChange:(value:boolean)=>void,disabled=false)=>h('label',{className:'check-row'},h('input',{type:'checkbox',checked,disabled:disabled||busy,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>onChange(e.target.checked)}),label);
   const block=(title:string,children:React.ReactNode)=>h('div',{className:'setting-block'},h('h3',null,title),children);
   const motionMode=p.reduceMotion?'reduced':'standard';
+  const schedule=petRoutineSummary(routine);
   const sizeChoices=h('div',{className:'segmented setting-segmented'},...(['small','medium','large'] as const).map((value,index)=>h('button',{key:value,type:'button',className:p.size===value?'active':'',disabled:busy,onClick:()=>save({size:value})},['小','中','大'][index])));
   return h('section',{className:'pet-settings'},h('h2',null,'桌面陪伴'),
     block('外观',h(React.Fragment,null,
@@ -214,9 +216,14 @@ export function PetSettings({live,settings}:{live:LiveSnapshot|null;settings?:{l
       h('label',{className:'setting-row'},h('span',null,'气泡停留时长'),h('span',{className:'setting-inline'},h('input',{type:'number',min:3,max:30,value:p.duration,disabled:busy||paused,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>{const n=Number(e.target.value);if(n>=3&&n<=30)save({duration:n});}}),'秒')),
       h('div',{className:'actions'},paused?h('button',{type:'button',className:'secondary',disabled:busy,onClick:()=>save({pausedUntil:0})},'恢复气泡提醒'):h('button',{type:'button',className:'secondary',disabled:busy,onClick:()=>save({pausedUntil:Date.now()+3600000})},'暂停气泡 1 小时')))),
     block('作息状态',h(React.Fragment,null,
-      check(`夜间自动睡觉（${nightRestText}）`,p.nightRest,value=>save({nightRest:value})),
-      h('p',{className:'muted setting-note'},p.nightRest?`${nightRestText} 之间，只要没有进行中的安排、也没有到时间的提醒，桌宠就会安静地睡觉；07:30–07:50 与 14:00–14:20 伸个懒腰，11:30–12:00 吃饭，12:30–14:00 午睡。`:'已关闭夜间自动睡觉：夜间也按平时的状态显示，吃饭、午睡与刚睡醒仍按时间生效。'),
-      h('p',{className:'muted setting-note'},'时间状态按本机时间判断，不需要联网校准。'))),
+      // 时间状态与这段说明都来自桌宠主体自己的作息（profile.routine），不是写死的时间表。
+      check(`夜间自动睡觉${schedule.sleep?`（${schedule.sleep}）`:''}`,p.nightRest,value=>save({nightRest:value})),
+      h('p',{className:'muted setting-note'},!schedule.sleep
+        ?'当前作息里没有睡觉时段，桌宠不会自动进入睡眠姿态；其它时间状态仍按作息生效。'
+        :p.nightRest
+          ?`${schedule.sleep} 之间，只要没有进行中的安排、也没有到时间的提醒，桌宠就会安静地睡觉${schedule.states?`；${schedule.states}`:''}。`
+          :'已关闭夜间自动睡觉：夜间也按平时的状态显示，其它时间状态仍按作息生效。'),
+      h('p',{className:'muted setting-note'},'时间状态按作息规则与北京时间判断，不需要联网校准。'))),
     block('窗口行为',h(React.Fragment,null,
       check('单击桌宠显示双方状态',p.miniPanel,value=>save({miniPanel:value})),
       check('记住桌宠位置',p.rememberPosition,value=>save({rememberPosition:value})),

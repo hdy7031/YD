@@ -4,6 +4,7 @@ import { snapshot, bubbleEvents, petDefaults, presenceMeta, presenceStateFor, st
 import { CompanionTimeline, PetScheduleClock } from './companion-display.ts';
 import { buildCompanionMenu, companionMenuHeight, companionMenuMetrics, companionToggleShortcut } from './companion-menu.ts';
 import { companionGeometry } from './companion-layout.ts';
+import { resolvePetSubject } from './people.ts';
 import type { CompanionAssets } from './companion-assets.ts';
 import { logError } from './logging.ts';
 import type { Store } from './store.ts';
@@ -24,7 +25,8 @@ export class Companion {
   private active?:{id:string;text:string};private queue:{id:string;text:string}[]=[];private expires=0;private remaining=0;private held=false;
   private hoverTip?:{person:PersonId;text:string;state:PresenceState;side:number};private dragging=false;private pendingResize=false;private applied='';
   private timeline=new CompanionTimeline();
-  // 时间状态缓存：启动立即算一次，之后只在跨边界 / 时钟跳变 / 系统恢复时重算。
+  // 时间状态缓存：启动立即算一次，之后只在跨边界 / 主体作息变化 / 时钟跳变 /
+  // 系统恢复时重算（作息变化由缓存键识别，因此不重启应用也会生效）。
   private clock=new PetScheduleClock();
   readonly bubble:BrowserWindow;readonly mini:BrowserWindow;readonly tip:BrowserWindow;readonly sheet:BrowserWindow;
   private shortcut={label:companionToggleShortcut.label,ready:false};
@@ -52,12 +54,14 @@ export class Companion {
   }
   async load(){await Promise.all([this.bubble.loadFile(this.file,{hash:'bubble'}),this.mini.loadFile(this.file,{hash:'mini'}),this.tip.loadFile(this.file,{hash:'tip'}),this.sheet.loadFile(this.file,{hash:'menu'})]);this.resize();await this.pulse(true);this.pulseTimer=setInterval(()=>void this.pulse(),1000);}
   stop(){this.closing=true;if(this.pulseTimer)clearInterval(this.pulseTimer);}
+  // 桌宠代表谁由身份层解析（Together=同行者，Solo=本人），时间状态只取自这个人的 Routine。
+  private subjectRoutine(){return resolvePetSubject(this.store.state).routine;}
   get():LiveSnapshot{
     // Keep the projection self-consistent: the display state must never lag the
     // pending reminder count by one tick.
     const now=Date.now();
     this.timeline.sync(pendingReminders(this.store.state).length,now);
-    return {...snapshot(this.store.state,now,{...this.timeline.state(),scheduled:this.clock.read(now)}),bubble:this.active?{...this.active,below:this.bubble.getBounds().y>this.orb.getBounds().y}:undefined,hoverTip:this.hoverTip};
+    return {...snapshot(this.store.state,now,{...this.timeline.state(),scheduled:this.clock.read(this.subjectRoutine(),now)}),bubble:this.active?{...this.active,below:this.bubble.getBounds().y>this.orb.getBounds().y}:undefined,hoverTip:this.hoverTip};
   }
   broadcast(){
     // 悬停提示只描述仍然存在的档案：档案消失（例如以后移除同行者）时安静收起，
@@ -175,8 +179,9 @@ export class Companion {
       const gap=now-from,events=bubbleEvents(this.store.state,from,now),history=this.store.state.bubbleHistory||[];
       const fresh=events.filter(e=>!history.some(x=>x.id===e.id));
       const p={...petDefaults,...this.store.state.settings.pet};
-      // 时间状态：跨过边界的下一次 tick 就会重算；睡眠恢复 / 时钟跳变直接强制。
-      this.clock.read(now,{force:recover||clockJump||gap<0||gap>10000});
+      // 时间状态：跨过边界的下一次 tick 就会重算；睡眠恢复 / 时钟跳变直接强制；
+      // 主体作息在运行中被改掉时由缓存键触发重算，无需重启。
+      this.clock.read(this.subjectRoutine(),now,{force:recover||clockJump||gap<0||gap>10000});
       // One projection decides the pet pose and whether a light nudge may play.
       // After a restart the reminder run starts fresh so the pet nudges once.
       if(recover)this.timeline.reset(now);
