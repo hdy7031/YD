@@ -15,43 +15,43 @@ import {companionFallbackIdle} from '../src/companion-fallback-idle.ts';
 import {companionGeometry,companionCharacter,companionFrame as companionFrameBox,companionRail,petSpriteFor} from '../src/companion-layout.ts';
 import {buildCompanionMenu,companionMenuHeight,companionMenuMetrics,companionToggleShortcut,type CompanionMenuItem} from '../src/companion-menu.ts';
 import type {PersonStatus} from '../src/live.ts';
-import type {SchedulePackage} from '../src/types.ts';
+import {syntheticState} from './fixtures/synthetic.ts';
 
-const schedule=JSON.parse(fs.readFileSync(new URL('../ingest/2026秋季双方课表.dayhub-schedule.json',import.meta.url),'utf8')) as SchedulePackage;
-const base=()=>migrateLive(apply(initial(epoch('2026-09-07T00:00')),{type:'importSchedule',value:schedule},epoch('2026-09-07T00:00')));
+// 合成课表（Alex / Sam）。所有时间断言都基于这份 fixture，不再读取私人课表。
+const base=()=>syntheticState(epoch('2027-02-22T00:00'));
 const people=(s:ReturnType<typeof base>,now:number)=>[personStatus(s,now,'me'),personStatus(s,now,'partner')];
 
 test('0.2.20 显示态收敛到十种（含四个时间状态），业务状态映射稳定',()=>{
   assert.deepEqual(Object.keys(companionDisplayAssets).sort(),['busy_class','busy_work','eating','gentle','idle','nap','night_sleep','reminder','upcoming','wake_up']);
   const s=base();
   // 上课中 -> busy_class
-  assert.equal(companionBusinessState(people(s,epoch('2026-09-08T10:00')),epoch('2026-09-08T10:00')),'busy_class');
+  assert.equal(companionBusinessState(people(s,epoch('2027-02-23T10:00')),epoch('2027-02-23T10:00')),'busy_class');
   // 教研中 -> busy_work
-  assert.equal(companionBusinessState(people(s,epoch('2026-09-07T14:30')),epoch('2026-09-07T14:30')),'busy_work');
+  assert.equal(companionBusinessState(people(s,epoch('2027-02-22T14:30')),epoch('2027-02-22T14:30')),'busy_work');
   // 即将开始 -> upcoming
-  assert.equal(companionBusinessState(people(s,epoch('2026-09-08T16:10')),epoch('2026-09-08T16:10')),'upcoming');
+  assert.equal(companionBusinessState(people(s,epoch('2027-02-23T16:10')),epoch('2027-02-23T16:10')),'upcoming');
   // 双方空闲 -> idle（周日两人都没有课）
-  assert.equal(companionBusinessState(people(s,epoch('2026-09-13T10:00')),epoch('2026-09-13T10:00')),'idle');
+  assert.equal(companionBusinessState(people(s,epoch('2027-02-28T10:00')),epoch('2027-02-28T10:00')),'idle');
   // 我的会议 -> busy_work（家里正忙，角色用同一套忙碌表达）
-  const meeting=apply(s,{type:'save',entity:'events',value:{id:'meeting',title:'临时会议',start:'2026-09-13T10:00',end:'2026-09-13T11:00',notes:'',place:'',reminders:[],checklist:[]}},epoch('2026-09-13T09:00'));
-  assert.equal(companionBusinessState(people(meeting,epoch('2026-09-13T10:20')),epoch('2026-09-13T10:20')),'busy_work');
+  const meeting=apply(s,{type:'save',entity:'events',value:{id:'meeting',title:'临时会议',start:'2027-02-28T10:00',end:'2027-02-28T11:00',notes:'',place:'',reminders:[],checklist:[]}},epoch('2027-02-28T09:00'));
+  assert.equal(companionBusinessState(people(meeting,epoch('2027-02-28T10:20')),epoch('2027-02-28T10:20')),'busy_work');
 });
 
 test('0.2.15 刚下课的三分钟表达“完成”，之后回到真实业务状态',()=>{
   const s=base();
-  const end=epoch('2026-09-08T10:35');
+  const end=epoch('2027-02-23T10:35');
   assert.equal(personStatus(s,end-1,'partner').code,'BUSY_CLASS');
   assert.equal(companionBusinessState(people(s,end+60000),end+60000),'gentle');
   // 三分钟窗口过后不再庆祝，改回当下真实状态（这里下一节课还没开始）
   const later=end+10*60000;
   assert.notEqual(companionBusinessState(people(s,later),later),'gentle');
   // 当天课程结束后稳定为空闲
-  assert.equal(companionBusinessState(people(s,epoch('2026-09-08T18:00')),epoch('2026-09-08T18:00')),'idle');
+  assert.equal(companionBusinessState(people(s,epoch('2027-02-23T18:00')),epoch('2027-02-23T18:00')),'idle');
 });
 
 test('0.2.15 待处理提醒先占据显示态，超时后回到业务状态并保留计数',()=>{
   const s=base();
-  const now=epoch('2026-09-13T10:00');
+  const now=epoch('2027-02-28T10:00');
   const pending=2,statuses=people(s,now);
   const fresh=companionDisplay({people:statuses,pending,now,reminderSince:now,nudgeId:1});
   assert.equal(fresh.state,'reminder');
@@ -68,7 +68,7 @@ test('0.2.15 待处理提醒先占据显示态，超时后回到业务状态并�
 });
 
 test('0.2.15 轻提示一次性触发，之后低频重复且不会自己变频繁',()=>{
-  const timeline=new CompanionTimeline(),now=epoch('2026-09-12T10:00');
+  const timeline=new CompanionTimeline(),now=epoch('2027-02-27T10:00');
   timeline.reset(now);
   assert.deepEqual(timeline.sync(0,now),{reminderSince:0,nudgeId:0});
   const first=timeline.sync(1,now+1000);
@@ -100,15 +100,15 @@ test('0.2.16 状态颜色只有一套：语义相同必然同色，空闲不会�
 
   const s=base();
   // D 空闲、Y 空闲：两边必须同色。
-  const idleNow=epoch('2026-09-13T10:00'),bothIdle=people(s,idleNow).map(presenceStateFor);
+  const idleNow=epoch('2027-02-28T10:00'),bothIdle=people(s,idleNow).map(presenceStateFor);
   assert.deepEqual(bothIdle,['idle','idle']);
   assert.equal(new Set(bothIdle.map(companionTone)).size,1);
   // D 忙碌、Y 空闲：语义不同才允许颜色不同。
-  const busyNow=epoch('2026-09-08T10:00'),mixed=people(s,busyNow).map(presenceStateFor);
+  const busyNow=epoch('2027-02-23T10:00'),mixed=people(s,busyNow).map(presenceStateFor);
   assert.deepEqual(mixed,['idle','busy']);
   assert.notEqual(companionTone(mixed[0]),companionTone(mixed[1]));
   // 双方都忙碌时颜色一致。
-  const meeting=apply(s,{type:'save',entity:'events',value:{id:'tone-meeting',title:'临时会议',start:'2026-09-08T10:00',end:'2026-09-08T11:00',notes:'',place:'',reminders:[],checklist:[]}},epoch('2026-09-08T09:00'));
+  const meeting=apply(s,{type:'save',entity:'events',value:{id:'tone-meeting',title:'临时会议',start:'2027-02-23T10:00',end:'2027-02-23T11:00',notes:'',place:'',reminders:[],checklist:[]}},epoch('2027-02-23T09:00'));
   const bothBusy=people(meeting,busyNow).map(presenceStateFor);
   assert.deepEqual(bothBusy,['busy','busy']);
   assert.equal(new Set(bothBusy.map(companionTone)).size,1);
@@ -127,14 +127,15 @@ test('0.2.16 状态颜色只有一套：语义相同必然同色，空闲不会�
   assert.equal(companionTone(presenceStateFor({code:'TERM_NOT_STARTED'} as PersonStatus)),'calm');
   assert.equal(companionTone(presenceStateFor({code:'NO_CLASS_TODAY'} as PersonStatus)),'calm');
   // 未知 / 未录入课表不会误显示成“红色空闲”。
-  const empty=migrateLive(initial(epoch('2026-09-07T00:00')));
+  const empty=migrateLive(initial(epoch('2027-02-22T00:00')));
   for(const status of people(empty,idleNow))assert.equal(companionTone(presenceStateFor(status)),'neutral');
-  assert.equal(presenceStateFor(people(s,epoch('2026-09-08T16:10'))[1]),'upcoming');
+  assert.equal(presenceStateFor(people(s,epoch('2027-02-23T16:10'))[1]),'upcoming');
   assert.equal(companionTone('upcoming'),'upcoming');
 });
 
 // 本机时间构造：所有时间状态都按 LOCAL TIME 判断，测试也用本机时间生成时间戳。
-const local=(hour:number,minute:number,second=0,day=14)=>new Date(2026,8,day,hour,minute,second).getTime();
+// 基准 2027-03-01（周一，Alex 学期首日）：dayOffset 0 = 当日，-1 = 前一天周日，1 = 次日。
+const local=(hour:number,minute:number,second=0,dayOffset=0)=>new Date(2027,2,1+dayOffset,hour,minute,second).getTime();
 
 test('0.2.20 时间状态边界全部左闭右开：07:29/07:30 · 07:49/07:50 · 11:29/11:30/11:59/12:00 · 12:29/12:30/13:59/14:00 · 23:29/23:30/23:59/00:00',()=>{
   assert.deepEqual(companionSchedule.map(slot=>[slot.state,slot.startMinutes,slot.endMinutes]),[
@@ -173,9 +174,9 @@ test('0.2.20 时间状态边界全部左闭右开：07:29/07:30 · 07:49/07:50 �
   assert.equal(getScheduledPetState(local(23,29,59)),null);
   assert.equal(getScheduledPetState(local(23,30)),'night_sleep');
   assert.equal(getScheduledPetState(local(23,59)),'night_sleep');
-  assert.equal(getScheduledPetState(local(0,0,0,15)),'night_sleep');
-  assert.equal(getScheduledPetState(local(0,0,0,15)),'night_sleep');
-  assert.equal(getScheduledPetState(local(6,0,0,15)),'night_sleep');
+  assert.equal(getScheduledPetState(local(0,0,0,1)),'night_sleep');
+  assert.equal(getScheduledPetState(local(0,0,0,1)),'night_sleep');
+  assert.equal(getScheduledPetState(local(6,0,0,1)),'night_sleep');
   // 白天普通时段没有任何时间状态
   for(const hour of [8,10,15,18,21])assert.equal(getScheduledPetState(local(hour,0)),null);
   // 两个刚睡醒窗口都是同一个状态：早上起床后与午睡结束后。
@@ -195,7 +196,7 @@ test('0.2.20 下一个时间边界只在真正的切换点触发重算',()=>{
   assert.equal(nextPetScheduleBoundary(local(12,10)),local(12,30));
   assert.equal(nextPetScheduleBoundary(local(14,30)),local(23,30));
   // 23:40 之后的下一个边界是次日 07:30
-  assert.equal(nextPetScheduleBoundary(local(23,40)),new Date(2026,8,15,7,30).getTime());
+  assert.equal(nextPetScheduleBoundary(local(23,40)),new Date(2027,2,2,7,30).getTime());
   const clock=new PetScheduleClock();
   assert.equal(clock.read(local(11,0)),null);
   assert.equal(clock.read(local(11,20)),null);
@@ -208,7 +209,7 @@ test('0.2.20 下一个时间边界只在真正的切换点触发重算',()=>{
 
 test('0.2.20 时间状态优先级：业务忙碌与提醒压过时间状态，夜间睡觉不会被空闲顶掉',()=>{
   const s=base();
-  const night=local(23,40,0,13);
+  const night=local(23,40,0,-1);   // 周日 23:40，次日是 Alex 学期首日
   // 夜间且没有任何安排 -> night_sleep
   assert.equal(companionBusinessState(people(s,night),night),'idle');
   const live=snapshot(s,night);
@@ -218,15 +219,15 @@ test('0.2.20 时间状态优先级：业务忙碌与提醒压过时间状态，�
   // 关闭夜间自动睡觉后回到普通状态，但吃饭 / 午睡 / 刚睡醒仍然按时间生效
   const off=migrateLive({...structuredClone(s),settings:{...s.settings,pet:{...petDefaults,nightRest:false}}});
   assert.equal(snapshot(off,night).display.state,'idle');
-  assert.equal(snapshot(off,local(11,45,0,13)).display.state,'eating');
-  assert.equal(snapshot(off,local(12,45,0,13)).display.state,'nap');
-  assert.equal(snapshot(off,local(7,35,0,13)).display.state,'wake_up');
+  assert.equal(snapshot(off,local(11,45,0,-1)).display.state,'eating');
+  assert.equal(snapshot(off,local(12,45,0,-1)).display.state,'nap');
+  assert.equal(snapshot(off,local(7,35,0,-1)).display.state,'wake_up');
   // 午睡时间段的进行中会议优先
-  const napMeeting=apply(s,{type:'save',entity:'events',value:{id:'nap-meeting',title:'午后会议',start:'2026-09-14T12:40',end:'2026-09-14T13:30',notes:'',place:'',reminders:[],checklist:[]}},local(12,35));
+  const napMeeting=apply(s,{type:'save',entity:'events',value:{id:'nap-meeting',title:'午后会议',start:'2027-03-01T12:40',end:'2027-03-01T13:30',notes:'',place:'',reminders:[],checklist:[]}},local(12,35));
   assert.equal(snapshot(napMeeting,local(12,45)).display.state,'busy_work');
   assert.equal(snapshot(napMeeting,local(12,45)).display.scheduled,'nap');
   // 夜间进行中的会议优先于睡觉，且不再标记夜间休息
-  const nightMeeting=apply(s,{type:'save',entity:'events',value:{id:'night-meeting',title:'深夜会议',start:'2026-09-13T23:30',end:'2026-09-14T00:30',notes:'',place:'',reminders:[],checklist:[]}},local(23,0,0,13));
+  const nightMeeting=apply(s,{type:'save',entity:'events',value:{id:'night-meeting',title:'深夜会议',start:'2027-02-28T23:30',end:'2027-03-01T00:30',notes:'',place:'',reminders:[],checklist:[]}},local(23,0,0,-1));
   assert.equal(snapshot(nightMeeting,night).display.state,'busy_work');
   assert.equal(snapshot(nightMeeting,night).display.nightly,false);
   // 待处理提醒优先级最高：午睡时段也保持提醒姿态，但仍然记录时间状态
@@ -238,19 +239,19 @@ test('0.2.20 时间状态优先级：业务忙碌与提醒压过时间状态，�
   const settled=resolvePetState({people:people(s,night),pending:1,now:night+reminderHoldMs+1000,reminderSince:night});
   assert.equal(settled.state,'night_sleep');
   // 白天普通时段仍然是普通状态
-  assert.equal(snapshot(s,local(10,0,0,13)).display.state,'idle');
+  assert.equal(snapshot(s,local(10,0,0,-1)).display.state,'idle');
 });
 
 test('0.2.15 状态短文案保持低打扰且不暴露关系称呼',()=>{
   const s=base();
-  const labels=[personStatus(s,epoch('2026-09-08T10:00'),'partner'),personStatus(s,epoch('2026-09-07T14:30'),'partner'),personStatus(s,epoch('2026-09-08T16:10'),'partner'),personStatus(s,epoch('2026-09-08T18:00'),'partner'),personStatus(s,epoch('2026-09-13T10:00'),'partner')].map(companionRailLabel);
+  const labels=[personStatus(s,epoch('2027-02-23T10:00'),'partner'),personStatus(s,epoch('2027-02-22T14:30'),'partner'),personStatus(s,epoch('2027-02-23T16:10'),'partner'),personStatus(s,epoch('2027-02-23T18:00'),'partner'),personStatus(s,epoch('2027-02-28T10:00'),'partner')].map(companionRailLabel);
   assert.deepEqual(labels,['上课','教研','即将','已下课','无课']);
   for(const label of labels)assert.ok(label.length<=4);
   assert.equal(companionRailLabel(undefined),'未知');
 });
 
 test('0.2.15 快照默认带上显示态；偏好新增字段有默认值',()=>{
-  const s=base(),now=epoch('2026-09-08T10:00'),live=snapshot(s,now);
+  const s=base(),now=epoch('2027-02-23T10:00'),live=snapshot(s,now);
   assert.equal(live.display.state,'busy_class');
   assert.equal(live.display.asset,'busy_class');
   assert.equal(live.preferences.mode,petDefaults.mode);
@@ -367,8 +368,8 @@ test('0.2.15 素材文件损坏或格式不符时按不可用处理',()=>{
 });
 
 test('0.2.15 显示态与人物状态解耦：角色不知道业务细节',()=>{
-  const status=(code:PersonStatus['code'],extra:Partial<PersonStatus>={})=>({person:'partner',alias:'Y',conflict:false,research:false,current:[],today:[],todayCount:0,termStart:'2026-09-07',tentative:false,code,...extra} as PersonStatus);
-  const now=epoch('2026-09-08T10:00');
+  const status=(code:PersonStatus['code'],extra:Partial<PersonStatus>={})=>({person:'partner',alias:'Y',conflict:false,research:false,current:[],today:[],todayCount:0,termStart:'2027-02-22',tentative:false,code,...extra} as PersonStatus);
+  const now=epoch('2027-02-23T10:00');
   assert.equal(companionBusinessState([status('BUSY_EVENT')],now),'busy_work');
   assert.equal(companionBusinessState([status('BUSY_MEETING')],now),'busy_work');
   assert.equal(companionBusinessState([status('NO_SCHEDULE')],now),'idle');

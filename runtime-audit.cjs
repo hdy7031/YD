@@ -14,18 +14,19 @@ app.whenReady().then(async()=>{
   check('五个真实窗口完成加载',panel&&orb&&bubble&&mini&&tip);
   const run=code=>panel.webContents.executeJavaScript(code);
   await wait(500);
-  const schedule=JSON.parse(fs.readFileSync(path.join(__dirname,'ingest','2026秋季双方课表.dayhub-schedule.json'),'utf8'));
+  // v0.3 Phase 0：改用完全合成的课表 fixture（Alex / Sam），不再读取私人课表。
+  const schedule=JSON.parse(fs.readFileSync(path.join(__dirname,'tests','fixtures','synthetic-schedule.json'),'utf8'));
   await run(`window.dayhub.change({type:'importSchedule',value:${JSON.stringify(schedule)}})`);await wait(200);
   check('默认英文菜单已移除',Menu.getApplicationMenu()===null);
   check('窗口标题控制按钮齐全',await run(`['最小化','最大化或还原','收起到托盘'].every(t=>document.querySelector('[aria-label="'+t+'"]'))`));
-  check('真实数据课程40条',await run(`window.dayhub.get().then(s=>s.courses.length===40&&s.courses.filter(c=>c.activity==='research').length===4)`));
+  check('合成课表课程15条（含2条research）',await run(`window.dayhub.get().then(s=>s.courses.length===15&&s.courses.filter(c=>c.activity==='research').length===2)`));
   const clock=await run('window.dayhub.live()');await wait(1100);const next=await run('window.dayhub.live()');check('主进程时钟实时前进',next.now-clock.now>=1000);
   check('双方实时状态常驻主窗口',await run("document.querySelectorAll('.dual-status .person-status').length===2"));
   await run("[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='课表管理').click()");await wait(100);
-  check('周课表含七天和十二节次',await run("document.querySelectorAll('.schedule-day').length===7&&document.querySelectorAll('.period-label').length===12"));
+  check('周课表含七天和八节次',await run("document.querySelectorAll('.schedule-day').length===7&&document.querySelectorAll('.period-label').length===8"));
   const switchWeek=async week=>run(`(()=>{const s=document.querySelector('[aria-label="查看教学周"]'),set=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set;set.call(s,'${week}');s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-  await switchWeek(8);await wait(100);check('第8周显示前半学期课程',await run("document.querySelector('.schedule-grid').textContent.includes('研究生英语')&&!document.querySelector('.schedule-grid').textContent.includes('工程数学')"));
-  await switchWeek(9);await wait(100);check('第9周切换后半学期课程',await run("document.querySelector('.schedule-grid').textContent.includes('工程数学')&&!document.querySelector('.schedule-grid').textContent.includes('研究生英语')"));
+  await switchWeek(8);await wait(100);check('第8周显示前半学期课程',await run("document.querySelector('.schedule-grid').textContent.includes('Academic English')&&!document.querySelector('.schedule-grid').textContent.includes('Machine Learning')"));
+  await switchWeek(9);await wait(100);check('第9周切换后半学期课程',await run("document.querySelector('.schedule-grid').textContent.includes('Machine Learning')&&!document.querySelector('.schedule-grid').textContent.includes('Academic English')"));
   check('非首页无重复新建按钮',await run("![...document.querySelectorAll('button')].some(b=>['新建待办','新建会议'].includes(b.textContent.trim()))"));
   await run("Promise.all([window.dayhub.change({type:'save',entity:'tasks',value:{id:'overview-task',title:'一览待办',due:'',notes:'',done:false,checklist:[],reminders:[]}}),window.dayhub.change({type:'save',entity:'events',value:{id:'overview-event',title:'一览会议',start:'2030-01-01T10:00',end:'2030-01-01T11:00',place:'会议室',notes:'',checklist:[],reminders:[]}})])");await wait(100);
   await run("[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='事项与会议').click()");await wait(100);check('事项与会议统一双栏',await run("document.querySelectorAll('.management-section').length===2&&document.body.textContent.includes('一览待办')&&document.body.textContent.includes('一览会议')"));
@@ -106,7 +107,7 @@ app.whenReady().then(async()=>{
   check('切回专属角色桌宠并尊重“减少动态”',!((await orb.capturePage()).isEmpty())&&await orb.webContents.executeJavaScript("!document.querySelector('.companion-figure.is-breathing')&&document.querySelector('.companion-frame.is-current').getBoundingClientRect().width>60"));
   check('拖动位置落盘',await run("window.dayhub.get().then(s=>!!s.settings.orb)"));
   // Use the normal renderer subscription to assert bubble rendering and hit regions.
-  let bubbleRendered=false;for(let i=0;i<5&&!bubbleRendered;i++){bubble.webContents.send('dayhub:live',{...next,bubble:{id:'test',text:'Y开始上课啦，10:35 结束 · 高二（105）语文'}});await wait(30);bubbleRendered=await bubble.webContents.executeJavaScript("document.body.textContent.includes('Y开始上课啦')&&!!document.querySelector('.cloud-close')");}
+  let bubbleRendered=false;for(let i=0;i<5&&!bubbleRendered;i++){bubble.webContents.send('dayhub:live',{...next,bubble:{id:'test',text:'Y开始上课啦，10:35 结束 · Class 2 Literature'}});await wait(30);bubbleRendered=await bubble.webContents.executeJavaScript("document.body.textContent.includes('Y开始上课啦')&&!!document.querySelector('.cloud-close')");}
   check('漫画气泡文案及关闭入口',bubbleRendered);
   fs.writeFileSync(path.join(output,'bubble.png'),(await bubble.webContents.capturePage()).toPNG());
   // Real scheduler, with a real future deadline in the isolated database.

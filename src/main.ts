@@ -19,6 +19,7 @@ import type { DB } from './store.ts';
 import { pack, unpack } from './backup.ts';
 import { clampToArea, resolveDragStep, type DragAnchor } from './geometry.ts';
 import { configureLogging, installStreamGuards, logError, logLine } from './logging.ts';
+import { DOMAIN_VERSION, domainVersion, migrationSteps, runMigrations } from './migration.ts';
 import type { Command, SchedulePackage } from './types.ts';
 
 const APP_ID='cn.dayhub.desktop';
@@ -280,6 +281,13 @@ else{
       const dir=path.join(data,'backups');fs.mkdirSync(dir,{recursive:true});
       fs.writeFileSync(path.join(dir,`before-v0210-${Date.now()}.dayhub`),pack(store.snapshot(),attachments));
       await store.update(migrateLive);
+    }
+    // v0.3 领域迁移闸门：任何 schema / 语义迁移都先写 before-v030 备份，
+    // 失败时还原迁移前的数据库字节（见 src/migration.ts 的回滚模型说明）。
+    // Phase 0 没有注册任何迁移步骤，所以这里不写盘、不改变任何行为。
+    {
+      const run=await runMigrations(store,{target:DOMAIN_VERSION,version:domainVersion,steps:migrationSteps,backupDirectory:path.join(data,'backups'),attachments,log:message=>runtimeLog('info',message)});
+      if(run.migrated)runtimeLog('info',`领域迁移 v${run.from}→v${run.to} 完成 · ${run.steps.join('、')} · 备份 ${run.backup?.dayhub??''}`);
     }
     // Custom companion assets ship with the app; the manifest is validated once
     // here so every window reads the same resolved frames.

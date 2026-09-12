@@ -5,7 +5,7 @@ app.setAppPath(root);process.env.DAYHUB_TEST_DATA=output;require('../dist/main.c
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 app.whenReady().then(async()=>{try{
  let panel,orb;for(let i=0;i<100;i++){const ws=BrowserWindow.getAllWindows();panel=ws.find(w=>!w.webContents.getURL().includes('#')&&w.webContents.getURL().includes('index.html'));orb=ws.find(w=>w.webContents.getURL().endsWith('#orb'));if(panel&&orb&&!panel.webContents.isLoading()&&!orb.webContents.isLoading())break;await wait(100);}
- const run=code=>panel.webContents.executeJavaScript(code),schedule=JSON.parse(fs.readFileSync(path.join(__dirname,'..','ingest','2026秋季双方课表.dayhub-schedule.json'),'utf8'));
+ const run=code=>panel.webContents.executeJavaScript(code),schedule=JSON.parse(fs.readFileSync(path.join(__dirname,'..','tests','fixtures','synthetic-schedule.json'),'utf8'));
  await run(`window.dayhub.change({type:'importSchedule',value:${JSON.stringify(schedule)}})`);await wait(250);
  await run("[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='课表管理').click()");await wait(150);
  await run(`(()=>{const s=document.querySelector('[aria-label="查看教学周"]'),set=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set;set.call(s,'9');s.dispatchEvent(new Event('change',{bubbles:true}));})()`);await wait(200);

@@ -59,8 +59,8 @@ test('0.2.16 窗口回收：拖到屏幕边缘、显示器被拔掉都不会留�
 });
 
 test('0.2.16 课程颜色由稳定 hash 决定，同一课程永远同色',()=>{
-  const a={id:'course-a',title:'高二（105）语文',person:'partner'};
-  const b={id:'course-b',title:'高二（105）语文',person:'partner'};
+  const a={id:'course-a',title:'Computer Vision',person:'partner'};
+  const b={id:'course-b',title:'Computer Vision',person:'partner'};
   const first=courseTone(a);
   assert.ok(courseTones.includes(first as typeof courseTones[number]));
   assert.equal(courseTone(a),first,'同一课程重复取色必须一致');
@@ -74,7 +74,7 @@ test('0.2.16 课程颜色由稳定 hash 决定，同一课程永远同色',()=>{
   assert.ok(new Set(ids.map(id=>courseTone({id}))).size>=2,'多门课程不应该全部落到同一种颜色');
   // 没有 id 的临时对象退回 person+title，仍然稳定。
   assert.equal(courseTone({title:'临时课程',person:'me'}),courseTone({title:'临时课程',person:'me'}));
-  assert.notEqual(courseTone({id:'course-a',title:'高二（105）语文',person:'partner'}),undefined);
+  assert.notEqual(courseTone({id:'course-a',title:'Computer Vision',person:'partner'}),undefined);
 });
 
 test('0.2.16 拖动坐标决策：指针与光标一致时按指针，不一致时改用系统光标',()=>{

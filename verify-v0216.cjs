@@ -426,7 +426,7 @@ app.whenReady().then(async()=>{
     await run("document.querySelector('.create-menu summary').click()");await wait(120);
 
     /* ---------------- G. 课表稳定配色与工具栏 ---------------- */
-    const schedule=JSON.parse(fs.readFileSync(path.join(__dirname,'ingest','2026秋季双方课表.dayhub-schedule.json'),'utf8'));
+    const schedule=JSON.parse(fs.readFileSync(path.join(__dirname,'tests','fixtures','synthetic-schedule.json'),'utf8'));
     await run(`window.dayhub.change({type:'importSchedule',value:${JSON.stringify(schedule)}})`);
     await wait(500);
     await nav('课表管理');

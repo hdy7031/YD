@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import { initial, apply, epoch, occurrences, tick, validateState, DAY } from '../src/core.ts';
 import { personStatus, snapshot, migrateLive, statusLabel } from '../src/live.ts';
 import { pendingReminders, emptyScheduleText, scheduleDays, attentionSummary } from '../src/selectors.ts';
+import { v020Synthetic } from './fixtures/v020-synthetic.ts';
 const start=epoch('2026-09-07');
 function fixture(){
   let s=initial(start);
@@ -56,11 +56,18 @@ test('0.2.14 需要处理摘要只汇总待核对、已到提醒与逾期待办'
 test('0.2.8 北京时间、显式UTC、ISO秒均表示同一瞬间',()=>{
   const expected=epoch('2026-09-07T08:00');for(const value of ['2026-09-07T08:00:00','2026-09-07T08:00:00+08:00','2026-09-07T00:00:00Z'])assert.equal(epoch(value),expected);
 });
-test('0.2.8 真实0.2.7升级前备份迁移不丢业务、提醒、设置或扩展字段',()=>{
-  const old=JSON.parse(fs.readFileSync(new URL('../ingest/升级V027前完整备份.dayhub',import.meta.url),'utf8')).state;
-  validateState(old);const before=structuredClone(old);const next=migrateLive(structuredClone(old));validateState(next);
-  for(const key of ['courses','tasks','events','notices','exceptions','reminders'])assert.deepEqual(next[key as keyof typeof next],before[key]);
-  assert.equal(next.settings.liveVersion,5);assert.deepEqual(next.profiles.map(p=>p.shortAlias),['D','Y']);assert.equal(next.profiles[1].name,'Ta');
+test('合成 v0.2 旧备份升级迁移不丢业务、提醒、设置或扩展字段',()=>{
+  // 从合成的 v0.2.20 结构出发，再抹掉 0.2.16+ 才有的字段，模拟老安装首次升级。
+  const legacy=structuredClone(v020Synthetic());
+  legacy.settings.liveVersion=2 as number;
+  delete legacy.settings.trayResident;
+  for(const profile of legacy.profiles)delete profile.shortAlias;
+  const pet=legacy.settings.pet as unknown as Record<string,unknown>;
+  delete pet.nightRest;delete pet.miniPanel;delete pet.rememberPosition;
+  validateState(legacy);const before=structuredClone(legacy);const next=migrateLive(structuredClone(legacy));validateState(next);
+  for(const key of ['courses','tasks','events','notices','exceptions','reminders'] as const)assert.deepEqual((next as unknown as Record<string,unknown>)[key],(before as unknown as Record<string,unknown>)[key]);
+  assert.equal(next.settings.liveVersion,5);assert.deepEqual(next.profiles.map(p=>p.shortAlias),['D','Y']);assert.equal(next.profiles[1].name,'Sam');
+  assert.equal(next.settings.pet?.nightRest,true);assert.equal(next.settings.trayResident,true);
   assert.deepEqual(migrateLive(structuredClone(next)),next);
   const profile={...next.profiles[0],shortAlias:'自定义'};const edited=apply(next,{type:'save',entity:'profiles',value:profile},start);assert.equal(snapshot(edited,start).people[0].alias,'自定义');
 });

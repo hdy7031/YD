@@ -16,7 +16,7 @@ const appData = path.join(root, 'test-data', 'ui-shots-' + Date.now());
 for (const dir of [outRoot, shotsDir, appData]) fs.mkdirSync(dir, { recursive: true });
 process.env.DAYHUB_TEST_DATA = appData;
 
-const scheduleFile = path.join(root, 'ingest', '2026秋季双方课表.dayhub-schedule.json');
+const scheduleFile = path.join(root, 'tests', 'fixtures', 'synthetic-schedule.json');
 const sourceImage = path.join(root, 'test-data', 'v0213-ocr.png');
 let openQueue = [];
 dialog.showOpenDialog = async () => openQueue.shift() ?? { canceled: true, filePaths: [] };

@@ -15,7 +15,7 @@ app.whenReady().then(async()=>{try{
     await wait(100);
   }
   const run=code=>panel.webContents.executeJavaScript(code);
-  const schedule=JSON.parse(fs.readFileSync(path.join(root,'ingest','2026秋季双方课表.dayhub-schedule.json'),'utf8'));
+  const schedule=JSON.parse(fs.readFileSync(path.join(root,'tests','fixtures','synthetic-schedule.json'),'utf8'));
   await run(`window.dayhub.change({type:'importSchedule',value:${JSON.stringify(schedule)}})`);
   await run("window.dayhub.change({type:'settings',pet:{mode:'orb',size:'medium'}})");await wait(180);
   const live=await run('window.dayhub.live()');

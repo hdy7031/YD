@@ -27,7 +27,7 @@ app.whenReady().then(async () => {
       const image = rect ? await panel.webContents.capturePage(rect) : await panel.webContents.capturePage();
       fs.writeFileSync(path.join(output, name + '.png'), image.toPNG());
     };
-    const schedule = JSON.parse(fs.readFileSync(path.join(root, 'ingest', '2026秋季双方课表.dayhub-schedule.json'), 'utf8'));
+    const schedule = JSON.parse(fs.readFileSync(path.join(root, 'tests', 'fixtures', 'synthetic-schedule.json'), 'utf8'));
     await run(`window.dayhub.change({type:'importSchedule',value:${JSON.stringify(schedule)}})`);
     await run("window.dayhub.change({type:'settings',setup:true})");
     panel.setContentSize(1180, 820);
