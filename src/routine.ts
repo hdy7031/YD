@@ -107,6 +107,9 @@ export function routineWeekday(now: number): number {
   return new Date(routineDayStart(now) + BEIJING_OFFSET_MS).getUTCDay() || 7;
 }
 
+/** 星期取值 1—7（1 = 周一），与 days 字段同义。 */
+export const ROUTINE_WEEKDAYS: readonly number[] = [1, 2, 3, 4, 5, 6, 7];
+
 // ---------- 计算引擎 ----------
 
 function compareOccurrences(a: RoutineOccurrence, b: RoutineOccurrence): number {
@@ -184,18 +187,28 @@ export const LEGACY_DEFAULT_ROUTINE_TIMES = [
   { id: 'legacy-afternoon-wake', kind: 'wake', label: '午睡后起床', start: '14:00', end: '14:20' },
 ] as const;
 
+// 默认规则的唯一构造处：迁移、initial() 与设置页的"使用默认作息"共用它，
+// 任何地方都不允许再写一遍这组时间。
+function defaultRoutineRules(): RoutineRule[] {
+  return LEGACY_DEFAULT_ROUTINE_TIMES.map(entry => ({
+    ...entry,
+    days: [...ROUTINE_WEEKDAYS],
+    enabled: true,
+    priority: routineKindPriority[entry.kind],
+  }));
+}
+
 /** 0.2.x 默认桌宠时间表对应的作息规则（每天启用，优先级取类型默认值）。 */
 export function legacyDefaultRoutine(updatedAt: number): RoutineProfile {
-  return {
-    source: 'legacy-default',
-    updatedAt,
-    rules: LEGACY_DEFAULT_ROUTINE_TIMES.map(entry => ({
-      ...entry,
-      days: [1, 2, 3, 4, 5, 6, 7],
-      enabled: true,
-      priority: routineKindPriority[entry.kind],
-    })),
-  };
+  return { source: 'legacy-default', updatedAt, rules: defaultRoutineRules() };
+}
+
+/**
+ * 「使用默认作息」模板：内容与内置默认值相同，但这是用户在设置页主动选择的，
+ * 因此 source = 'user'（不再提示"旧版本默认作息尚未确认"）。
+ */
+export function createDefaultRoutine(updatedAt: number): RoutineProfile {
+  return { source: 'user', updatedAt, rules: defaultRoutineRules() };
 }
 
 // ---------- 校验 ----------

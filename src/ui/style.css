@@ -2081,3 +2081,42 @@ input:hover, select:hover, textarea:hover { border-color: #C3CDC8; }
 .course-block.amber { background: linear-gradient(145deg, #F1EBDD, #E7DFCB); }
 .course-block strong { color: #374034; }
 .course-block small { color: #5F6959; }
+
+/* V0.3 Phase 2C — 日常节奏：每个档案自己的 Routine 编辑器（沿用既有卡片 / 变量语言） */
+.routine-settings { display: grid; gap: 10px; }
+.routine-settings .routine-people { width: fit-content; margin: 0 0 2px; }
+.routine-legacy-note { margin: 0; }
+.routine-list { display: grid; gap: 7px; }
+.routine-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 13px;
+  border: 1px solid var(--yd-line); border-radius: 12px; background: var(--yd-surface);
+}
+.routine-row.is-off { opacity: .58; }
+.routine-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 116px; }
+.routine-row-main strong { color: var(--yd-ink); font-size: 13px; font-weight: 600; }
+.routine-row-main small { color: var(--yd-muted); font-size: 11px; }
+.routine-row-time { flex: 1; min-width: 136px; color: var(--yd-ink); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.routine-row-days { min-width: 66px; color: var(--yd-muted); font-size: 11.5px; text-align: right; }
+.routine-row-toggle { display: inline-flex; align-items: center; }
+.routine-row-toggle input { min-width: 0; }
+.routine-row-actions { display: flex; align-items: center; gap: 2px; }
+.routine-actions { margin-top: 2px; }
+.routine-confirm {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 13px;
+  border: 1px solid var(--yd-brand-line); border-radius: 12px; background: var(--yd-brand-soft);
+  font-size: 12.5px; color: var(--yd-ink);
+}
+.routine-days-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.routine-days-picker button {
+  width: 34px; min-height: 30px; padding: 0;
+  border: 1px solid var(--yd-line); border-radius: 9px; background: #FFFFFF;
+  color: var(--yd-muted); font-size: 12px;
+}
+.routine-days-picker button.active { border-color: var(--yd-brand-line); background: var(--yd-brand-soft); color: var(--yd-brand-deep); }
+.routine-days-picker button:disabled { opacity: .55; cursor: not-allowed; }
+.routine-editor .full { grid-column: 1 / -1; }
+.routine-editor .field.full > span { display: block; }
+.routine-settings .empty-state { padding: 0; }
+.routine-settings .empty-state-actions { padding-left: 0; }

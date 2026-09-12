@@ -1,11 +1,20 @@
 import React,{useState,useEffect,useRef} from 'react';
 import type { LiveSnapshot,PersonStatus,PetPreferences,PresenceState } from '../live.ts';
-import type { PersonId } from '../types.ts';
+import type { PersonId, Profile, State } from '../types.ts';
 import {clockText,petDefaults,presenceMeta,presenceStateFor,statusLabel} from '../live.ts';
 import {companionTone} from '../companion-colors.ts';
 import {companionFrame,companionRail} from '../companion-layout.ts';
 import {petRoutineSummary} from '../companion-display.ts';
-import type {RoutineProfile} from '../routine.ts';
+import {createDefaultRoutine,routineKindPriority,type RoutineRule} from '../routine.ts';
+import {EmptyState} from './views.ts';
+import {getProfileById,resolvePetSubject} from '../people.ts';
+import {id} from '../core.ts';
+import {
+  routineDaysText,routineDefaultLabelFor,routineDraft,routineDraftError,routineForRules,routineIsEmpty,
+  routineKindHint,routineKindHasPetState,routineKindLabels,routineNeedsConfirmation,routinePersonOptions,
+  routineRuleFromDraft,routineRulesToggled,routineRulesWith,routineRulesWithout,routineWeekdayLabels,
+  routineWindowText,type RoutineRuleDraft,
+} from './routine-settings.ts';
 import {CompanionRail,CustomCompanionArt,useCompanionAssets} from './companion-custom.ts';
 import type {CompanionMenuItem} from '../companion-menu.ts';
 import {BrandGlyph} from './brand.ts';
@@ -187,7 +196,109 @@ const motionOptions:['standard'|'reduced',string,string][]=[
   ['reduced','减少','几乎静止，只在状态变化时淡入'],
 ];
 
-export function PetSettings({live,settings,routine}:{live:LiveSnapshot|null;settings?:{launch:boolean;trayResident?:boolean};routine?:RoutineProfile}){
+const errorText=(e:unknown)=>e instanceof Error?e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/,''):String(e);
+
+// 日常节奏（每个档案自己的 Routine）。所有写入都走 Command → core apply → validate → Store：
+// 这里只准备"下一份规则数组"，绝不直接改 State。
+function RoutineSettings({state,busy,onError}:{state:State;busy:boolean;onError:(message:string)=>void}){
+  const options=routinePersonOptions(state.profiles);
+  const subject=resolvePetSubject(state);
+  const [selected,setSelected]=useState<PersonId|undefined>(undefined);
+  const person=options.some(option=>option.id===selected)?selected!:subject.id;
+  const profile:Profile|undefined=getProfileById(state,person)??state.profiles[0];
+  const routine=profile?.routine;
+  const rules=routine?.rules??[];
+  const [draft,setDraft]=useState<RoutineRuleDraft|null>(null);
+  const [draftError,setDraftError]=useState('');
+  const [pending,setPending]=useState<{kind:'template'}|{kind:'clear'}|{kind:'delete';id:string}|null>(null);
+  const [working,setWorking]=useState(false);
+  if(!profile)return null;
+  const locked=busy||working;
+
+  const commit=(next:RoutineRule[],done?:()=>void)=>{
+    setWorking(true);
+    return api.change({type:'save',entity:'profiles',value:{...profile,routine:routineForRules(next,Date.now())}})
+      .then(()=>{onError('');done?.();})
+      .catch(e=>onError(errorText(e)))
+      .finally(()=>setWorking(false));
+  };
+  const open=(rule?:RoutineRule)=>{setDraftError('');setPending(null);setDraft(routineDraft(rule));};
+  const updateDraft=(patch:Partial<RoutineRuleDraft>)=>setDraft(old=>old?{...old,...patch}:old);
+  const toggleDay=(day:number)=>setDraft(old=>old?{...old,days:old.days.includes(day)?old.days.filter(value=>value!==day):[...old.days,day].sort((a,b)=>a-b)}:old);
+  const changeKind=(kind:RoutineRuleDraft['kind'])=>setDraft(old=>old?{...old,kind,label:old.label===routineDefaultLabelFor(old.kind)?routineDefaultLabelFor(kind):old.label,priority:routineKindPriority[kind]}:old);
+  const saveDraft=()=>{
+    if(!draft)return;
+    const problem=routineDraftError(draft);
+    if(problem){setDraftError(problem);return;}
+    setDraftError('');
+    void commit(routineRulesWith(rules,routineRuleFromDraft(draft,id())),()=>setDraft(null));
+  };
+  const applyPending=()=>{
+    if(!pending)return;
+    const next=pending.kind==='template'?createDefaultRoutine(Date.now()).rules
+      :pending.kind==='clear'?[]
+      :routineRulesWithout(rules,pending.id);
+    void commit(next,()=>setPending(null));
+  };
+
+  const field=(label:string,child:any)=>h('label',{className:'field'},h('span',null,label),child);
+  const ruleRow=(rule:RoutineRule)=>h('div',{key:rule.id,className:`routine-row${rule.enabled?'':' is-off'}`,'data-rule-id':rule.id},
+    h('div',{className:'routine-row-main'},h('strong',null,rule.label),h('small',null,routineKindLabels[rule.kind])),
+    h('span',{className:'routine-row-time'},routineWindowText(rule)),
+    h('span',{className:'routine-row-days'},routineDaysText(rule.days)),
+    h('label',{className:'routine-row-toggle',title:rule.enabled?'停用（保留记录）':'启用'},
+      h('input',{type:'checkbox',checked:rule.enabled,disabled:locked,'aria-label':`${rule.enabled?'停用':'启用'}${rule.label}`,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>void commit(routineRulesToggled(rules,rule.id,e.target.checked))})),
+    h('div',{className:'routine-row-actions'},
+      h('button',{type:'button',className:'text-button','data-routine-action':'edit',disabled:locked,onClick:()=>open(rule)},'编辑'),
+      h('button',{type:'button',className:'text-button','data-routine-action':'delete',disabled:locked,onClick:()=>setPending({kind:'delete',id:rule.id})},'删除')));
+
+  const actionButton=(action:string,label:string,className:string,onClick:()=>void)=>h('button',{key:action,type:'button',className,'data-routine-action':action,disabled:locked,onClick},label);
+  const actions=h('div',{className:'actions routine-actions'},
+    actionButton('add','添加一条','secondary',()=>open()),
+    actionButton('template','使用默认作息','ghost',()=>setPending({kind:'template'})),
+    actionButton('clear','清空作息','ghost',()=>setPending({kind:'clear'})));
+
+  const confirmRow=!pending?null:h('div',{className:'routine-confirm',role:'alertdialog','aria-label':'确认作息修改'},
+    h('span',null,pending.kind==='template'?'用默认作息覆盖当前规则？':pending.kind==='clear'?'清空后这套作息不再影响桌宠，之后可以重新添加。':'删除这段日常节奏？'),
+    h('div',{className:'actions'},
+      h('button',{type:'button',className:pending.kind==='template'?'secondary':'danger','data-routine-action':`confirm-${pending.kind}`,disabled:locked,onClick:applyPending},
+        pending.kind==='template'?'使用默认作息':pending.kind==='clear'?'确认清空':'确认删除'),
+      h('button',{type:'button',className:'ghost','data-routine-action':'cancel-pending',disabled:locked,onClick:()=>setPending(null)},'取消')));
+
+  const editor=!draft?null:h('div',{className:'modal-backdrop'},h('section',{className:'modal small routine-editor',role:'dialog','aria-modal':true,'aria-label':'编辑日常节奏'},
+    h('div',{className:'modal-head'},h('h2',null,draft.id?'编辑日常节奏':'添加日常节奏')),
+    h('div',{className:'form-grid'},
+      field('名称',h('input',{type:'text',value:draft.label,maxLength:40,'aria-label':'作息名称',onChange:(e:React.ChangeEvent<HTMLInputElement>)=>updateDraft({label:e.target.value})})),
+      field('类型',h('select',{value:draft.kind,'aria-label':'作息类型',onChange:(e:React.ChangeEvent<HTMLSelectElement>)=>changeKind(e.target.value as RoutineRuleDraft['kind'])},
+        ...(Object.keys(routineKindLabels) as RoutineRuleDraft['kind'][]).map(kind=>h('option',{key:kind,value:kind},routineKindLabels[kind])))),
+      field('开始（北京时间）',h('input',{type:'time',value:draft.start,'aria-label':'开始时间',onChange:(e:React.ChangeEvent<HTMLInputElement>)=>updateDraft({start:e.target.value})})),
+      field('结束（北京时间）',h('input',{type:'time',value:draft.end,'aria-label':'结束时间',onChange:(e:React.ChangeEvent<HTMLInputElement>)=>updateDraft({end:e.target.value})})),
+      h('div',{className:'field full'},h('span',null,'适用星期'),
+        h('div',{className:'routine-days-picker',role:'group','aria-label':'适用星期'},...routineWeekdayLabels.map((label,index)=>h('button',{key:label,type:'button',className:draft.days.includes(index+1)?'active':'','aria-pressed':draft.days.includes(index+1),'data-routine-day':index+1,disabled:locked,onClick:()=>toggleDay(index+1)},label)))),
+      h('div',{className:'field full'},h('label',{className:'check-row'},h('input',{type:'checkbox',checked:draft.enabled,'aria-label':'启用这条作息',disabled:locked,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>updateDraft({enabled:e.target.checked})}),'启用（停用会保留这条记录）')),
+      draft.end<=draft.start?h('p',{className:'muted full'},`跨过午夜：${draft.start} → 次日 ${draft.end}`):null,
+      !routineKindHasPetState(draft.kind)?h('p',{className:'muted full'},`${routineKindLabels[draft.kind]}：${routineKindHint}`):null),
+    draftError?h('p',{className:'error',role:'alert'},draftError):null,
+    h('div',{className:'modal-foot'},
+      h('button',{type:'button',className:'ghost','data-routine-action':'cancel-edit',disabled:locked,onClick:()=>setDraft(null)},'取消'),
+      h('button',{type:'button',className:'primary','data-routine-action':'save-rule',disabled:locked,onClick:saveDraft},'保存'))));
+
+  return h('div',{className:'routine-settings'},
+    options.length>1?h('div',{className:'segmented setting-segmented routine-people',role:'radiogroup','aria-label':'选择要编辑的人'},
+      ...options.map(option=>h('button',{key:option.id,type:'button',role:'radio','aria-checked':person===option.id,className:person===option.id?'active':'','data-routine-person':option.id,disabled:locked,onClick:()=>setSelected(option.id)},option.label))):null,
+    routineNeedsConfirmation(routine)?h('p',{className:'muted setting-note routine-legacy-note'},'这是根据旧版本桌宠时间保留的默认作息，可按你的实际情况调整。'):null,
+    routineIsEmpty(routine)
+      ? h(React.Fragment,null,
+          h(EmptyState,{compact:true,title:'还没有设置日常节奏',description:'设置后，YD 可以让桌宠的吃饭、午休和睡眠状态与你的实际作息一致。',actions:[
+            h('button',{key:'template',type:'button',className:'secondary','data-routine-action':'template',disabled:locked,onClick:()=>setPending({kind:'template'})},'使用默认作息'),
+            h('button',{key:'add',type:'button',className:'primary','data-routine-action':'add',disabled:locked,onClick:()=>open()},'添加第一条'),
+          ]}),
+          confirmRow)
+      : h(React.Fragment,null,h('div',{className:'routine-list'},...rules.map(ruleRow)),confirmRow,actions),
+    editor);
+}
+
+export function PetSettings({live,settings,state}:{live:LiveSnapshot|null;settings?:{launch:boolean;trayResident?:boolean};state?:State}){
   const [error,setError]=useState('');const [busy,setBusy]=useState(false);
   const assets=useCompanionAssets();
   const p=live?.preferences??petDefaults;
@@ -198,7 +309,8 @@ export function PetSettings({live,settings,routine}:{live:LiveSnapshot|null;sett
   const check=(label:string,checked:boolean,onChange:(value:boolean)=>void,disabled=false)=>h('label',{className:'check-row'},h('input',{type:'checkbox',checked,disabled:disabled||busy,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>onChange(e.target.checked)}),label);
   const block=(title:string,children:React.ReactNode)=>h('div',{className:'setting-block'},h('h3',null,title),children);
   const motionMode=p.reduceMotion?'reduced':'standard';
-  const schedule=petRoutineSummary(routine);
+  // 这里说的是"桌宠主体"的作息：Together 是同行者，Solo 是本人。
+  const schedule=petRoutineSummary(state?resolvePetSubject(state).routine:undefined);
   const sizeChoices=h('div',{className:'segmented setting-segmented'},...(['small','medium','large'] as const).map((value,index)=>h('button',{key:value,type:'button',className:p.size===value?'active':'',disabled:busy,onClick:()=>save({size:value})},['小','中','大'][index])));
   return h('section',{className:'pet-settings'},h('h2',null,'桌面陪伴'),
     block('外观',h(React.Fragment,null,
@@ -224,6 +336,7 @@ export function PetSettings({live,settings,routine}:{live:LiveSnapshot|null;sett
           ?`${schedule.sleep} 之间，只要没有进行中的安排、也没有到时间的提醒，桌宠就会安静地睡觉${schedule.states?`；${schedule.states}`:''}。`
           :'已关闭夜间自动睡觉：夜间也按平时的状态显示，其它时间状态仍按作息生效。'),
       h('p',{className:'muted setting-note'},'时间状态按作息规则与北京时间判断，不需要联网校准。'))),
+    state?block('日常节奏',h(RoutineSettings,{state,busy,onError:setError})):null,
     block('窗口行为',h(React.Fragment,null,
       check('单击桌宠显示双方状态',p.miniPanel,value=>save({miniPanel:value})),
       check('记住桌宠位置',p.rememberPosition,value=>save({rememberPosition:value})),
