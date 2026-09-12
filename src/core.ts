@@ -1,6 +1,8 @@
 import { migrateInbox, receive, confirmDraft } from './inbox.ts';
 import { validDraft } from './inbox-types.ts';
-import type { State, Profile, Course, Task, Event, Notice, Exception, Occurrence, Reminder, Command, Entity, SchedulePackage } from './types.ts';
+import { DOMAIN_VERSION, stateDomainVersion } from './domain.ts';
+import { isProfileRole, roleCounts } from './people.ts';
+import type { State, Profile, PersonId, ProfileRole, Course, Task, Event, Notice, Exception, Occurrence, Reminder, Command, Entity, SchedulePackage } from './types.ts';
 export const DAY = 86400000;
 export function showPanelOnLaunch(openedAtLogin:boolean, setupComplete:boolean){return !openedAtLogin||!setupComplete;}
 export const id = () => globalThis.crypto.randomUUID();
@@ -10,8 +12,9 @@ export function addDays(date: string, days: number): string { return dateOf(epoc
 export function weekday(date: string): number { return new Date(date + 'T12:00:00Z').getUTCDay() || 7; }
 export function initial(now = Date.now()): State {
   const date = dateOf(now), monday = addDays(date, 1 - weekday(date));
-  const profile = (pid: 'me' | 'partner', name: string): Profile => ({ id: pid, name, startDate: monday, weeks: 20, periods: [{start:'08:00',end:'08:45'},{start:'08:55',end:'09:40'},{start:'10:00',end:'10:45'},{start:'10:55',end:'11:40'},{start:'14:00',end:'14:45'},{start:'14:55',end:'15:40'},{start:'16:00',end:'16:45'},{start:'16:55',end:'17:40'}], updatedAt: now });
-  return { version: 1, profiles: [profile('me','我'), profile('partner','Ta')], courses: [], exceptions: [], events: [], tasks: [], notices: [], reminders: [], settings: { launch: false, setup: false }, lastTick: now };
+  // 默认首次启动仍然是当前的双人体验（本人 + 同行者）；由 Onboarding 决定几个人的事情留到后续阶段。
+  const profile = (pid: PersonId, role: ProfileRole, name: string): Profile => ({ id: pid, role, name, startDate: monday, weeks: 20, periods: [{start:'08:00',end:'08:45'},{start:'08:55',end:'09:40'},{start:'10:00',end:'10:45'},{start:'10:55',end:'11:40'},{start:'14:00',end:'14:45'},{start:'14:55',end:'15:40'},{start:'16:00',end:'16:45'},{start:'16:55',end:'17:40'}], updatedAt: now });
+  return { version: 1, profiles: [profile('me','self','我'), profile('partner','companion','Ta')], courses: [], exceptions: [], events: [], tasks: [], notices: [], reminders: [], settings: { domainVersion: DOMAIN_VERSION, launch: false, setup: false }, lastTick: now };
 }
 function assert(v: unknown, message: string): asserts v { if (!v) throw new Error(message); }
 function text(v: unknown, max = 20000): v is string { return typeof v === 'string' && v.length <= max; }
@@ -30,7 +33,8 @@ export function validate(entity: Entity, v: any, state: State) {
   assert(v.createdAt===undefined||Number.isFinite(v.createdAt),'创建时间无效');
   assert(v.sourceInboxItemId===undefined||state.notices.some(n=>n.id===v.sourceInboxItemId),'来源通知不存在');
   if(entity==='profiles') {
-    assert(['me','partner'].includes(v.id) && text(v.name,40) && v.name.trim(), '姓名无效');
+    assert(text(v.name,40) && v.name.trim(), '姓名无效');
+    assert(v.role===undefined || isProfileRole(v.role), '个人角色无效');
     assert(v.shortAlias===undefined || (text(v.shortAlias,8)&&v.shortAlias.trim()), '短代号应为 1—8 字');
     assert(date(v.startDate) && weekday(v.startDate)===1, '学期起始日必须是第一教学周的周一');
     assert(Number.isInteger(v.weeks) && v.weeks>=1 && v.weeks<=60, '教学周数应为 1—60');
@@ -152,7 +156,9 @@ export function apply(state: State, cmd: Command, now=Date.now()): State {
     assert(Array.isArray(value.profiles)&&value.profiles.length>=1&&value.profiles.length<=2,'课表文件应包含一至两个人的学期设置');
     assert(Array.isArray(value.courses)&&value.courses.length<=500,'课表文件课程数量无效');
     const people=new Set(value.profiles.map(p=>p.id));
-    assert(people.size===value.profiles.length&&[...people].every(p=>p==='me'||p==='partner'),'课表人员重复或无效');
+    // 人员必须是工作区里已存在的档案（id 是身份，不再限定 me / partner）：
+    // 这样既支持自定义 id，也避免把未知 id 写进数组之外的位置。
+    assert(people.size===value.profiles.length&&[...people].every(p=>s.profiles.some(profile=>profile.id===p)),'课表人员重复或无效');
     const removed=new Set(s.courses.filter(c=>people.has(c.person)).map(c=>c.id));
     s.courses=s.courses.filter(c=>!people.has(c.person));
     s.exceptions=s.exceptions.filter(e=>!removed.has(e.courseId));
@@ -168,10 +174,18 @@ export function validateState(value: unknown): State {
   const s=value as State; assert(s && s.version===1,'备份版本不支持');
   for(const key of ['profiles','courses','events','tasks','notices','exceptions','reminders'] as const)assert(Array.isArray(s[key])&&s[key].length<=50000,'备份记录无效或过大');
   migrateInbox(s);
-  assert(s.profiles.length===2 && new Set(s.profiles.map(p=>p.id)).size===2,'备份缺少双方作息');
+  // v0.3 Phase 1A：工作区允许 1—2 个个人档案，但必须恰好一个本人、最多一个同行者。
+  assert(s.profiles.length>=1 && s.profiles.length<=2,'工作区需要 1—2 个个人档案');
+  assert(new Set(s.profiles.map(p=>p.id)).size===s.profiles.length,'记录编号重复');
+  const roles=roleCounts(s.profiles);
+  assert(roles.self===1,'工作区必须且只能有一个本人档案');
+  assert(roles.companion<=1,'同行者最多只能有一个');
+  // v2 数据必须显式带 role；v1 旧备份仍按 角色→历史 id→数组位置 兼容解析。
+  if(stateDomainVersion(s)>=2)for(const p of s.profiles)assert(isProfileRole(p.role),'个人档案缺少角色，请重新迁移或从备份恢复');
   for(const key of ['profiles','courses','events','tasks','notices','exceptions'] as Entity[]){assert(new Set(s[key].map(v=>v.id)).size===s[key].length,'记录编号重复');for(const v of s[key]){validate(key,v,s);assert(Number.isFinite(v.updatedAt),'更新时间无效');}}
   for(const item of [...s.courses,...s.tasks,...s.events])assert(!item.sourceId||s.notices.some(n=>n.id===item.sourceId),'备份来源关联缺失');
   assert(s.settings&&typeof s.settings.launch==='boolean'&&typeof s.settings.setup==='boolean'&&Number.isFinite(s.lastTick),'备份设置无效');
+  if(s.settings.domainVersion!==undefined)assert(Number.isInteger(s.settings.domainVersion)&&s.settings.domainVersion>=1,'领域版本无效');
   if(s.settings.pet){const p=s.settings.pet;assert(['custom','pet','orb'].includes(p.mode)&&['small','medium','large'].includes(p.size)&&typeof p.animate==='boolean'&&(p.reduceMotion===undefined||typeof p.reduceMotion==='boolean')&&typeof p.bubbles==='boolean'&&Number.isInteger(p.duration)&&p.duration>=3&&p.duration<=30&&Number.isFinite(p.pausedUntil)&&p.pausedUntil>=0&&(p.miniPanel===undefined||typeof p.miniPanel==='boolean')&&(p.rememberPosition===undefined||typeof p.rememberPosition==='boolean'),'桌宠设置无效');}
   if(s.settings.trayResident!==undefined)assert(typeof s.settings.trayResident==='boolean','托盘设置无效');
   if(s.bubbleHistory)assert(Array.isArray(s.bubbleHistory)&&s.bubbleHistory.length<=50000&&s.bubbleHistory.every(x=>text(x.id,20000)&&Number.isFinite(x.at)),'气泡记录无效');

@@ -60,5 +60,9 @@ export function v020Synthetic(now = v020Now): State {
   s.bubbleHistory = [];
   s.inboxVersion = 1;
   s.lastTick = now;
+  // 这份 fixture 固定表示“v0.2.20 写到磁盘上的 v1 数据”：档案没有 role、
+  // 设置里没有 domainVersion。迁移测试才能证明 v1 → v2 的身份升级真的发生过。
+  for(const profile of s.profiles) delete profile.role;
+  delete s.settings.domainVersion;
   return validateState(s);
 }

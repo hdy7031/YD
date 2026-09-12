@@ -1,7 +1,8 @@
 import { pendingReminders } from './selectors.ts';
 import { occurrences, epoch, dateOf, DAY } from './core.ts';
 import { companionDisplay, type CompanionDisplay, type ScheduledPetState } from './companion-display.ts';
-import type { State, PersonId, Occurrence } from './types.ts';
+import { defaultAliasFor, personAlias } from './people.ts';
+import type { State, PersonId, ProfileRole, Occurrence } from './types.ts';
 
 export interface PetPreferences {
   // 0.2.20 起只有两个显示模式：专属角色桌宠（唯一默认形象）与玻璃悬浮球。
@@ -23,7 +24,8 @@ export interface PetPreferences {
 }
 export const petDefaults:PetPreferences={mode:'custom',size:'medium',animate:true,reduceMotion:false,bubbles:true,duration:8,pausedUntil:0,miniPanel:true,rememberPosition:true,nightRest:true};
 export type StatusCode="FREE"|"BUSY_CLASS"|"BUSY_EVENT"|"BUSY_MEETING"|"UPCOMING"|"UNKNOWN"|"TERM_NOT_STARTED"|"NO_SCHEDULE"|"TERM_ENDED"|"DAY_FINISHED"|"NO_CLASS_TODAY";
-export const profileAlias=(p:{id:PersonId;shortAlias?:string})=>p.shortAlias??(p.id==='me'?'D':'Y');
+// 状态短代号的默认值（D / Y）由 people.ts 的身份解析决定：显式 shortAlias 优先。
+export const profileAlias=(p:{id:PersonId;role?:ProfileRole;shortAlias?:string},index=0)=>p.shortAlias??defaultAliasFor(p,index);
 export interface PersonStatus {
   code:StatusCode;
   alias:string;
@@ -78,7 +80,10 @@ export interface LiveSnapshot { now:number; source:string; people:PersonStatus[]
 export const clockText=(n:number)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(n);
 export function activity(s:State,o:Occurrence){return o.kind==='event'?'会议/活动':s.courses.find(c=>c.id===o.courseId)?.activity==='research'?'教研':'上课';}
 export function personStatus(s:State,now:number,person:PersonId):PersonStatus {
-  const p=s.profiles.find(p=>p.id===person)!;
+  const index=s.profiles.findIndex(p=>p.id===person),p=index<0?undefined:s.profiles[index];
+  // 单人工作区（Phase 1A 起合法）没有同行者档案：返回“状态暂不可用”而不是抛错。
+  // 双人工作区一定命中档案，行为与之前完全一致。
+  if(!p)return {person,code:'UNKNOWN',alias:defaultAliasFor({id:person}),conflict:false,research:false,current:[],today:[],todayCount:0,termStart:'',tentative:false};
   const all=occurrences(s,-Infinity,Infinity,person),current=all.filter(o=>o.start<=now&&now<o.end),next=all.find(o=>o.start>now);
   const currentCourse=current.find(o=>o.kind==='course'),currentEvent=current.find(o=>o.kind==='event');
   const nextCourse=all.find(o=>o.kind==='course'&&o.start>now);
@@ -90,7 +95,7 @@ export function personStatus(s:State,now:number,person:PersonId):PersonStatus {
   const code:StatusCode=currentCourse?'BUSY_CLASS':currentEvent?'BUSY_EVENT':!hasSchedule?'NO_SCHEDULE':now<termStart?'TERM_NOT_STARTED':now>=termEnd&&!nextCourse?'TERM_ENDED':todayCourses.length&&todayCourses.every(o=>o.end<=now)?'DAY_FINISHED':!todayCourses.length?'NO_CLASS_TODAY':nextCourse&&nextCourse.start-now<=30*60000?'UPCOMING':'FREE';
   const research=!!currentCourse&&activity(s,currentCourse)==='教研';
   const boundaries=[...current.map(o=>o.end),...(next?[next.start]:[]),termStart,termEnd].filter(n=>n>now);
-  return {person,code,alias:profileAlias(p),conflict:current.length>1,research,current,currentCourse,currentEvent,next,nextCourse,today,todayCount:todayCourses.length,nextChange:boundaries.length?Math.min(...boundaries):undefined,termStart:p.startDate,tentative:!!p.tentative};
+  return {person,code,alias:profileAlias(p,index),conflict:current.length>1,research,current,currentCourse,currentEvent,next,nextCourse,today,todayCount:todayCourses.length,nextChange:boundaries.length?Math.min(...boundaries):undefined,termStart:p.startDate,tentative:!!p.tentative};
 }
 export function snapshot(s:State,now:number,display?:{reminderSince?:number;nudgeId?:number;scheduled?:ScheduledPetState|null}):LiveSnapshot{
   const people=[personStatus(s,now,'me'),personStatus(s,now,'partner')],pending=pendingReminders(s).length;
@@ -103,12 +108,12 @@ export function bubbleEvents(s:State,from:number,to:number):BubbleEvent[]{
   const groups=new Map<number,BubbleEvent[]>();
   const push=(e:BubbleEvent)=>{if(e.at>from&&e.at<=to)groups.set(e.at,[...(groups.get(e.at)||[]),e]);};
   for(const o of occurrences(s,from,to+5*60000+1)){
-    const who=profileAlias(s.profiles.find(p=>p.id===o.person)!),kind=activity(s,o);
+    const who=personAlias(s,o.person),kind=activity(s,o);
     push({id:`${o.id}:start:${o.start}`,at:o.start,text:`${who}开始${kind}啦，${o.endUnknown?'结束时间未填写':clockText(o.end)+' 结束'} · ${o.title}`});
     // Include end == from/to and independently look up completed events below.
     if(o.person==='partner')push({id:`${o.id}:soon:${o.start}`,at:o.start-5*60000,text:`还有 5 分钟，${who}要${kind}啦 · ${clockText(o.start)} ${o.title}`});
   }
-  for(const o of occurrences(s,from-1,to).filter(o=>!o.endUnknown))push({id:`${o.id}:end:${o.end}`,at:o.end,text:`${profileAlias(s.profiles.find(p=>p.id===o.person)!)}的${activity(s,o)}结束啦 · ${clockText(o.end)} ${o.title}`});
+  for(const o of occurrences(s,from-1,to).filter(o=>!o.endUnknown))push({id:`${o.id}:end:${o.end}`,at:o.end,text:`${personAlias(s,o.person)}的${activity(s,o)}结束啦 · ${clockText(o.end)} ${o.title}`});
   for(const r of s.reminders)if(r.status==='scheduled'||r.status==='due')push({id:`reminder:${r.id}`,at:r.due,text:`到提醒时间啦 · ${clockText(r.due)} ${r.title}`});
   return [...groups.entries()].sort(([a],[b])=>a-b).map(([at,events])=>({at,id:events.map(e=>e.id).sort().join('|'),text:events.map(e=>e.text).join('\n')}));
 }
@@ -128,9 +133,9 @@ export function migrateLive(s:State):State {
   s.settings.pet.nightRest=s.settings.pet.nightRest!==false;
   if(s.settings.trayResident===undefined)s.settings.trayResident=true;
   {const p=s.profiles.find(p=>p.id==='partner');if(p&&p.tentative===undefined&&p.startDate==='2026-09-07'&&p.weeks===20)p.tentative=true;}
-  for(const p of s.profiles){
+  s.profiles.forEach((p,index)=>{
     if(p.id==='partner'&&['她','女朋友','伴侣'].includes(p.name.trim()))p.name='Ta';
-    p.shortAlias??=profileAlias(p);
-  }
+    p.shortAlias??=profileAlias(p,index);
+  });
   s.settings.liveVersion=5;s.bubbleHistory??=[];return s;
 }

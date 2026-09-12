@@ -1,8 +1,14 @@
 import type { SourceMetadata, ParsedDraft, ParseStatus, DraftType, InboundPayload } from './inbox-types.ts';
-export type PersonId = 'me' | 'partner';
+// 身份标识不再限制为固定的两个人：历史 id 'me' / 'partner' 仍然合法，
+// 但新的档案可以是任意合法编号（见 src/people.ts 的解析顺序）。
+export type PersonId = string;
+// 工作区内的身份角色：本人 / 同行者。v0.3 只解决 YD Solo / Together 的基础。
+export type ProfileRole = 'self' | 'companion';
 export interface ChecklistItem { id: string; text: string; done: boolean }
 export interface AcademicCalendar { startDate: string; weeks: number }
-export interface Profile extends AcademicCalendar { shortAlias?: string; tentative?: boolean; id: PersonId; name: string; startDate: string; weeks: number; periods: { start: string; end: string }[]; updatedAt: number }
+// role 在 v1 旧数据里不存在（由 src/people.ts 按 角色→历史 id→位置 解析）；
+// 迁移到 v2 之后必须显式存在。
+export interface Profile extends AcademicCalendar { shortAlias?: string; tentative?: boolean; role?: ProfileRole; id: PersonId; name: string; startDate: string; weeks: number; periods: { start: string; end: string }[]; updatedAt: number }
 export interface Course { createdAt?: number; activity?: 'teaching'|'research'; id: string; person: PersonId; title: string; place: string; notes: string; weekday: number; first: number; last: number; weeks: number[]; reminders: number[]; checklist: ChecklistItem[]; sourceId?: string; updatedAt: number }
 export interface Exception { createdAt?: number; sourceInboxItemId?: string; id: string; courseId: string; date: string; cancelled: boolean; start?: string; end?: string; place?: string; updatedAt: number }
 export interface Event { createdAt?: number; sourceInboxItemId?: string; id: string; title: string; start: string; end: string|null; place: string; notes: string; reminders: number[]; checklist: ChecklistItem[]; sourceId?: string; updatedAt: number }
@@ -10,7 +16,7 @@ export interface Task { createdAt?: number; sourceInboxItemId?: string; id: stri
 export interface Notice extends SourceMetadata { ocrText?:string; createdAt?: number; parseStatus?: ParseStatus; detectedType?: DraftType; parsedData?: ParsedDraft; confidence?: number; targetEntityType?: "tasks"|"events"|"exceptions"|"notice"; targetEntityId?: string; processedAt?: number; parseError?: string; id: string; title: string; text: string; originalText?: string; image?: string; state: 'inbox' | 'later' | 'archived'; updatedAt: number }
 export type ReminderStatus = 'scheduled'|'due'|'acknowledged'|'snoozed'|'cancelled';
 export interface Reminder { createdAt?: number; updatedAt?: number; id: string; target: string; occurrence?: string; title: string; due: number; status: ReminderStatus; firedAt?: number; handledAt?: number; snoozedFrom?: string; snoozeMinutes?: number; cancelReason?: 'time_changed'|'completed' }
-export interface Settings { pet?: import('./live.ts').PetPreferences; liveVersion?: number; petMigratedV0215?: boolean; launch: boolean; trayResident?: boolean; orb?: { x: number; y: number }; setup: boolean }
+export interface Settings { domainVersion?: number; pet?: import('./live.ts').PetPreferences; liveVersion?: number; petMigratedV0215?: boolean; launch: boolean; trayResident?: boolean; orb?: { x: number; y: number }; setup: boolean }
 export interface State { inboxVersion?: number; bubbleHistory?: {id:string;at:number}[]; version: 1; profiles: Profile[]; courses: Course[]; exceptions: Exception[]; events: Event[]; tasks: Task[]; notices: Notice[]; reminders: Reminder[]; settings: Settings; lastTick: number }
 export interface SchedulePackage {
   format: 'dayhub-schedule'; version: 1; termName: string;

@@ -24,14 +24,35 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { pack } from './backup.ts';
+import { DOMAIN_VERSION, stateDomainVersion } from './domain.ts';
+import { effectiveRole } from './people.ts';
 import type { Store } from './store.ts';
 import type { State } from './types.ts';
 
 export const MIGRATION_BACKUP_PREFIX = 'before-v030';
-/** 当前磁盘上领域语义的版本。Phase 1 引入 Person 语义时把它提升到 2。 */
-export const DOMAIN_VERSION = 1;
-/** Phase 1 在这里注册 { from:1, to:2, id:'person-workspace', migrate }。 */
-export const migrationSteps: MigrationStep[] = [];
+export { DOMAIN_VERSION, stateDomainVersion as domainVersion };
+
+/** v1 → v2：身份基础（Profile.role）。 */
+export const IDENTITY_DOMAIN_VERSION = 2;
+
+/**
+ * v1 → v2：给每个档案补上角色，其它内容一律不动。
+ *
+ * 解析沿用 people.ts 的兼容顺序（显式 role → 历史 id → 数组位置），
+ * 因此 me → self、partner → companion，未知 id 的旧档案也不会丢。
+ * 不重写 id、不碰课程 / 待办 / 会议 / 提醒 / 调课 / 通知 / 设置。
+ */
+export function identityRoleMigration(state: State): State {
+  state.profiles = state.profiles.map((profile, index) => ({ ...profile, role: effectiveRole(profile, index) }));
+  state.settings.domainVersion = IDENTITY_DOMAIN_VERSION;
+  return state;
+}
+
+// 每一步的 `to` 写成字面量：提升 DOMAIN_VERSION 时必须追加新步骤，
+// 由 tests/identity.test.ts 守住“最后一个步骤的 to === DOMAIN_VERSION”。
+export const migrationSteps: MigrationStep[] = [
+  { from: 1, to: IDENTITY_DOMAIN_VERSION, id: 'identity-roles', migrate: identityRoleMigration },
+];
 
 export interface MigrationStep {
   from: number;
@@ -65,12 +86,6 @@ export interface MigrationOptions {
   attachments: string;
   now?: number;
   log?(message: string): void;
-}
-
-// 未迁移过的安装没有 domainVersion 字段；这里保持只读探测，不写回任何未知字段。
-export function domainVersion(state: State): number {
-  const value = (state.settings as { domainVersion?: unknown }).domainVersion;
-  return Number.isInteger(value) && (value as number) >= 1 ? (value as number) : DOMAIN_VERSION;
 }
 
 export function migrationStamp(now: number): string {
