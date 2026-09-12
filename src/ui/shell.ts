@@ -1,0 +1,51 @@
+// 界面外壳的人员视图模型。
+//
+// 导航、「所属课表」选项、课程所属文案都从实际 profiles 派生：
+// Solo 只有本人页，Together 才有同行者页；不存在"点进去是空白"的固定 Ta 页。
+// 这里只做纯派生，方便在 Solo / Together 两种数据下单独测试。
+import { effectiveRole, getCompanionProfile } from '../people.ts';
+import type { PersonId, Profile, State } from '../types.ts';
+
+export type TabKind = 'today' | 'person' | 'courses' | 'tasks' | 'inbox' | 'reminders' | 'settings';
+export interface ShellTab { key: string; kind: TabKind; label: string; personId?: PersonId }
+
+// 页面宽度策略沿用既有视觉（同行者页仍然是 width-partner）。
+export const tabWidthPolicy: Record<TabKind, string> = {
+  today: 'width-adaptive', person: 'width-partner', courses: 'width-fluid', tasks: 'width-adaptive',
+  inbox: 'width-adaptive', reminders: 'width-constrained', settings: 'width-constrained',
+};
+
+/** 课表归属文案：本人永远是「我的课表」，同行者用档案名称。 */
+export function courseTableLabel(profile: Pick<Profile, 'id' | 'role' | 'name'>, index = 0): string {
+  return effectiveRole(profile, index) === 'self' ? '我的课表' : `${profile.name}的课表`;
+}
+
+export function profileLabelFor(state: Pick<State, 'profiles'>, personId?: PersonId): string {
+  if (!personId) return '未选择';
+  const index = state.profiles.findIndex(profile => profile.id === personId);
+  return index < 0 ? personId : courseTableLabel(state.profiles[index], index);
+}
+
+export function personOptions(state: Pick<State, 'profiles'>): { value: PersonId; label: string }[] {
+  return state.profiles.map((profile, index) => ({ value: profile.id, label: courseTableLabel(profile, index) }));
+}
+
+/** 导航：本人页永远存在，同行者页只在同行者存在时出现。 */
+export function shellTabs(state: Pick<State, 'profiles'>): ShellTab[] {
+  const tabs: ShellTab[] = [{ key: 'today', kind: 'today', label: '我的安排' }];
+  const companion = getCompanionProfile(state);
+  if (companion) tabs.push({ key: companion.id, kind: 'person', label: `${companion.name}的课表`, personId: companion.id });
+  tabs.push(
+    { key: 'courses', kind: 'courses', label: '课表管理' },
+    { key: 'tasks', kind: 'tasks', label: '事项与会议' },
+    { key: 'inbox', kind: 'inbox', label: '通知收件箱' },
+    { key: 'reminders', kind: 'reminders', label: '未处理提醒' },
+    { key: 'settings', kind: 'settings', label: '设置与备份' },
+  );
+  return tabs;
+}
+
+/** 键盘导航沿用「第 N 个标签页」的位置语义（Solo 下自然少一页）。 */
+export function tabShortcuts(tabs: ShellTab[]): Record<string, string> {
+  return Object.fromEntries(tabs.slice(0, 5).map((tab, index) => [String(index + 1), tab.key]));
+}

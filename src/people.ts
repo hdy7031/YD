@@ -48,6 +48,14 @@ export const companionId = (state: Pick<State, 'profiles'>): PersonId | undefine
 export const isSelfId = (state: Pick<State, 'profiles'>, id: PersonId): boolean => getSelfProfile(state)?.id === id;
 export const isCompanionId = (state: Pick<State, 'profiles'>, id: PersonId): boolean => getCompanionProfile(state)?.id === id;
 
+/**
+ * 桌宠代表谁：有同行者时继续代表同行者（当前产品体验不变）；
+ * 没有同行者（Solo）时代表本人。以后 Phase 4 的 PetInstance 会把它变成用户配置。
+ */
+export function resolvePetSubject(state: Pick<State, 'profiles'>): Profile {
+  return getCompanionProfile(state) ?? requireSelfProfile(state);
+}
+
 // 状态短代号的默认值：本人 D、同行者 Y。用户显式设置过 shortAlias 时不会被覆盖。
 export function defaultAliasFor(profile: Pick<Profile, 'id' | 'role'>, index = 0): string {
   return effectiveRole(profile, index) === PROFILE_COMPANION ? 'Y' : 'D';

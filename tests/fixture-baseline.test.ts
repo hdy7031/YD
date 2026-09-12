@@ -14,6 +14,9 @@ import { unpack } from '../src/backup.ts';
 import { validateState } from '../src/core.ts';
 import { v020Synthetic } from './fixtures/v020-synthetic.ts';
 import { syntheticSchedule, syntheticScheduleFile } from './fixtures/synthetic.ts';
+import { v3SoloSynthetic } from './fixtures/v3-solo-synthetic.ts';
+import { getCompanionProfile } from '../src/people.ts';
+import { DOMAIN_VERSION } from '../src/domain.ts';
 
 const testsDir = fileURLToPath(new URL('./', import.meta.url));
 const root = path.join(testsDir, '..');
@@ -79,4 +82,25 @@ test('正式测试与公共验收脚本不再读取 ingest/ 私人数据', () =>
   for (const name of testFiles) if (name !== self) assert.doesNotMatch(fs.readFileSync(path.join(testsDir, name), 'utf8'), /ingest\//, `tests/${name}`);
   const publicScripts = ['runtime-audit.cjs', 'ui-shots.cjs', 'ui-catalog.cjs', 'verify-v0216.cjs', 'scripts/visual-v021.cjs', 'scripts/visual-v0217.cjs', 'scripts/visual-v022.cjs'];
   for (const name of publicScripts) assert.doesNotMatch(fs.readFileSync(path.join(root, name), 'utf8'), /ingest\//, name);
+});
+
+test('提交的 Solo fixture 与构造器一致，且确实是 1 人工作区', async () => {
+  const state = v3SoloSynthetic();
+  const normalized = JSON.parse(JSON.stringify(state));
+  const packed = unpack(fs.readFileSync(path.join(fixturesDir, 'v3-solo-synthetic.dayhub'), 'utf8'));
+  assert.ok(sameJson(packed.state, normalized), 'solo dayhub fixture 过期：请运行 npm run fixtures:build');
+  const SQL = await initSqlJs({ wasmBinary: Uint8Array.from(fs.readFileSync(path.join(root, 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'))).buffer });
+  const db = new SQL.Database(fs.readFileSync(path.join(fixturesDir, 'v3-solo-synthetic.sqlite')));
+  try {
+    const body = JSON.parse(String(db.exec('SELECT body FROM app_state WHERE id = 1')[0].values[0][0]));
+    assert.ok(sameJson(body, normalized), 'solo sqlite fixture 过期：请运行 npm run fixtures:build');
+  } finally { db.close(); }
+  // 结构：只有本人、没有同行者，并且课程 / 会议 / 待办 / 提醒都有内容。
+  assert.equal(state.profiles.length, 1);
+  assert.equal(state.profiles[0].role, 'self');
+  assert.equal(state.profiles[0].id, 'alex', 'Solo fixture 刻意使用自定义 id（不是 me）');
+  assert.equal(getCompanionProfile(state), undefined);
+  assert.equal(state.settings.domainVersion, DOMAIN_VERSION);
+  assert.ok(state.courses.length > 0 && state.events.length > 0 && state.tasks.length > 0 && state.reminders.length > 0);
+  assert.ok(state.events.every(event => event.person === 'alex'), '会议归属本人');
 });

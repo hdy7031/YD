@@ -80,6 +80,11 @@
   transition:transform 190ms ease-out,border-color 190ms ease-out,box-shadow 190ms ease-out;
 }
 
+/* 单人工作区：同一个悬浮球只显示一个状态区域，居中且保持原有尺寸与配色。 */
+.presence-surface.solo {
+  grid-template-columns:1fr;
+}
+
 .pet-handle:hover .presence-surface {
   border-color:rgba(255,255,255,.19);
   box-shadow:

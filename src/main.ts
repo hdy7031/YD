@@ -20,7 +20,7 @@ import { pack, unpack } from './backup.ts';
 import { clampToArea, resolveDragStep, type DragAnchor } from './geometry.ts';
 import { configureLogging, installStreamGuards, logError, logLine } from './logging.ts';
 import { DOMAIN_VERSION, domainVersion, migrationSteps, runMigrations } from './migration.ts';
-import type { Command, SchedulePackage } from './types.ts';
+import type { Command, PersonId, SchedulePackage } from './types.ts';
 
 const APP_ID='cn.dayhub.desktop';
 // 先接管 stdout/stderr：管道断开（EPIPE）时不能变成主进程未捕获异常与错误弹窗。
@@ -155,7 +155,8 @@ function setupHandlers(){
     w.setIgnoreMouseEvents(!interactive,{forward:true});
   });
   handler('bubble',(action:string)=>{if(!['hold','release','close'].includes(action))throw new Error('无效操作');companion?.action(action);});
-  handler('presence',(action:string,person?:'me'|'partner')=>{if(action!=='enter'&&action!=='leave')throw new Error('无效状态操作');companion?.presence(action,person);});
+  // 悬停区域可以是任意存在的档案 id（单人工作区只有一个人），由 Companion 自己校验存在性。
+  handler('presence',(action:string,person?:PersonId)=>{if(action!=='enter'&&action!=='leave')throw new Error('无效状态操作');companion?.presence(action,person);});
   handler('window',(action:string)=>{
     if(action==='minimize')panel.minimize();else if(action==='maximize'){if(panel.isMaximized())panel.unmaximize();else panel.maximize();}
     else if(action==='close')panel.hide();else if(action==='open')showPanel();else if(action==='mini')companion?.toggleMini();

@@ -1,5 +1,6 @@
 import React,{useState,useEffect,useRef} from 'react';
 import type { LiveSnapshot,PersonStatus,PetPreferences,PresenceState } from '../live.ts';
+import type { PersonId } from '../types.ts';
 import {clockText,petDefaults,presenceMeta,presenceStateFor,statusLabel} from '../live.ts';
 import {companionTone} from '../companion-colors.ts';
 import {companionFrame,companionRail} from '../companion-layout.ts';
@@ -21,7 +22,8 @@ function detail(p:PersonStatus,now:number){
 const nextText=(p:PersonStatus)=>p.next?`${new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric'}).format(p.next.start)} ${clockText(p.next.start)} · ${p.next.title}`:'';
 export function StatusRows({live,compact=false,detailed=false}:{live:LiveSnapshot|null;compact?:boolean;detailed?:boolean}){
   const rows=(live?.people||[]).map(p=>{
-    const identity=compact?p.alias:p.person==='me'?'我的':'Ta';
+    // 称呼来自档案：本人是「我的」，同行者用档案显示名称（默认就是当前产品里的 Ta）。
+    const identity=compact?p.alias:p.role==='self'?'我的':p.name;
     // 迷你面板负责“读详情”，因此可以带当前事项与下一项；桌宠旁的小标签
     // 只留最短结论，避免在小窗口里堆字。
     const secondary=!compact?detail(p,live!.now)
@@ -45,12 +47,16 @@ export function StatusRows({live,compact=false,detailed=false}:{live:LiveSnapsho
 export function Titlebar(){return h('header',{className:'titlebar'},h('span',{className:'titlebar-brand'},h(BrandGlyph,{className:'yd-glyph'}),h('b',null,'YD'),h('em',null,'Your Day')),h('div',{className:'window-controls'},...([['minimize','−','最小化'],['maximize','□','最大化或还原'],['close','×','收起到托盘']] as const).map(([action,label,title])=>h('button',{key:action,title,'aria-label':title,onClick:()=>void api.window(action)},label))));}
 function IdentityMark({letter}:{letter:string}){return h('span',{className:'identity-mark','aria-hidden':true},letter);}
 function StatusCore({state}:{state:PresenceState}){return h('span',{className:'status-core','aria-hidden':true},h('i',{className:'status-ring'}),h('i',{className:'status-dot'}));}
-function PresenceZone({person,status,marker,onHover}:{person:'me'|'partner';status?:PersonStatus;marker:string;onHover?:(person:'me'|'partner')=>void}){
+function PresenceZone({person,status,marker,onHover}:{person:PersonId;status?:PersonStatus;marker:string;onHover?:(person:PersonId)=>void}){
   const state=presenceStateFor(status);
   return h('span',{className:`presence-zone presence-${person} state-${state}`,'data-person':person,onPointerEnter:()=>onHover?.(person)},h(IdentityMark,{letter:marker}),h(StatusCore,{state}));
 }
-function PresenceOrb({animate,me,partner,onHover}:{animate:boolean;me?:PersonStatus;partner?:PersonStatus;onHover?:(person:'me'|'partner')=>void}){
-  return h('div',{className:`presence-orb${animate?' motion':''}`,'aria-label':`双方状态：${presenceMeta[presenceStateFor(me)].label}、${presenceMeta[presenceStateFor(partner)].label}`},h('div',{className:'presence-surface'},h(PresenceZone,{person:'me',status:me,marker:me?.alias??'',onHover}),h(PresenceZone,{person:'partner',status:partner,marker:partner?.alias??'',onHover})));
+// 悬浮球按实际档案渲染状态区域：2 人时保持左右双方（视觉不变），1 人时只渲染一个居中的区域。
+function PresenceOrb({animate,people,onHover}:{animate:boolean;people:PersonStatus[];onHover?:(person:PersonId)=>void}){
+  const labels=people.map(status=>presenceMeta[presenceStateFor(status)].label).join('、');
+  return h('div',{className:`presence-orb${animate?' motion':''}`,'aria-label':people.length>1?`双方状态：${labels}`:`当前状态：${labels}`},
+    h('div',{className:`presence-surface${people.length<2?' solo':''}`},
+      ...people.map(status=>h(PresenceZone,{key:status.person,person:status.person,status,marker:status.alias,onHover}))));
 }
 function useSurface(name:string){
   useEffect(()=>{
@@ -73,7 +79,7 @@ export function DesktopPet(){
   const custom=p.mode==='custom';
   // “减少动态”对三种显示模式一视同仁：呼吸、眨眼、徽章脉冲与提醒轻提示都会停。
   const motion={animate:p.animate&&!p.reduceMotion,reduceMotion:p.reduceMotion};
-  const me=live?.people.find(x=>x.person==='me'),partner=live?.people.find(x=>x.person==='partner');
+  const people=live?.people??[];
   const hidePresence=()=>void api.presence('leave');
   const finishDrag=(target?:HTMLButtonElement,pointerId?:number)=>{
     const active=drag.current;drag.current=null;draggingRef.current=false;setDragging(false);hidePresence();
@@ -91,7 +97,7 @@ export function DesktopPet(){
     window.addEventListener('pointercancel',stop,true);
     return()=>{window.removeEventListener('pointerup',stop,true);window.removeEventListener('pointercancel',stop,true);};
   },[dragging]);
-  const hover=(person:'me'|'partner')=>{if(!draggingRef.current&&hoverArmed.current)void api.presence('enter',person);};
+  const hover=(person:PersonId)=>{if(!draggingRef.current&&hoverArmed.current)void api.presence('enter',person);};
   const leave=()=>{hidePresence();if(!draggingRef.current)hoverArmed.current=true;};
   const label=p.mode==='orb'?'拖动悬浮球，单击查看状态':'拖动桌宠，单击查看双方状态';
   // 手势：pointerdown 立刻进入 is-dragging 并让主进程接管窗口位置，pointermove
@@ -120,7 +126,7 @@ export function DesktopPet(){
       // 固定画布：stage 只负责角色本体与动作，rail 是它的兄弟节点，
       // 两者的 transform / 动画永远不会互相影响，拖动时也不会被裁掉。
       ?h('div',{className:'sprite-stage'},h('div',{className:'sprite-inner'},h('span',{className:'sprite-shadow','aria-hidden':true}),h(CustomCompanionArt,{assets,display:live?.display,frozen:dragging,...motion})))
-      :h(PresenceOrb,{animate:motion.animate,me,partner,onHover:hover}));
+      :h(PresenceOrb,{animate:motion.animate,people,onHover:hover}));
   const side=custom
     ?h('div',{className:'status-rail'},h('button',{'data-interactive':true,className:'companion-rail-button',title:'查看双方状态',onClick:()=>void api.window('mini')},h(CompanionRail,{live})))
     :null;
@@ -162,7 +168,7 @@ export function Bubble(){const live=useLive();useSurface('bubble-body');return l
 export function Mini(){
   const live=useLive();
   return h('section',{className:'mini-panel'},
-    h('div',{className:'section-head'},h('h2',null,'此刻，我们'),h('span',{className:'muted'},live?clockText(live.now):'…')),
+    h('div',{className:'section-head'},h('h2',null,((live?.people.length??0)>1)?'此刻，我们':'此刻'),h('span',{className:'muted'},live?clockText(live.now):'…')),
     h(StatusRows,{live,compact:true,detailed:true}),
     h('p',{className:'mini-note'},live?.pending?`${live.pending} 条提醒已到时间，等待处理。`:'没有未处理的提醒。'),
     live?.display.nightly?h('p',{className:'mini-note mini-night'},'夜间休息中 · 状态仍按已录入的安排显示。'):null,

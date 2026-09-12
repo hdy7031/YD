@@ -6,6 +6,7 @@
 // gentle attention nudge may play. Both the main process and the renderer import
 // it, so the pet, the bubble and the mini panel can never disagree.
 import type { PersonStatus } from './live.ts';
+import type { PersonId } from './types.ts';
 
 export type CompanionDisplayState =
   | 'idle' | 'upcoming' | 'busy_class' | 'busy_work' | 'reminder' | 'gentle'
@@ -164,11 +165,15 @@ function lastFinishedEnd(status: PersonStatus | undefined, now: number): number 
   return finished.length ? Math.max(...finished) : undefined;
 }
 
-// Business-only state: reminders and the clock are handled outside this
-// function. The character is the partner, so her status leads; my own class,
-// meeting or event still means the household is busy, and "about to start" is
-// shared. The rail under the pet always says which of the two the pose is
-// describing.
+// Business-only state: reminders and the clock are handled outside this function.
+// The character represents one person at a time (the "pet subject"): with a
+// companion present that is still the companion (current product behaviour),
+// and in a solo workspace it is the person themselves — resolved once by
+// people.resolvePetSubject() and passed in as `subjectId`. Nothing here may
+// assume that a companion (or 'partner') exists.
+//
+// 桌宠主体（subject）的状态优先；另一位正在忙碌时，整个家仍是忙碌的；
+// "即将开始" 由双方共享。状态条会说明这个姿态描述的是谁。
 //
 // 业务优先级（与产品约定一致）：
 //   进行中的重要事项（上课 / 会议 / 活动 / 教研）
@@ -177,19 +182,19 @@ function lastFinishedEnd(status: PersonStatus | undefined, now: number): number 
 //   > 空闲
 // 时间状态（night_sleep / wake_up / eating / nap）与待处理提醒由
 // resolvePetState 按统一优先级叠加，业务忙碌永远压过时间状态。
-export function companionBusinessState(people: PersonStatus[], now: number): CompanionDisplayState {
-  const partner = people.find(p => p.person === 'partner');
-  const me = people.find(p => p.person === 'me');
-  const partnerKnown = !!partner && !offlineCodes.includes(partner.code);
-  if (partnerKnown && partner) {
+export function companionBusinessState(people: PersonStatus[], now: number, subjectId: PersonId): CompanionDisplayState {
+  const subject = people.find(p => p.person === subjectId);
+  const other = people.find(p => p.person !== subjectId);
+  const subjectKnown = !!subject && !offlineCodes.includes(subject.code);
+  if (subjectKnown && subject) {
     // 教研同样是“在上课”，但用抱教案的教研姿态，不戴眼镜持教鞭。
-    if (partner.code === 'BUSY_CLASS') return partner.research ? 'busy_work' : 'busy_class';
-    if (busyCodes.includes(partner.code) || partner.research) return 'busy_work';
+    if (subject.code === 'BUSY_CLASS') return subject.research ? 'busy_work' : 'busy_class';
+    if (busyCodes.includes(subject.code) || subject.research) return 'busy_work';
   }
-  if (busyCodes.includes(me?.code ?? '')) return 'busy_work';
-  const finished = lastFinishedEnd(partner, now);
+  if (busyCodes.includes(other?.code ?? '')) return 'busy_work';
+  const finished = lastFinishedEnd(subject, now);
   if (finished !== undefined && now - finished <= gentleWindowMs) return 'gentle';
-  if (partner?.code === 'UPCOMING' || me?.code === 'UPCOMING') return 'upcoming';
+  if (subject?.code === 'UPCOMING' || other?.code === 'UPCOMING') return 'upcoming';
   return 'idle';
 }
 
@@ -216,6 +221,8 @@ export interface CompanionDisplayInput {
   people: PersonStatus[];
   pending: number;
   now: number;
+  /** 桌宠代表谁；由 people.resolvePetSubject() 解析，运行时必经此参数。 */
+  subjectId: PersonId;
   reminderSince?: number;
   nudgeId?: number;
   // 设置页开关：关闭后夜间不再进入睡觉姿态。
@@ -243,7 +250,7 @@ export interface PetStateResolution {
 // night_sleep 只会被真正的业务状态覆盖，不会被 idle 或普通装饰状态顶掉。
 export function resolvePetState(input: CompanionDisplayInput): PetStateResolution {
   const scheduled = input.scheduled === undefined ? getScheduledPetState(input.now) : input.scheduled;
-  const business = companionBusinessState(input.people, input.now);
+  const business = companionBusinessState(input.people, input.now, input.subjectId);
   const planned = scheduled && (scheduled !== 'night_sleep' || input.nightRest !== false) ? scheduled : null;
   // 业务忙碌（上课 / 教研 / 会议 / 活动）与刚结束的庆祝压过时间状态；
   // 其余情况时间状态优先于“即将开始 / 空闲”。

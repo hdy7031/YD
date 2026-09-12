@@ -1,7 +1,7 @@
 import { pendingReminders } from './selectors.ts';
 import { occurrences, epoch, dateOf, DAY } from './core.ts';
 import { companionDisplay, type CompanionDisplay, type ScheduledPetState } from './companion-display.ts';
-import { defaultAliasFor, effectiveRole, personAlias } from './people.ts';
+import { defaultAliasFor, effectiveRole, personAlias, resolvePetSubject } from './people.ts';
 import type { State, PersonId, ProfileRole, Occurrence } from './types.ts';
 
 export interface PetPreferences {
@@ -29,6 +29,10 @@ export const profileAlias=(p:{id:PersonId;role?:ProfileRole;shortAlias?:string},
 export interface PersonStatus {
   code:StatusCode;
   alias:string;
+  /** 身份语义来自档案角色；界面不再靠 id 猜"这是谁"。 */
+  role:ProfileRole;
+  /** 档案显示名称（用于「我的 / Alex」这类称呼）。 */
+  name:string;
   conflict:boolean;
   research:boolean;
   person:PersonId;
@@ -76,14 +80,14 @@ export function presenceStateFor(status?:PersonStatus):PresenceState {
   if(status.code==='UPCOMING')return 'upcoming';
   return 'idle';
 }
-export interface LiveSnapshot { now:number; source:string; people:PersonStatus[]; pending:number; preferences:PetPreferences; display:CompanionDisplay; bubble?:{id:string;text:string;below?:boolean}; hoverTip?:{person:PersonId;text:string;state:PresenceState}; }
+export interface LiveSnapshot { now:number; source:string; people:PersonStatus[]; pending:number; preferences:PetPreferences; display:CompanionDisplay; /** 桌宠当前代表谁（有同行者时是同行者，Solo 时是本人）。 */ subject:PersonId; bubble?:{id:string;text:string;below?:boolean}; hoverTip?:{person:PersonId;text:string;state:PresenceState}; }
 export const clockText=(n:number)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(n);
 export function activity(s:State,o:Occurrence){return o.kind==='event'?'会议/活动':s.courses.find(c=>c.id===o.courseId)?.activity==='research'?'教研':'上课';}
 export function personStatus(s:State,now:number,person:PersonId):PersonStatus {
   const index=s.profiles.findIndex(p=>p.id===person),p=index<0?undefined:s.profiles[index];
   // 单人工作区（Phase 1A 起合法）没有同行者档案：返回“状态暂不可用”而不是抛错。
   // 双人工作区一定命中档案，行为与之前完全一致。
-  if(!p)return {person,code:'UNKNOWN',alias:defaultAliasFor({id:person}),conflict:false,research:false,current:[],today:[],todayCount:0,termStart:'',tentative:false};
+  if(!p)return {person,code:'UNKNOWN',alias:defaultAliasFor({id:person}),role:'self',name:person,conflict:false,research:false,current:[],today:[],todayCount:0,termStart:'',tentative:false};
   const all=occurrences(s,-Infinity,Infinity,person),current=all.filter(o=>o.start<=now&&now<o.end),next=all.find(o=>o.start>now);
   const currentCourse=current.find(o=>o.kind==='course'),currentEvent=current.find(o=>o.kind==='event');
   const nextCourse=all.find(o=>o.kind==='course'&&o.start>now);
@@ -95,14 +99,15 @@ export function personStatus(s:State,now:number,person:PersonId):PersonStatus {
   const code:StatusCode=currentCourse?'BUSY_CLASS':currentEvent?'BUSY_EVENT':!hasSchedule?'NO_SCHEDULE':now<termStart?'TERM_NOT_STARTED':now>=termEnd&&!nextCourse?'TERM_ENDED':todayCourses.length&&todayCourses.every(o=>o.end<=now)?'DAY_FINISHED':!todayCourses.length?'NO_CLASS_TODAY':nextCourse&&nextCourse.start-now<=30*60000?'UPCOMING':'FREE';
   const research=!!currentCourse&&activity(s,currentCourse)==='教研';
   const boundaries=[...current.map(o=>o.end),...(next?[next.start]:[]),termStart,termEnd].filter(n=>n>now);
-  return {person,code,alias:profileAlias(p,index),conflict:current.length>1,research,current,currentCourse,currentEvent,next,nextCourse,today,todayCount:todayCourses.length,nextChange:boundaries.length?Math.min(...boundaries):undefined,termStart:p.startDate,tentative:!!p.tentative};
+  return {person,code,alias:profileAlias(p,index),role:effectiveRole(p,index),name:p.name,conflict:current.length>1,research,current,currentCourse,currentEvent,next,nextCourse,today,todayCount:todayCourses.length,nextChange:boundaries.length?Math.min(...boundaries):undefined,termStart:p.startDate,tentative:!!p.tentative};
 }
 export function snapshot(s:State,now:number,display?:{reminderSince?:number;nudgeId?:number;scheduled?:ScheduledPetState|null}):LiveSnapshot{
   // 按工作区实际档案投影：1 人 1 条、2 人 2 条；顺序取 profiles 的显示顺序，
   // 身份语义来自 role，而不是固定的 me / partner。
   const people=s.profiles.map(profile=>personStatus(s,now,profile.id)),pending=pendingReminders(s).length;
   const preferences={...petDefaults,...s.settings.pet};
-  return {now,source:'北京时间 · Windows 系统时钟（未联网校准）',people,pending,preferences,display:companionDisplay({people,pending,now,nightRest:preferences.nightRest,...display})};
+  const subject=resolvePetSubject(s).id;
+  return {now,source:'北京时间 · Windows 系统时钟（未联网校准）',people,pending,preferences,subject,display:companionDisplay({people,pending,now,subjectId:subject,nightRest:preferences.nightRest,...display})};
 }
 export interface BubbleEvent { id:string; at:number; text:string }
 export function bubbleEvents(s:State,from:number,to:number):BubbleEvent[]{

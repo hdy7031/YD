@@ -22,7 +22,7 @@ function circleShape(size:number,inset=0){
 export class Companion {
   private closing=false; private last=Date.now(); private monotonic=performance.now(); private pulseTimer?:ReturnType<typeof setInterval>; private busy=false;
   private active?:{id:string;text:string};private queue:{id:string;text:string}[]=[];private expires=0;private remaining=0;private held=false;
-  private hoverTip?:{person:PersonId;text:string;state:PresenceState};private dragging=false;private pendingResize=false;private applied='';
+  private hoverTip?:{person:PersonId;text:string;state:PresenceState;side:number};private dragging=false;private pendingResize=false;private applied='';
   private timeline=new CompanionTimeline();
   // 时间状态缓存：启动立即算一次，之后只在跨边界 / 时钟跳变 / 系统恢复时重算。
   private clock=new PetScheduleClock();
@@ -59,7 +59,12 @@ export class Companion {
     this.timeline.sync(pendingReminders(this.store.state).length,now);
     return {...snapshot(this.store.state,now,{...this.timeline.state(),scheduled:this.clock.read(now)}),bubble:this.active?{...this.active,below:this.bubble.getBounds().y>this.orb.getBounds().y}:undefined,hoverTip:this.hoverTip};
   }
-  broadcast(){if(this.hoverTip){const status=this.get().people.find(p=>p.person===this.hoverTip!.person)!;this.hoverTip={person:status.person,text:`${status.alias} · ${statusLabel(status)}`,state:presenceStateFor(status)};}const live=this.get();for(const w of [this.orb,this.panel,this.bubble,this.mini,this.tip])if(!w.isDestroyed())w.webContents.send('dayhub:live',live);}
+  broadcast(){
+    // 悬停提示只描述仍然存在的档案：档案消失（例如以后移除同行者）时安静收起，
+    // 绝不保留或显示一个不存在的人。
+    if(this.hoverTip){const status=this.get().people.find(p=>p.person===this.hoverTip!.person);if(status)this.hoverTip={person:status.person,text:`${status.alias} · ${statusLabel(status)}`,state:presenceStateFor(status),side:this.hoverTip.side};else this.hoverTip=undefined;}
+    const live=this.get();for(const w of [this.orb,this.panel,this.bubble,this.mini,this.tip])if(!w.isDestroyed())w.webContents.send('dayhub:live',live);
+  }
   geometry(p:{mode:string;size:'small'|'medium'|'large'}){
     // One fixed rectangle per mode and size. Never derived from the current
     // frame, the business state or the character bounding box.
@@ -96,7 +101,7 @@ export class Companion {
     const b=this.orb.getBounds(),a=screen.getDisplayMatching(b).workArea;
     const place=(w:BrowserWindow)=>{const [width,height]=w.getSize(),center=b.x+b.width/2,anchor=center<a.x+a.width/2?b.x:b.x+b.width-width;const x=Math.max(a.x,Math.min(anchor,a.x+a.width-width));let y=b.y-height-10;if(y<a.y)y=b.y+b.height+10;w.setPosition(Math.round(x),Math.round(Math.max(a.y,Math.min(y,a.y+a.height-height))));};
     place(this.bubble);place(this.mini);
-    if(this.hoverTip){const [width,height]=this.tip.getSize(),side=this.hoverTip.person==='me' ? .29 : .71;let x=b.x+b.width*side-width/2,y=b.y+b.height+3;if(y+height>a.y+a.height)y=b.y-height-3;x=Math.max(a.x,Math.min(x,a.x+a.width-width));y=Math.max(a.y,Math.min(y,a.y+a.height-height));this.tip.setPosition(Math.round(x),Math.round(y));}
+    if(this.hoverTip){const [width,height]=this.tip.getSize(),side=this.hoverTip.side;let x=b.x+b.width*side-width/2,y=b.y+b.height+3;if(y+height>a.y+a.height)y=b.y-height-3;x=Math.max(a.x,Math.min(x,a.x+a.width-width));y=Math.max(a.y,Math.min(y,a.y+a.height-height));this.tip.setPosition(Math.round(x),Math.round(y));}
   }
   toggleMini(){const p={...petDefaults,...this.store.state.settings.pet};if(this.mini.isVisible()){this.mini.hide();return;}if(!p.miniPanel){this.panel.show();this.panel.focus();return;}this.position();this.broadcast();this.mini.show();}
   // 主进程注册全局快捷键后把结果告诉桌宠：菜单右侧的提示文字与真实可用性一致。
@@ -151,10 +156,12 @@ export class Companion {
   presence(action:'enter'|'leave',person?:PersonId){
     if(action==='leave'){this.clearPresence();return;}
     if(this.dragging){this.clearPresence();return;}
-    if(person!=='me'&&person!=='partner')throw new Error('无效状态区域');
-    const status=this.get().people.find(p=>p.person===person)!;
-    const state=presenceStateFor(status);
-    this.hoverTip={person,text:`${status.alias} · ${statusLabel(status)}`,state};this.position();this.broadcast();if(this.orb.isVisible())this.tip.showInactive();
+    const people=this.get().people,index=people.findIndex(p=>p.person===person),status=people[index];
+    if(!status)throw new Error('无效状态区域');
+    // 提示条的水平位置由“这个人在当前投影里的位置”决定（单人工作区居中），与身份 id 无关。
+    const side=people.length<2?.5:index===0?.29:.71;
+    this.hoverTip={person:status.person,text:`${status.alias} · ${statusLabel(status)}`,state:presenceStateFor(status),side};
+    this.position();this.broadcast();if(this.orb.isVisible())this.tip.showInactive();
   }
   dragStart(){this.dragging=true;this.clearPresence();}
   dragEnd(){this.dragging=false;this.clearPresence();if(this.pendingResize){this.pendingResize=false;this.resize();}}
