@@ -49,6 +49,7 @@ export interface DesktopAPI {
   // 桌宠右键菜单 → 主窗口：打开"设置当前状态"。
   onStatus(callback:()=>void):()=>void;
   companionAssets(packId?:import('./avatar.ts').AvatarPackId):Promise<import('./companion-frame.ts').CompanionAssets>;
+  avatarVisualReady(ready:import('./avatar-runtime.ts').AvatarVisualReady):Promise<boolean>;
   live():Promise<import('./live.ts').LiveSnapshot>;
   onLive(callback:(value:import('./live.ts').LiveSnapshot)=>void):()=>void;
   window(action:'minimize'|'maximize'|'close'|'open'|'mini'|'menu'|'settings'):Promise<void>;

@@ -1,7 +1,10 @@
 // Custom companion renderer: frame resolution, crossfade and the light motion
 // layer. No business judgement happens here — the frame comes straight from the
 // companion display projection the main process already resolved.
-import React,{useEffect,useRef,useState} from 'react';
+import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
+import { DEFAULT_AVATAR_PACK_ID, resolveAvatarPack } from '../avatar.ts';
+import { AvatarRuntime } from '../avatar-runtime.ts';
+import { companionFallbackIdle } from '../companion-fallback-idle.ts';
 import { companionRailLabel, type CompanionDisplay } from '../companion-display.ts';
 import { companionTone } from '../companion-colors.ts';
 import { resolveCompanionFrame, type CompanionAssets, type ResolvedCompanionFrame } from '../companion-frame.ts';
@@ -9,28 +12,77 @@ import { presenceStateFor, type LiveSnapshot } from '../live.ts';
 const h=React.createElement;
 const api=()=>window.dayhub;
 
-// Assets are fetched for the current PetInstance Pack and reused for every
-// display-state switch. A later selection change naturally requests its Pack.
-const decode=(url:string)=>new Promise<void>(resolve=>{
+// The main process owns resource paths; Chromium owns decode.  Decode rejection
+// is deliberately observable here so a bad new pack can never replace the
+// current visual with a broken image.
+const decode=(url:string)=>new Promise<void>((resolve,reject)=>{
   const image=new Image();
-  image.onload=()=>resolve();
-  image.onerror=()=>resolve();
+  image.onload=()=>{
+    if(typeof image.decode==='function') void image.decode().then(()=>resolve(),reject);
+    else resolve();
+  };
+  image.onerror=()=>reject(new Error('Avatar image failed to load'));
   image.src=url;
 });
-export function useCompanionAssets(packId?:string):CompanionAssets|null{
-  const [assets,set]=useState<CompanionAssets|null>(null);
+
+function removeBrokenImages(assets:CompanionAssets,broken:Set<string>):CompanionAssets{
+  if(!broken.size)return assets;
+  const packs=Object.fromEntries(Object.entries(assets.packs).map(([id,pack])=>[id,{...pack,images:Object.fromEntries(Object.entries(pack.images).filter(([,url])=>!broken.has(url)))}]));
+  const primary=packs[assets.resolvedPackId]??packs[assets.pack.id];
+  return {...assets,packs,images:primary?.images??{},missing:[...new Set([...(primary?.missing??[]),...Object.keys(assets.images).filter(key=>broken.has(assets.images[key]))])]};
+}
+
+async function decodeAssets(assets:CompanionAssets):Promise<CompanionAssets>{
+  const urls=[...new Set(Object.values(assets.packs).flatMap(pack=>Object.values(pack.images)))];
+  const results=await Promise.all(urls.map(async url=>({url,ok:await decode(url).then(()=>true,()=>false)})));
+  const safe=removeBrokenImages(assets,new Set(results.filter(result=>!result.ok).map(result=>result.url)));
+  // `companionFallbackIdle` is the resolver's catastrophic last resort.  If
+  // even it cannot decode, AvatarRuntime retains its previous last-known-good.
+  await decode(companionFallbackIdle);
+  const preview=resolveCompanionFrame(safe,safe.pack.previewState);
+  const pack=resolveAvatarPack(preview.resolvedPackId);
+  const primary=safe.packs[pack.id];
+  return {...safe,resolvedPackId:pack.id,pack,source:primary?.source??safe.source,manifest:primary?.manifest??safe.manifest,images:primary?.images??{},missing:primary?.missing??[],aspect:pack.canvas.width/pack.canvas.height};
+}
+
+let runtime:AvatarRuntime<CompanionAssets>|undefined;
+function avatarRuntime(){
+  return runtime??=new AvatarRuntime<CompanionAssets>({
+    resolve:requestedPackId=>{const pack=resolveAvatarPack(requestedPackId);return {id:pack.id,version:pack.version};},
+    load:async requestedPackId=>{
+      const value=await api().companionAssets(requestedPackId);
+      return {resolvedPackId:value.resolvedPackId,version:value.pack.version,value};
+    },
+    decode:decodeAssets,
+    identify:value=>({resolvedPackId:value.resolvedPackId,version:value.pack.version}),
+  });
+}
+
+export function useCompanionAssets(packId?:string,commitGeometry=false):CompanionAssets|null{
+  const [assets,set]=useState<CompanionAssets|null>(()=>avatarRuntime().activeVisual?.value??null);
   const request=useRef(0);
   useEffect(()=>{
     let active=true;const token=++request.current;
-    // 同一个 packId 只在 effect 建立时读取；状态切换不会重复搬运整包图片。
-    // 收到后先把全部 Pack 帧解码完成再交给界面：状态切换是纯内存切换，
-    // 不会出现“先显示破图，再补上真图”的闪动。
-    void api().companionAssets(packId).then(async value=>{
-      if(value?.available)await Promise.all([...new Set(Object.values(value.packs).flatMap(pack=>Object.values(pack.images)))].map(decode));
-      if(active&&token===request.current)set(value);
-    }).catch(()=>{if(active&&token===request.current)set(null);});
+    const requestedPackId=packId||DEFAULT_AVATAR_PACK_ID;
+    // State changes do not enter this dependency list: one decoded Pack serves
+    // every CompanionDisplay state.  A selection change keeps the existing
+    // image visible while the new pack loads and decodes.
+    void avatarRuntime().request(requestedPackId,async resource=>{
+      if(!commitGeometry)return true;
+      const ready=await api().avatarVisualReady({requestedPackId,resolvedPackId:resource.resolvedPackId,version:resource.version});
+      return ready===true;
+    }).then(result=>{
+      if(!active||token!==request.current)return;
+      if(result.kind==='committed'){
+        // The cached bundle may have been loaded through a different request
+        // (for example an unknown persisted id resolving to yd-default). Keep
+        // requested identity on this immutable projection for frame resolver.
+        set({...result.active.value,requestedPackId:result.active.requestedPackId,resolvedPackId:result.active.resolvedPackId});
+      }
+      // failed/stale intentionally retain the previous state: last-known-good.
+    });
     return()=>{active=false;};
-  },[packId]);
+  },[packId,commitGeometry]);
   return assets;
 }
 
@@ -45,20 +97,27 @@ interface Layer extends ResolvedCompanionFrame { key:number }
 // changes cannot leave residue or blur. While the window is being dragged the
 // swap is postponed: the pointer interaction always outranks the clock, so a
 // pose change can never appear under the cursor mid-drag.
-export function useCrossfade(frame:ResolvedCompanionFrame|undefined,duration:number,frozen=false){
+export function useCrossfade(frame:ResolvedCompanionFrame|undefined,duration:number,frozen=false,visualKey?:string){
   const [layers,setLayers]=useState<Layer[]>([]);
   const applied=useRef<string|undefined>(undefined);
   const counter=useRef(0);
   const signature=frame?`${frame.resolvedPackId}:${frame.resolvedState}:${frame.asset}:${frame.geometry.scale}:${frame.geometry.offsetX}:${frame.geometry.offsetY}:${frame.url}`:undefined;
-  useEffect(()=>{
-    if(!frame){setLayers([]);applied.current=undefined;return;}
-    if(frozen)return;
+  const pack=frame?(visualKey??frame.resolvedPackId):undefined;
+  const appliedPack=useRef<string|undefined>(undefined);
+  // Layout timing is important for Pack changes: main has just committed the
+  // matching window geometry, so replacing the outgoing layer before paint
+  // prevents an A-sprite/B-canvas intermediate frame.
+  useLayoutEffect(()=>{
+    if(!frame){setLayers([]);applied.current=undefined;appliedPack.current=undefined;return;}
+    const packChanged=appliedPack.current!==undefined&&appliedPack.current!==pack;
+    if(frozen&&!packChanged)return;
     if(applied.current===signature)return;
     applied.current=signature;
+    appliedPack.current=pack;
     counter.current+=1;
     const layer:Layer={...frame,key:counter.current};
-    setLayers(previous=>[...previous.slice(-1),layer]);
-  },[signature,frozen]);
+    setLayers(previous=>packChanged?[layer]:[...previous.slice(-1),layer]);
+  },[signature,frozen,pack]);
   useEffect(()=>{
     if(layers.length<2)return;
     const timer=window.setTimeout(()=>setLayers(previous=>previous.slice(-1)),duration);
@@ -81,7 +140,8 @@ interface ArtProps {
 export function CustomCompanionArt({assets,display,animate,reduceMotion,frozen=false}:ArtProps){
   const frame=companionImage(assets,display);
   const motion=animate&&!reduceMotion;
-  const layers=useCrossfade(frame,motion?150:0,frozen);
+  const visualKey=assets?`${assets.resolvedPackId}@${assets.pack.version}`:undefined;
+  const layers=useCrossfade(frame,motion?150:0,frozen,visualKey);
   const [nudging,setNudging]=useState(false);
   const nudgeId=display?.nudgeId??0;
   const seen=useRef(nudgeId);

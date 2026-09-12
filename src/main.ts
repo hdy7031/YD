@@ -147,6 +147,15 @@ function setupHandlers(){
     if(packId!==undefined&&typeof packId!=='string')throw new Error('Avatar Pack 编号无效');
     return resolveCompanionAssets(__dirname,packId as string|undefined);
   });
+  // Only the desktop-pet renderer may acknowledge decoded Avatar resources.
+  // Companion revalidates the current PetInstance, so a late B acknowledgement
+  // cannot resize the window after the selection has already moved on to C.
+  ipcMain.removeHandler('dayhub:avatarVisualReady');
+  ipcMain.handle('dayhub:avatarVisualReady',(event,ready:unknown)=>{
+    if(!orb||orb.isDestroyed()||event.sender!==orb.webContents||event.senderFrame!==event.sender.mainFrame)return false;
+    if(!ready||typeof ready!=='object')throw new Error('Avatar 资源确认无效');
+    return companion?.avatarVisualReady(ready as import('./avatar-runtime.ts').AvatarVisualReady)??false;
+  });
   handler('pointer',(interactive:boolean)=>{if(typeof interactive!=='boolean')throw new Error('参数无效');});
   // Restrict click-through control to the sending companion window.
   ipcMain.removeHandler('dayhub:pointer');

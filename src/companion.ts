@@ -4,7 +4,8 @@ import { snapshot, bubbleEvents, petDefaults, presenceStateFor, statusLabel, typ
 import { CompanionTimeline } from './companion-display.ts';
 import { buildCompanionMenu, companionMenuHeight, companionMenuMetrics, companionToggleShortcut } from './companion-menu.ts';
 import { companionGeometry } from './companion-layout.ts';
-import { resolveAvatarPack } from './avatar.ts';
+import { DEFAULT_AVATAR_PACK_ID, resolveAvatarPack } from './avatar.ts';
+import type { AvatarVisualReady } from './avatar-runtime.ts';
 import { resolvePetInstance } from './pet-instance.ts';
 import { logError } from './logging.ts';
 import type { Store } from './store.ts';
@@ -25,10 +26,16 @@ export class Companion {
   private active?:{id:string;text:string};private queue:{id:string;text:string}[]=[];private expires=0;private remaining=0;private held=false;
   private hoverTip?:{person:PersonId;text:string;state:PresenceState;side:number};private dragging=false;private pendingResize=false;private applied='';
   private timeline=new CompanionTimeline();
+  // Geometry follows only a renderer-confirmed visual.  The requested identity
+  // may move ahead while its assets decode, in which case the old Pack remains
+  // both visible and sized until avatarVisualReady accepts the transaction.
+  private activeAvatar:{requestedPackId:string;resolvedPackId:string;version:string};
+  private pendingAvatar?:{requestedPackId:string;resolvedPackId:string;version:string};
   readonly bubble:BrowserWindow;readonly mini:BrowserWindow;readonly tip:BrowserWindow;readonly sheet:BrowserWindow;
   private shortcut={label:companionToggleShortcut.label,ready:false};
   private actions:{settings:()=>void;status:()=>void;quit:()=>void;toggleVisible:()=>void}={settings:()=>{},status:()=>{},quit:()=>{},toggleVisible:()=>{}};
   constructor(private store:Store,readonly orb:BrowserWindow,private panel:BrowserWindow,options:Electron.BrowserWindowConstructorOptions,private file:string,lock:(w:BrowserWindow)=>void){
+    this.activeAvatar=this.avatarIdentity();
     this.bubble=new BrowserWindow({...options,width:330,height:180,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false});
     this.mini=new BrowserWindow({...options,width:326,height:270,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false});
     this.tip=new BrowserWindow({...options,width:150,height:32,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false,hasShadow:false,roundedCorners:false});
@@ -48,6 +55,14 @@ export class Companion {
     this.sheet.on('close',e=>{if(!this.closing){e.preventDefault();this.sheet.hide();}});
     this.panel.on('show',()=>void this.pulse());
     for(const w of [this.orb,this.bubble,this.tip])w.setIgnoreMouseEvents(true,{forward:true});
+  }
+  private avatarIdentity(){
+    const requestedPackId=resolvePetInstance(this.store.state).avatarPackId;
+    const pack=resolveAvatarPack(requestedPackId);
+    return {requestedPackId,resolvedPackId:pack.id,version:pack.version};
+  }
+  private sameAvatar(a:{requestedPackId:string;resolvedPackId:string;version:string},b:{requestedPackId:string;resolvedPackId:string;version:string}){
+    return a.requestedPackId===b.requestedPackId&&a.resolvedPackId===b.resolvedPackId&&a.version===b.version;
   }
   async load(){await Promise.all([this.bubble.loadFile(this.file,{hash:'bubble'}),this.mini.loadFile(this.file,{hash:'mini'}),this.tip.loadFile(this.file,{hash:'tip'}),this.sheet.loadFile(this.file,{hash:'menu'})]);this.resize();await this.pulse(true);this.pulseTimer=setInterval(()=>void this.pulse(),1000);}
   stop(){this.closing=true;if(this.pulseTimer)clearInterval(this.pulseTimer);}
@@ -69,7 +84,7 @@ export class Companion {
     // One fixed rectangle per mode and size. Never derived from the current
     // frame, the business state or the character bounding box.
     const mode=p.mode==='orb'?'orb':'custom';
-    const pack=resolveAvatarPack(resolvePetInstance(this.store.state).avatarPackId);
+    const pack=resolveAvatarPack(this.activeAvatar.resolvedPackId);
     const {width,height}=companionGeometry(mode,p.size,pack.canvas.width/pack.canvas.height);
     return {width,height,shape:mode==='orb'?circleShape(width):undefined};
   }
@@ -97,6 +112,22 @@ export class Companion {
     this.orb.setResizable(false);
     this.applied=key;
     this.position();this.broadcast();
+  }
+  /** Renderer calls this only after new Pack images have loaded and decoded. */
+  avatarVisualReady(ready:AvatarVisualReady):boolean{
+    if(!ready||typeof ready.requestedPackId!=='string'||typeof ready.resolvedPackId!=='string'||typeof ready.version!=='string')return false;
+    const current=this.avatarIdentity();
+    if(current.requestedPackId!==ready.requestedPackId)return false;
+    if(this.pendingAvatar&&this.pendingAvatar.requestedPackId!==ready.requestedPackId)return false;
+    const resolved=resolveAvatarPack(ready.resolvedPackId);
+    if(resolved.id!==ready.resolvedPackId||resolved.version!==ready.version)return false;
+    // Phase 4A may resolve unavailable requested resources to yd-default. No
+    // other cross-Pack substitution is valid here.
+    if(ready.resolvedPackId!==current.resolvedPackId&&ready.resolvedPackId!==DEFAULT_AVATAR_PACK_ID)return false;
+    this.pendingAvatar=undefined;
+    this.activeAvatar={...ready};
+    this.resize();
+    return true;
   }
   position(){
     const b=this.orb.getBounds(),a=screen.getDisplayMatching(b).workArea;
@@ -169,7 +200,15 @@ export class Companion {
   dragEnd(){this.dragging=false;this.clearPresence();if(this.pendingResize){this.pendingResize=false;this.resize();}}
   private clearPresence(){const changed=!!this.hoverTip||this.tip.isVisible();this.hoverTip=undefined;this.tip.hide();if(changed)this.broadcast();}
   private next(){if(this.active||!this.queue.length)return;this.active=this.queue.shift();this.expires=Date.now()+(this.store.state.settings.pet?.duration??8)*1000;this.position();if(this.orb.isVisible())this.bubble.showInactive();}
-  reset(){this.queue=[];this.active=undefined;this.hoverTip=undefined;this.held=false;this.bubble.hide();this.tip.hide();this.last=Date.now();this.monotonic=performance.now();this.resize();this.broadcast();}
+  reset(){
+    this.queue=[];this.active=undefined;this.hoverTip=undefined;this.held=false;this.bubble.hide();this.tip.hide();this.last=Date.now();this.monotonic=performance.now();
+    const requested=this.avatarIdentity();
+    // Selection changes wait for renderer decode acknowledgement. All other
+    // domain/display changes retain the current geometry behaviour.
+    if(!this.sameAvatar(requested,this.activeAvatar))this.pendingAvatar=requested;
+    else this.resize();
+    this.broadcast();
+  }
   async pulse(recover=false){
     if(this.busy)return;this.busy=true;
     try{

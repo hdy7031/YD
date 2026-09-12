@@ -3,7 +3,7 @@ const call=(name)=>(...args)=>ipcRenderer.invoke('dayhub:'+name,...args);
 contextBridge.exposeInMainWorld('dayhub',{
  onSettings(callback){const fn=()=>callback();ipcRenderer.on('dayhub:settings',fn);return()=>ipcRenderer.removeListener('dayhub:settings',fn);},
  onStatus(callback){const fn=()=>callback();ipcRenderer.on('dayhub:status',fn);return()=>ipcRenderer.removeListener('dayhub:status',fn);},
- live:call('live'),window:call('window'),bubble:call('bubble'),presence:call('presence'),pointer:call('pointer'),companionAssets:call('companionAssets'),
+  live:call('live'),window:call('window'),bubble:call('bubble'),presence:call('presence'),pointer:call('pointer'),companionAssets:call('companionAssets'),avatarVisualReady:call('avatarVisualReady'),
  menuAction:call('menuAction'),
  onMenu(callback){const listener=(_event,value)=>callback(value);ipcRenderer.on('dayhub:menu',listener);return()=>ipcRenderer.removeListener('dayhub:menu',listener);},
  onLive(callback){const listener=(_event,value)=>callback(value);ipcRenderer.on('dayhub:live',listener);return()=>ipcRenderer.removeListener('dayhub:live',listener);},

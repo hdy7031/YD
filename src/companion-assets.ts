@@ -80,6 +80,8 @@ export function resolveCompanionAssets(baseDir: string, packId: string = DEFAULT
   const preview = resolveAvatarFrame(packId, resolved.previewState, { hasAsset });
   const available = preview.fallback !== 'embedded';
   const usedDefault = preview.fallback === 'default-pack';
+  const visualPack = resolveAvatarPack(preview.resolvedPackId);
+  const visual = packs[visualPack.id] ?? primary;
 
   // 面向用户的一句话，不暴露“接入 / 状态数 / fixture”这类工程说法。
   const reason = available
@@ -92,16 +94,18 @@ export function resolveCompanionAssets(baseDir: string, packId: string = DEFAULT
 
   return {
     requestedPackId: packId,
-    resolvedPackId: resolved.id,
-    pack: resolved,
+    // Runtime visual identity follows the Pack selected by the existing frame
+    // resolver after real resource availability has been considered.
+    resolvedPackId: visualPack.id,
+    pack: visualPack,
     packs,
     available,
     reason,
-    source: primary.source,
-    manifest: primary.manifest,
+    source: visual.source,
+    manifest: visual.manifest,
     // Compatibility projection for existing diagnostics and settings.
-    images: primary.images,
-    missing: primary.missing,
-    aspect: resolved.canvas.width / resolved.canvas.height,
+    images: visual.images,
+    missing: visual.missing,
+    aspect: visualPack.canvas.width / visualPack.canvas.height,
   };
 }
