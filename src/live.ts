@@ -1,7 +1,7 @@
 import { pendingReminders } from './selectors.ts';
 import { occurrences, epoch, dateOf, DAY } from './core.ts';
 import { companionDisplay, type CompanionDisplay, type ScheduledPetState } from './companion-display.ts';
-import { defaultAliasFor, personAlias } from './people.ts';
+import { defaultAliasFor, effectiveRole, personAlias } from './people.ts';
 import type { State, PersonId, ProfileRole, Occurrence } from './types.ts';
 
 export interface PetPreferences {
@@ -98,7 +98,9 @@ export function personStatus(s:State,now:number,person:PersonId):PersonStatus {
   return {person,code,alias:profileAlias(p,index),conflict:current.length>1,research,current,currentCourse,currentEvent,next,nextCourse,today,todayCount:todayCourses.length,nextChange:boundaries.length?Math.min(...boundaries):undefined,termStart:p.startDate,tentative:!!p.tentative};
 }
 export function snapshot(s:State,now:number,display?:{reminderSince?:number;nudgeId?:number;scheduled?:ScheduledPetState|null}):LiveSnapshot{
-  const people=[personStatus(s,now,'me'),personStatus(s,now,'partner')],pending=pendingReminders(s).length;
+  // 按工作区实际档案投影：1 人 1 条、2 人 2 条；顺序取 profiles 的显示顺序，
+  // 身份语义来自 role，而不是固定的 me / partner。
+  const people=s.profiles.map(profile=>personStatus(s,now,profile.id)),pending=pendingReminders(s).length;
   const preferences={...petDefaults,...s.settings.pet};
   return {now,source:'北京时间 · Windows 系统时钟（未联网校准）',people,pending,preferences,display:companionDisplay({people,pending,now,nightRest:preferences.nightRest,...display})};
 }
@@ -107,18 +109,21 @@ export function bubbleEvents(s:State,from:number,to:number):BubbleEvent[]{
   if(to<=from)return [];
   const groups=new Map<number,BubbleEvent[]>();
   const push=(e:BubbleEvent)=>{if(e.at>from&&e.at<=to)groups.set(e.at,[...(groups.get(e.at)||[]),e]);};
+  // 同行者的“提前 5 分钟”气泡按角色判定，不再写死 'partner'。
+  const companionIds=new Set(s.profiles.filter((profile,index)=>effectiveRole(profile,index)==='companion').map(profile=>profile.id));
   for(const o of occurrences(s,from,to+5*60000+1)){
     const who=personAlias(s,o.person),kind=activity(s,o);
     push({id:`${o.id}:start:${o.start}`,at:o.start,text:`${who}开始${kind}啦，${o.endUnknown?'结束时间未填写':clockText(o.end)+' 结束'} · ${o.title}`});
     // Include end == from/to and independently look up completed events below.
-    if(o.person==='partner')push({id:`${o.id}:soon:${o.start}`,at:o.start-5*60000,text:`还有 5 分钟，${who}要${kind}啦 · ${clockText(o.start)} ${o.title}`});
+    if(companionIds.has(o.person))push({id:`${o.id}:soon:${o.start}`,at:o.start-5*60000,text:`还有 5 分钟，${who}要${kind}啦 · ${clockText(o.start)} ${o.title}`});
   }
   for(const o of occurrences(s,from-1,to).filter(o=>!o.endUnknown))push({id:`${o.id}:end:${o.end}`,at:o.end,text:`${personAlias(s,o.person)}的${activity(s,o)}结束啦 · ${clockText(o.end)} ${o.title}`});
   for(const r of s.reminders)if(r.status==='scheduled'||r.status==='due')push({id:`reminder:${r.id}`,at:r.due,text:`到提醒时间啦 · ${clockText(r.due)} ${r.title}`});
   return [...groups.entries()].sort(([a],[b])=>a-b).map(([at,events])=>({at,id:events.map(e=>e.id).sort().join('|'),text:events.map(e=>e.text).join('\n')}));
 }
 export function migrateLive(s:State):State {
-  for(const c of s.courses)if(!c.activity)c.activity=c.person==='partner'&&c.title.replace(/\s/g,'')==='高一高二语文教研'?'research':'teaching';
+  // 课程 activity 的默认值与 v0.2 时代的一次性归一化（旧称呼 / 暂定学期 / 教研课名）
+  // 都已移入版本化迁移，见 src/migration.ts 的 LEGACY_V2_RULES 与 personAwareMigrationV3。
   s.settings.pet={...petDefaults,...s.settings.pet};
   // 0.2.20 删除小猫桌宠：旧安装里选过 'pet' 的配置一次性落到默认形象，
   // 明确选过悬浮球的用户保持不动。
@@ -132,9 +137,7 @@ export function migrateLive(s:State):State {
   // 夜间自动休息默认开启；显式关闭过的用户保持关闭。
   s.settings.pet.nightRest=s.settings.pet.nightRest!==false;
   if(s.settings.trayResident===undefined)s.settings.trayResident=true;
-  {const p=s.profiles.find(p=>p.id==='partner');if(p&&p.tentative===undefined&&p.startDate==='2026-09-07'&&p.weeks===20)p.tentative=true;}
   s.profiles.forEach((p,index)=>{
-    if(p.id==='partner'&&['她','女朋友','伴侣'].includes(p.name.trim()))p.name='Ta';
     p.shortAlias??=profileAlias(p,index);
   });
   s.settings.liveVersion=5;s.bubbleHistory??=[];return s;

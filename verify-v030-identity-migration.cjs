@@ -1,8 +1,8 @@
-// YD v0.3 Phase 1A 隔离运行时验收：身份迁移（v1 → v2）。
+// YD v0.3 Phase 1A/1B 隔离运行时验收：身份与归属迁移（v1 → v2 → v3）。
 //
 // 把 tests/fixtures/v020-synthetic.sqlite（v0.2.20 形态、没有 role / domainVersion）
 // 放进隔离数据目录，启动真实 Electron 应用，验证：
-//   1. 启动流程里的 migration gate 真的把身份语义升级到 v2；
+//   1. 启动流程里的 migration gate 真的把身份语义升级到 v3（角色 + 会议归属）；
 //   2. 迁移前生成 before-v030 备份（.dayhub / .sqlite / .json）；
 //   3. 档案 id、课程、待办、会议、通知、调课、提醒全部保持不变；
 //   4. 双人界面行为冻结（状态行、桌宠状态条、导航项数）。
@@ -43,9 +43,10 @@ app.whenReady().then(async () => {
     await wait(300);
 
     const state = await panel.webContents.executeJavaScript('window.dayhub.get()');
-    check('领域版本升级到 2', state.settings.domainVersion === 2, String(state.settings.domainVersion));
+    check('领域版本升级到 3', state.settings.domainVersion === 3, String(state.settings.domainVersion));
     check('本人档案 role=self', state.profiles.find(p => p.id === 'me')?.role === 'self');
     check('同行者档案 role=companion', state.profiles.find(p => p.id === 'partner')?.role === 'companion');
+    check('旧会议自动归属工作区本人', state.events.length > 0 && state.events.every(event => event.person === 'me'));
     check('档案 id 未被重写', state.profiles.map(p => p.id).join(',') === 'me,partner', state.profiles.map(p => p.id).join(','));
     check('课程数量与归属不变', state.courses.length === 15 && [...new Set(state.courses.map(c => c.person))].sort().join(',') === 'me,partner',
       `${state.courses.length} 门 · ${[...new Set(state.courses.map(c => c.person))].join(',')}`);
@@ -58,8 +59,8 @@ app.whenReady().then(async () => {
       backups.some(n => n.endsWith('.dayhub')) && backups.some(n => n.endsWith('.sqlite')) && backups.some(n => n.endsWith('.json')),
       backups.join(','));
     const receipt = JSON.parse(fs.readFileSync(path.join(output, 'backups', backups.find(n => n.endsWith('.json'))), 'utf8'));
-    check('备份回执记录 v1 → v2 与迁移前数量',
-      receipt.fromDomainVersion === 1 && receipt.targetDomainVersion === 2 && receipt.counts.courses === 15 && receipt.counts.reminders === 3);
+    check('备份回执记录 v1 → v3 与迁移前数量',
+      receipt.fromDomainVersion === 1 && receipt.targetDomainVersion === 3 && receipt.counts.courses === 15 && receipt.counts.reminders === 3);
 
     check('双人状态行仍然渲染两条', await panel.webContents.executeJavaScript("document.querySelectorAll('.dual-status .person-status').length===2"));
     check('导航仍然是七项', await panel.webContents.executeJavaScript("document.querySelectorAll('.nav-item').length===7"));

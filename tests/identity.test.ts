@@ -117,23 +117,30 @@ test('短代号默认值跟随角色：本人 D、同行者 Y，显式设置优�
   assert.equal(personAlias(reversed, 'ghost'), 'D');
 });
 
-// 行为冻结：1 人工作区在领域层合法，但运行时投影仍然返回两条状态（UI 不改版），
-// 只是缺失的档案不再让状态查询抛错（否则主进程的 live 快照会崩）。
-test('单人工作区不会让状态查询抛错，双人投影保持不变', () => {
-  const solo = stateWith([profile('alex', 'self')], { domainVersion: 2 });
+// 投影按档案数量输出：单人一条、双人两条；顺序取 profiles 顺序，身份语义来自 role。
+// 查询不存在的档案不再抛错（否则主进程的 live 快照会崩）。
+test('状态投影按档案数量：单人一条、双人两条，缺失档案不抛错', () => {
+  const solo = stateWith([profile('alex', 'self')], { domainVersion: 3 });
   const missing = personStatus(solo, 0, 'partner');
   assert.equal(missing.code, 'UNKNOWN');
   assert.deepEqual(missing.current, []);
-  const live = snapshot(solo, 0);
-  assert.deepEqual(live.people.map(p => p.person), ['me', 'partner']);
-  assert.deepEqual(live.people.map(p => p.code), ['UNKNOWN', 'UNKNOWN']);
+  const soloLive = snapshot(solo, 0);
+  assert.deepEqual(soloLive.people.map(p => p.person), ['alex'], '单人工作区不产生幽灵同行者');
+  assert.deepEqual(soloLive.people.map(p => p.code), ['NO_SCHEDULE'], '存在但没有课表的档案是 NO_SCHEDULE，而不是 UNKNOWN');
+  const together = stateWith([profile('partner', 'companion'), profile('me', 'self')], { domainVersion: 3 });
+  assert.deepEqual(snapshot(together, 0).people.map(p => p.person), ['partner', 'me']);
 });
 
-test('迁移注册与领域版本一致：最后一步必须到达 DOMAIN_VERSION', () => {
-  assert.equal(DOMAIN_VERSION, IDENTITY_DOMAIN_VERSION);
-  assert.equal(migrationSteps.at(-1)?.to, DOMAIN_VERSION);
+test('迁移注册与领域版本一致：步骤连续、无重复、最后一步到达 DOMAIN_VERSION', () => {
+  let expected = 1;
+  for (const step of migrationSteps) {
+    assert.equal(step.from, expected, `${step.id} 的起点必须接上上一版`);
+    assert.ok(step.to > step.from, step.id);
+    expected = step.to;
+  }
+  assert.equal(expected, DOMAIN_VERSION);
+  assert.equal(IDENTITY_DOMAIN_VERSION, 2);
   assert.equal(new Set(migrationSteps.map(step => step.id)).size, migrationSteps.length);
-  for (const step of migrationSteps) assert.ok(step.to > step.from, step.id);
 });
 
 test('identityRoleMigration 只补角色与 domainVersion，不碰业务数据', () => {

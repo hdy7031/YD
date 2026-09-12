@@ -1,7 +1,7 @@
 import { migrateInbox, receive, confirmDraft } from './inbox.ts';
 import { validDraft } from './inbox-types.ts';
 import { DOMAIN_VERSION, stateDomainVersion } from './domain.ts';
-import { isProfileRole, roleCounts } from './people.ts';
+import { isProfileRole, requireSelfProfile, roleCounts } from './people.ts';
 import type { State, Profile, PersonId, ProfileRole, Course, Task, Event, Notice, Exception, Occurrence, Reminder, Command, Entity, SchedulePackage } from './types.ts';
 export const DAY = 86400000;
 export function showPanelOnLaunch(openedAtLogin:boolean, setupComplete:boolean){return !openedAtLogin||!setupComplete;}
@@ -47,7 +47,7 @@ export function validate(entity: Entity, v: any, state: State) {
     assert(Number.isInteger(v.first) && Number.isInteger(v.last) && v.first>=1 && v.last>=v.first && v.last<=p.periods.length, '课程节次超出作息范围');
     assert(Array.isArray(v.weeks) && v.weeks.length>0 && v.weeks.length<=60 && new Set(v.weeks).size===v.weeks.length && v.weeks.every((w:any)=>Number.isInteger(w)&&w>=1&&w<=p.weeks), '教学周次无效或重复');
     assert(text(v.place,300), '地点无效');
-  } else if(entity==='events') { common(v); assert(stamp(v.start)&&(v.end===null||v.end===''||stamp(v.end)&&epoch(v.end)>epoch(v.start)), '结束时间必须晚于开始时间'); assert(text(v.place,300), '地点无效'); }
+  } else if(entity==='events') { common(v); assert(stamp(v.start)&&(v.end===null||v.end===''||stamp(v.end)&&epoch(v.end)>epoch(v.start)), '结束时间必须晚于开始时间'); assert(text(v.place,300), '地点无效'); assert(v.person===undefined||state.profiles.some(p=>p.id===v.person), '会议所属人不存在'); }
   else if(entity==='tasks') { common(v); assert(v.due==='' || stamp(v.due), '截止时间无效'); assert(typeof v.done==='boolean', '完成状态无效'); }
   else if(entity==='notices') { assert(v.parseStatus===undefined||['UNPARSED','PARSING','NEEDS_REVIEW','CONFIRMED','FAILED','IGNORED'].includes(v.parseStatus),'解析状态无效');assert(v.parsedData===undefined||validDraft(v.parsedData),'草稿格式无效'); assert(text(v.title,200)&&text(v.text,200000), '通知内容过长或无效'); assert(v.originalText===undefined || text(v.originalText,200000),'原文无效');assert(['inbox','later','archived'].includes(v.state), '收件箱状态无效'); assert(v.image===undefined || /^[a-f0-9]{64}\.png$/.test(v.image), '图片编号无效'); }
   else if(entity==='exceptions') {
@@ -71,8 +71,17 @@ export function occurrences(state: State, from: number, to: number, person?: str
       if(start<to && end>from) result.push({id:`c:${c.id}:${d}`,target:`courses:${c.id}`,title:c.title,start,end,place:ex?.place??c.place,notes:c.notes,person:c.person,kind:'course',courseId:c.id,date:d,checklist:c.checklist,sourceId:ex?.sourceInboxItemId||c.sourceId,sourceInboxItemId:ex?.sourceInboxItemId,createdAt:c.createdAt??c.updatedAt,updatedAt:ex?.updatedAt??c.updatedAt,cancelled:!!ex?.cancelled,rescheduled:!!ex&&!ex.cancelled&&(ex.start!==undefined||ex.end!==undefined||ex.place!==undefined)});
     }
   }
-  if(!person||person==='me') for(const e of state.events) { const start=epoch(e.start),end=e.end?epoch(e.end):start; if(start<to&&(e.end?end>from:start>=from)) result.push({id:`e:${e.id}`,target:`events:${e.id}`,title:e.title,start,end,place:e.place,notes:e.notes,person:'me',kind:'event',checklist:e.checklist,sourceId:e.sourceId,sourceInboxItemId:e.sourceInboxItemId,createdAt:e.createdAt??e.updatedAt,updatedAt:e.updatedAt,endUnknown:!e.end}); }
+  for(const e of state.events) {
+    const owner=eventPerson(state,e);
+    if(person&&owner!==person)continue;
+    const start=epoch(e.start),end=e.end?epoch(e.end):start;
+    if(start<to&&(e.end?end>from:start>=from)) result.push({id:`e:${e.id}`,target:`events:${e.id}`,title:e.title,start,end,place:e.place,notes:e.notes,person:owner,kind:'event',checklist:e.checklist,sourceId:e.sourceId,sourceInboxItemId:e.sourceInboxItemId,createdAt:e.createdAt??e.updatedAt,updatedAt:e.updatedAt,endUnknown:!e.end});
+  }
   return result.sort((a,b)=>a.start-b.start || a.id.localeCompare(b.id));
+}
+// 会议归属：v3 数据带 person；v2 及更早的数据回退到工作区本人（不写死 'me'）。
+export function eventPerson(state: State, event: Event): PersonId {
+  return event.person ?? requireSelfProfile(state).id;
 }
 export function conflicts(items: Occurrence[]): Set<string> {
   const ids=new Set<string>();
@@ -81,7 +90,8 @@ export function conflicts(items: Occurrence[]): Set<string> {
 }
 function generate(state: State, now: number, target?: string): Reminder[] {
   const out: Reminder[]=[];
-  for(const o of occurrences(state, -Infinity, Infinity,'me')) {
+  // 提醒策略保持旧行为：只为工作区本人的课程与会议生成提醒；同行者不产生本机提醒。
+  for(const o of occurrences(state, -Infinity, Infinity,requireSelfProfile(state).id)) {
     if(target && target!==o.target) continue;
     const item=o.kind==='course'?state.courses.find(c=>c.id===o.courseId)!:state.events.find(e=>`events:${e.id}`===o.target)!;
     for(const min of new Set(item.reminders)){const due=o.start-min*60000; if(due>=now) out.push({id:`${o.id}:${due}`,target:o.target,occurrence:o.id,title:o.title,due,status:'scheduled',createdAt:now,updatedAt:now});}
@@ -111,7 +121,11 @@ export function apply(state: State, cmd: Command, now=Date.now()): State {
     n.updatedAt=now;return s;
   }
   if(cmd.type==='save'){
-    const entity=cmd.entity; const v=structuredClone(cmd.value) as any; if(entity==='events'&&v&&v.end==='')v.end=null; validate(entity,v,s); v.updatedAt=now;
+    const entity=cmd.entity; const v=structuredClone(cmd.value) as any; if(entity==='events'&&v&&v.end==='')v.end=null;
+    // 会议默认归属工作区本人：界面尚无归属人选择器（Phase 1C 再开放），
+    // 但归属必须由身份层解析，而不是写死 'me'。
+    if(entity==='events'&&v&&v.person===undefined)v.person=requireSelfProfile(s).id;
+    validate(entity,v,s); v.updatedAt=now;
     if(['courses','events','tasks'].includes(entity)&&v.sourceId) assert(s.notices.some(n=>n.id===v.sourceId), '来源通知不存在');
     const list=s[entity] as any[];
     if(entity==='exceptions'){const existing=s.exceptions.find(e=>e.courseId===v.courseId&&e.date===v.date);if(existing)v.id=existing.id;}
@@ -182,6 +196,8 @@ export function validateState(value: unknown): State {
   assert(roles.companion<=1,'同行者最多只能有一个');
   // v2 数据必须显式带 role；v1 旧备份仍按 角色→历史 id→数组位置 兼容解析。
   if(stateDomainVersion(s)>=2)for(const p of s.profiles)assert(isProfileRole(p.role),'个人档案缺少角色，请重新迁移或从备份恢复');
+  // v3 起会议必须归属某个档案；更早的数据由 eventPerson() 回退到本人。
+  if(stateDomainVersion(s)>=3)for(const e of s.events)assert(e.person!==undefined,'会议缺少所属人，请重新迁移或从备份恢复');
   for(const key of ['profiles','courses','events','tasks','notices','exceptions'] as Entity[]){assert(new Set(s[key].map(v=>v.id)).size===s[key].length,'记录编号重复');for(const v of s[key]){validate(key,v,s);assert(Number.isFinite(v.updatedAt),'更新时间无效');}}
   for(const item of [...s.courses,...s.tasks,...s.events])assert(!item.sourceId||s.notices.some(n=>n.id===item.sourceId),'备份来源关联缺失');
   assert(s.settings&&typeof s.settings.launch==='boolean'&&typeof s.settings.setup==='boolean'&&Number.isFinite(s.lastTick),'备份设置无效');

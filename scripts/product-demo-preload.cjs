@@ -22,8 +22,8 @@ const generalDraft = { ...blankDraft(), type: 'GENERAL_NOTICE', title: '图书�
 const schedule = {
   format: 'dayhub-schedule', version: 1, termName: '2026 秋季演示课表',
   profiles: [
-    { id: 'me', name: '我', shortAlias: 'D', startDate: monday, weeks: 16, periods },
-    { id: 'partner', name: 'Ta', shortAlias: 'Y', startDate: monday, weeks: 20, periods, tentative: true }
+    { id: 'me', role: 'self', name: '我', shortAlias: 'D', startDate: monday, weeks: 16, periods },
+    { id: 'partner', role: 'companion', name: 'Ta', shortAlias: 'Y', startDate: monday, weeks: 20, periods, tentative: true }
   ],
   courses: [
     { id: 'demo-me-1', person: 'me', title: '产品界面评审', place: '信息楼 302', notes: '演示课程卡片、准备清单与单次调整', activity: 'teaching', weekday, first: 1, last: 2, weeks: [1,2,3,4], reminders: [10], checklist: [{id:'c1',text:'准备界面截图',done:true},{id:'c2',text:'记录可用性问题',done:false}], updatedAt: now },
@@ -41,8 +41,8 @@ let state = {
   courses: schedule.courses,
   exceptions: [{ id: 'demo-exception', courseId: 'demo-me-2', date, cancelled: false, start: `${date}T15:10`, end: `${date}T15:55`, place: '创新中心 B 区', updatedAt: now }],
   events: [
-    { id: 'demo-event-1', title: '版本评估会议', start: `${date}T13:00`, end: `${date}T14:00`, place: '线上会议室', notes: '记录当前版本的证据、限制与待验证项。', reminders: [30], checklist: [{id:'e1',text:'准备会议材料',done:false}], updatedAt: now },
-    { id: 'demo-event-2', title: '无结束时间的活动', start: `${addDays(1)}T19:30`, end: null, place: '校园报告厅', notes: '用于展示不推测活动时长。', reminders: [20], checklist: [], updatedAt: now }
+    { id: 'demo-event-1', person: 'me', title: '版本评估会议', start: `${date}T13:00`, end: `${date}T14:00`, place: '线上会议室', notes: '记录当前版本的证据、限制与待验证项。', reminders: [30], checklist: [{id:'e1',text:'准备会议材料',done:false}], updatedAt: now },
+    { id: 'demo-event-2', person: 'me', title: '无结束时间的活动', start: `${addDays(1)}T19:30`, end: null, place: '校园报告厅', notes: '用于展示不推测活动时长。', reminders: [20], checklist: [], updatedAt: now }
   ],
   tasks: [
     { id:'demo-task-1', title:'整理产品评估问题清单', due:`${date}T${hour}:${minute}`, notes:'用于演示逾期状态、提醒与检查清单。', done:false, checklist:[{id:'t1',text:'核对通知流程',done:true},{id:'t2',text:'补充响应式截图',done:false}], reminders:[0], updatedAt:now },
@@ -56,7 +56,7 @@ let state = {
     { id:'notice-ignored', title:'原始通知', text:'一条不需要处理的重复通知', originalText:'一条不需要处理的重复通知', state:'inbox', sourceType:'MANUAL', createdAt:now-1000, updatedAt:now-1000, parseStatus:'IGNORED' }
   ],
   reminders: [{ id:'demo-reminder', target:'tasks:demo-task-1', title:'整理产品评估问题清单', due:now-60000, status:'fired', firedAt:now-60000, createdAt:now-120000, updatedAt:now-60000 }],
-  settings: { launch:false, setup:false, liveVersion:5, pet:{ mode:'custom', size:'medium', animate:false, bubbles:true, duration:8, pausedUntil:0 } },
+  settings: { launch:false, setup:false, liveVersion:5, domainVersion:3, pet:{ mode:'custom', size:'medium', animate:false, bubbles:true, duration:8, pausedUntil:0 } },
   lastTick: now
 };
 

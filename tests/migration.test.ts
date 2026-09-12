@@ -12,12 +12,14 @@ import { createHash } from 'node:crypto';
 import { Store } from '../src/store.ts';
 import { validateState } from '../src/core.ts';
 import { unpack } from '../src/backup.ts';
-import { DOMAIN_VERSION, IDENTITY_DOMAIN_VERSION, createMigrationBackup, domainVersion, migrationStamp, migrationSteps, restoreMigrationBackup, runMigrations, type MigrationStep } from '../src/migration.ts';
+import { DOMAIN_VERSION, IDENTITY_DOMAIN_VERSION, PERSON_AWARE_DOMAIN_VERSION, createMigrationBackup, domainVersion, migrationStamp, migrationSteps, personAwareMigrationV3, restoreMigrationBackup, runMigrations, type MigrationStep } from '../src/migration.ts';
 import type { State } from '../src/types.ts';
 import { v020Now, v020Synthetic } from './fixtures/v020-synthetic.ts';
+import { v2LegacySynthetic } from './fixtures/v2-legacy-synthetic.ts';
 
 const digest = (bytes: Uint8Array | Buffer) => createHash('sha256').update(bytes).digest('hex');
 const fileDigest = (file: string) => digest(fs.readFileSync(file));
+const omit = (value: object, keys: string[]) => Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
 
 // 与 store.test.ts 相同：使用 Node 自带 SQLite 引擎作为 Store 的适配器。
 function workspace() {
@@ -38,10 +40,10 @@ function workspace() {
   return { dir, open, backups: path.join(dir, 'backups') };
 }
 
-async function seeded() {
+async function seeded(state: State = v020Synthetic()) {
   const space = workspace();
   const store = new Store(space.dir, space.open, v020Now);
-  await store.update(() => v020Synthetic());
+  await store.update(() => state);
   return { ...space, store, state: store.snapshot(), bytes: fs.readFileSync(store.file) };
 }
 
@@ -63,8 +65,9 @@ test('迁移成功：先写 before-v030 备份，再原子升级，备份可被�
   const { dir, store, backups, bytes, state } = await seeded();
   try {
     // 直接使用真实注册的迁移步骤：闸门的意义就是跑真实迁移。
+    // 这里只升到 v2，单独验证身份步骤。
     const run = await runMigrations(store, {
-      target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now,
+      target: IDENTITY_DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now,
     });
     assert.equal(run.migrated, true);
     assert.deepEqual(run.steps, ['identity-roles']);
@@ -170,7 +173,7 @@ test('回滚路径是字节还原：备份保持 v1 形态，不依赖旧版读�
     // 迁移后的数据库带 v2 语义；回滚只能靠还原字节。
     await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
     const migrated = store.snapshot();
-    assert.equal(domainVersion(migrated), IDENTITY_DOMAIN_VERSION);
+    assert.equal(domainVersion(migrated), DOMAIN_VERSION);
     assert.ok(migrated.profiles.every(profile => profile.role !== undefined));
     restoreMigrationBackup(backup, store.file);
     assert.equal(fileDigest(store.file), digest(bytes), '还原后必须逐字节等于迁移前');
@@ -178,7 +181,7 @@ test('回滚路径是字节还原：备份保持 v1 形态，不依赖旧版读�
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('身份迁移 v1 → v2：补角色、保 id、保业务数据、生成备份', async () => {
+test('身份与归属迁移 v1 → v3：补角色与会议归属、保 id、保业务数据、生成备份', async () => {
   const { dir, store, backups } = await seeded();
   try {
     const before = store.snapshot();
@@ -186,11 +189,11 @@ test('身份迁移 v1 → v2：补角色、保 id、保业务数据、生成备�
     assert.ok(before.profiles.every(profile => profile.role === undefined));
     const run = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
     assert.equal(run.migrated, true);
-    assert.deepEqual(run.steps, ['identity-roles']);
+    assert.deepEqual(run.steps, ['identity-roles', 'person-aware']);
     for (const file of [run.backup!.dayhub, run.backup!.sqlite, run.backup!.receipt]) assert.ok(fs.existsSync(file), file);
     const receipt = JSON.parse(fs.readFileSync(run.backup!.receipt, 'utf8'));
     assert.equal(receipt.fromDomainVersion, 1);
-    assert.equal(receipt.targetDomainVersion, IDENTITY_DOMAIN_VERSION);
+    assert.equal(receipt.targetDomainVersion, DOMAIN_VERSION);
     assert.equal(receipt.counts.courses, before.courses.length);
 
     const after = store.snapshot();
@@ -204,12 +207,19 @@ test('身份迁移 v1 → v2：补角色、保 id、保业务数据、生成备�
       assert.ok(role, `profile ${index} 应带上角色`);
       assert.deepEqual(rest, before.profiles[index]);
     });
-    // 业务集合数量与内容都不变；课程仍然引用原来的 person id。
-    for (const key of ['courses', 'exceptions', 'events', 'tasks', 'notices', 'reminders'] as const) assert.deepEqual(after[key], before[key], key);
+    // 会议：唯一的变化是补上归属，其余字段逐字段保持。
+    assert.equal(after.events.length, before.events.length);
+    after.events.forEach((event, index) => {
+      const { person, ...rest } = event;
+      assert.equal(person, after.profiles[0].id, '旧会议必须归工作区本人');
+      assert.deepEqual(rest, before.events[index]);
+    });
+    // 其它集合数量与内容都不变；课程仍然引用原来的 person id。
+    for (const key of ['courses', 'exceptions', 'tasks', 'notices', 'reminders'] as const) assert.deepEqual(after[key], before[key], key);
     assert.deepEqual([...new Set(after.courses.map(c => c.person))].sort(), ['me', 'partner']);
     // 设置：只多了 domainVersion。
     for (const key of Object.keys(before.settings) as (keyof typeof after.settings)[]) assert.deepEqual(after.settings[key], before.settings[key], key);
-    assert.equal(after.settings.domainVersion, IDENTITY_DOMAIN_VERSION);
+    assert.equal(after.settings.domainVersion, DOMAIN_VERSION);
     assert.equal(after.version, 1);
     assert.equal(after.lastTick, before.lastTick);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -225,20 +235,77 @@ test('身份迁移幂等：已是 v2 的状态不再写备份', async () => {
     assert.deepEqual(fs.readdirSync(backups).filter(name => name.startsWith('before-v030')), first, '第二次运行不应产生新备份');
     const settled = store.snapshot();
     assert.deepEqual(settled.profiles.map(p => p.role), ['self', 'companion']);
-    assert.equal(domainVersion(settled), IDENTITY_DOMAIN_VERSION);
+    assert.equal(domainVersion(settled), DOMAIN_VERSION);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('身份迁移失败仍然回滚：v2 之后的步骤抛错时数据库回到迁移前', async () => {
+test('迁移失败仍然回滚：后续版本的步骤抛错时数据库回到迁移前', async () => {
   const { dir, store, backups, bytes, state } = await seeded();
   try {
-    const boom: MigrationStep = { from: 2, to: 3, id: 'phase-later', migrate() { throw new Error('later step exploded'); } };
+    const boom: MigrationStep = { from: DOMAIN_VERSION, to: DOMAIN_VERSION + 1, id: 'phase-later', migrate() { throw new Error('later step exploded'); } };
     await assert.rejects(
-      () => runMigrations(store, { target: 3, version: domainVersion, steps: [...migrationSteps, boom], backupDirectory: backups, attachments: dir, now: v020Now }),
+      () => runMigrations(store, { target: DOMAIN_VERSION + 1, version: domainVersion, steps: [...migrationSteps, boom], backupDirectory: backups, attachments: dir, now: v020Now }),
       /已恢复迁移前的数据库/,
     );
     assert.equal(fileDigest(store.file), digest(bytes), '回滚必须逐字节等于迁移前');
     assert.deepEqual(store.snapshot(), state);
     assert.ok(fs.readdirSync(backups).some(name => name.endsWith('.dayhub')), '备份必须保留');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('v2 → v3：旧会议归本人、课程 activity 补全、v0.2 一次性归一化只发生在迁移里', async () => {
+  const { dir, store, backups } = await seeded(v2LegacySynthetic());
+  try {
+    const before = store.snapshot();
+    assert.equal(domainVersion(before), IDENTITY_DOMAIN_VERSION);
+    assert.ok(before.events.length > 0 && before.events.every(event => event.person === undefined), 'v2 数据没有会议归属');
+    const legacyCompanionName = before.profiles.find(profile => profile.role === 'companion')!.name;
+
+    const run = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
+    assert.equal(run.migrated, true);
+    assert.deepEqual(run.steps, ['person-aware'], 'v2 只需跑归属迁移');
+    for (const file of [run.backup!.dayhub, run.backup!.sqlite, run.backup!.receipt]) assert.ok(fs.existsSync(file), file);
+    const receipt = JSON.parse(fs.readFileSync(run.backup!.receipt, 'utf8'));
+    assert.equal(receipt.fromDomainVersion, IDENTITY_DOMAIN_VERSION);
+    assert.equal(receipt.targetDomainVersion, PERSON_AWARE_DOMAIN_VERSION);
+    assert.equal(receipt.counts.courses, before.courses.length);
+    assert.equal(receipt.counts.reminders, before.reminders.length);
+
+    const after = store.snapshot();
+    const self = after.profiles.find(profile => profile.role === 'self')!;
+    const companion = after.profiles.find(profile => profile.role === 'companion')!;
+    assert.equal(domainVersion(after), DOMAIN_VERSION);
+    assert.equal(self.id, 'me', 'legacy id 保持不变');
+    assert.equal(companion.id, 'partner', 'legacy id 保持不变');
+
+    // 1) 会议归工作区本人，其它字段逐字段保持。
+    assert.equal(after.events.length, before.events.length);
+    after.events.forEach((event, index) => {
+      assert.equal(event.person, self.id);
+      assert.deepEqual(omit(event, ['person']), omit(before.events[index], ['person']));
+    });
+    // 2) 课程 activity：旧教研课名 → research，普通课程 → teaching；已有 activity 不被改写。
+    const research = after.courses.find(course => course.person === companion.id && course.title.replace(/\s/g, '') === '高一高二语文教研');
+    assert.equal(research?.activity, 'research');
+    assert.ok(after.courses.every(course => course.activity === 'teaching' || course.activity === 'research'));
+    after.courses.forEach((course, index) => {
+      const previous = before.courses[index];
+      assert.deepEqual(omit(course, ['activity']), omit(previous, ['activity']), course.id);
+      if (previous.activity !== undefined) assert.equal(course.activity, previous.activity, `${course.id} 的 activity 不应被改写`);
+    });
+    // 3) v0.2 一次性归一化：同行者旧称呼 → Ta，旧暂定学期 → tentative。
+    assert.notEqual(legacyCompanionName, 'Ta');
+    assert.equal(companion.name, 'Ta');
+    assert.equal(companion.tentative, true);
+    assert.deepEqual(omit(companion, ['role', 'name', 'tentative']), omit(before.profiles[1], ['role', 'name', 'tentative']));
+    // 4) 其它集合、设置与时钟不变。
+    for (const key of ['tasks', 'notices', 'exceptions', 'reminders'] as const) assert.deepEqual(after[key], before[key], key);
+    assert.equal(after.lastTick, before.lastTick);
+    assert.equal(after.version, before.version);
+    // domainVersion 是这一步唯一允许变化的设置项（2 → 3）。
+    for (const key of Object.keys(before.settings) as (keyof typeof after.settings)[]) if (key !== 'domainVersion') assert.deepEqual(after.settings[key], before.settings[key], key);
+    assert.equal(after.settings.domainVersion, PERSON_AWARE_DOMAIN_VERSION);
+    // 5) 幂等：同一个纯函数再跑一次不改变结果。
+    assert.deepEqual(personAwareMigrationV3(structuredClone(after)), after);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

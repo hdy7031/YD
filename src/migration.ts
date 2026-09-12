@@ -25,15 +25,29 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { pack } from './backup.ts';
 import { DOMAIN_VERSION, stateDomainVersion } from './domain.ts';
-import { effectiveRole } from './people.ts';
+import { effectiveRole, getCompanionProfile, requireSelfProfile } from './people.ts';
 import type { Store } from './store.ts';
-import type { State } from './types.ts';
+import type { Course, State } from './types.ts';
 
 export const MIGRATION_BACKUP_PREFIX = 'before-v030';
 export { DOMAIN_VERSION, stateDomainVersion as domainVersion };
 
 /** v1 → v2：身份基础（Profile.role）。 */
 export const IDENTITY_DOMAIN_VERSION = 2;
+/** v2 → v3：会议归属到人 + v0.2 时代的一次性历史归一化。 */
+export const PERSON_AWARE_DOMAIN_VERSION = 3;
+
+/**
+ * v0.2 时代的一次性兼容规则（原先散落在 migrateLive() 里的私人业务分支）。
+ *
+ * 这些条件与具体用户数据有关（旧称呼、旧学期日期、旧课程名），因此**只允许**
+ * 在版本化迁移里出现一次，正常领域运行时不得再引用它们驱动业务语义。
+ */
+export const LEGACY_V2_RULES = {
+  companionNames: ['她', '女朋友', '伴侣'],
+  researchCourseTitle: '高一高二语文教研',
+  tentativeTerm: { startDate: '2026-09-07', weeks: 20 },
+} as const;
 
 /**
  * v1 → v2：给每个档案补上角色，其它内容一律不动。
@@ -48,10 +62,36 @@ export function identityRoleMigration(state: State): State {
   return state;
 }
 
+/** v0.2 的教研课名规则：同行者、缺少 activity、标题匹配时才视为教研。 */
+export function isLegacyResearchCourse(state: State, course: Course): boolean {
+  return course.person === getCompanionProfile(state)?.id && course.title.replace(/\s/g, '') === LEGACY_V2_RULES.researchCourseTitle;
+}
+
+/**
+ * v2 → v3：
+ *   1. 旧会议归属到工作区本人（通过身份层解析，不写死 'me'）；
+ *   2. 课程 activity 缺省补 teaching，v0.2 的教研课名规则在此一次性生效；
+ *   3. v0.2 的暂定学期与同行者旧称呼归一化。
+ * 其余字段（id / 时间 / 标题 / 提醒 / 关联 / 设置）全部原样保留，且幂等。
+ */
+export function personAwareMigrationV3(state: State): State {
+  const selfId = requireSelfProfile(state).id;
+  state.events = state.events.map(event => event.person === undefined ? { ...event, person: selfId } : event);
+  for (const course of state.courses) if (!course.activity) course.activity = isLegacyResearchCourse(state, course) ? 'research' : 'teaching';
+  const companion = getCompanionProfile(state);
+  if (companion) {
+    if (companion.tentative === undefined && companion.startDate === LEGACY_V2_RULES.tentativeTerm.startDate && companion.weeks === LEGACY_V2_RULES.tentativeTerm.weeks) companion.tentative = true;
+    if ((LEGACY_V2_RULES.companionNames as readonly string[]).includes(companion.name.trim())) companion.name = 'Ta';
+  }
+  state.settings.domainVersion = PERSON_AWARE_DOMAIN_VERSION;
+  return state;
+}
+
 // 每一步的 `to` 写成字面量：提升 DOMAIN_VERSION 时必须追加新步骤，
 // 由 tests/identity.test.ts 守住“最后一个步骤的 to === DOMAIN_VERSION”。
 export const migrationSteps: MigrationStep[] = [
   { from: 1, to: IDENTITY_DOMAIN_VERSION, id: 'identity-roles', migrate: identityRoleMigration },
+  { from: IDENTITY_DOMAIN_VERSION, to: PERSON_AWARE_DOMAIN_VERSION, id: 'person-aware', migrate: personAwareMigrationV3 },
 ];
 
 export interface MigrationStep {
