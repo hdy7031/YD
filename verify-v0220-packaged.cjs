@@ -88,8 +88,11 @@ class Session {
     await panel.ready; await orb.ready;
 
     // ---- 素材：十态名单、缺帧说明、无猫 --------------------------------
-    const bundle = await panel.eval('window.dayhub.companionAssets().then(a=>({available:a.available,count:Object.keys(a.images).length,reason:a.reason,source:a.source,frames:Object.keys(a.manifest?.states??{}),missing:a.missing??[]}))');
+    const bundle = await panel.eval('window.dayhub.companionAssets().then(a=>({available:a.available,count:Object.keys(a.images).length,reason:a.reason,source:a.source,frames:Object.keys(a.manifest?.states??{}),missing:a.missing??[],requestedPackId:a.requestedPackId,resolvedPackId:a.resolvedPackId,packId:a.pack?.id,packVersion:a.pack?.version,packCanvas:a.pack?.canvas,packFrames:Object.keys(a.pack?.frames??{}),fallbackState:a.pack?.fallbackState}))');
     check('打包版素材来源指向 app.asar 内的 assets/companion/custom', /app\.asar|assets[\\/]companion[\\/]custom/.test(bundle.source));
+    check('打包版经 Avatar Registry 解析 yd-default', bundle.requestedPackId === 'yd-default' && bundle.resolvedPackId === 'yd-default' && bundle.packId === 'yd-default');
+    check('打包版 Avatar manifest version/canvas 正确', bundle.packVersion === '1.0.0' && bundle.packCanvas.width === 412 && bundle.packCanvas.height === 411);
+    check('打包版 Avatar manifest 十态与 idle fallback 完整', bundle.packFrames.length === 10 && bundle.fallbackState === 'idle');
     check('打包版十态素材名单完整（已有 + 缺失 = 10）', bundle.frames.length + bundle.missing.length === 10);
     check('打包版无猫相关素材或文案', !bundle.frames.some((k) => /cat|kitty/i.test(k)) && !/小猫/.test(bundle.reason));
     check('打包版夜间睡觉素材随包发布且可解码', await panel.eval("window.dayhub.companionAssets().then(a=>typeof a.images.night_sleep==='string'&&a.images.night_sleep.startsWith('data:image/png;base64,')&&a.images.night_sleep.length>10000)") === true);
@@ -97,7 +100,7 @@ class Session {
 
     const selfCheck = await (async () => {
       for (let i = 0; i < 40; i++) {
-        const value = await orb.eval("(()=>({stage:!!document.querySelector('.sprite-stage'),inner:!!document.querySelector('.sprite-inner'),rail:!!document.querySelector('.status-rail'),chips:document.querySelectorAll('.companion-rail .rail-chip').length,letters:[...document.querySelectorAll('.companion-rail .rail-chip b')].map(e=>e.textContent).join(''),slot:document.querySelector('.companion-figure')?.dataset.assetSlot,img:(()=>{const s=document.querySelector('.companion-frame.is-current');return !!s&&s.complete&&s.naturalWidth>0})(),filter:getComputedStyle(document.querySelector('.companion-rail')).backdropFilter}))()");
+        const value = await orb.eval("(()=>({stage:!!document.querySelector('.sprite-stage'),inner:!!document.querySelector('.sprite-inner'),rail:!!document.querySelector('.status-rail'),chips:document.querySelectorAll('.companion-rail .rail-chip').length,letters:[...document.querySelectorAll('.companion-rail .rail-chip b')].map(e=>e.textContent).join(''),slot:document.querySelector('.companion-figure')?.dataset.assetSlot,avatarPack:document.querySelector('.companion-figure')?.dataset.avatarPack,avatarFallback:document.querySelector('.companion-figure')?.dataset.avatarFallback,img:(()=>{const s=document.querySelector('.companion-frame.is-current');return !!s&&s.complete&&s.naturalWidth>0})(),filter:getComputedStyle(document.querySelector('.companion-rail')).backdropFilter}))()");
         if (value.img && value.chips === 2) return value;
         await wait(300);
       }
@@ -106,6 +109,7 @@ class Session {
     check('打包版三层结构完整且状态栏常驻', !!selfCheck && selfCheck.stage && selfCheck.inner && selfCheck.rail);
     check('打包版 D / Y 状态点渲染正确', selfCheck.letters === 'DY');
     check('打包版角色帧已解码完成并带状态槽', selfCheck.img === true && !!selfCheck.slot);
+    check('打包版 renderer 使用 yd-default Frame Resolver', selfCheck.avatarPack === 'yd-default' && selfCheck.avatarFallback === 'none');
     check('打包版状态栏不使用 backdrop-filter', !selfCheck.filter || selfCheck.filter === 'none');
     check('打包版没有小猫形象', await orb.eval("!document.querySelector('.pet-art')&&!/小猫/.test(document.body.textContent)") === true);
 
@@ -123,9 +127,9 @@ class Session {
     await wait(500);
     const settingsText = await panel.eval("document.querySelector('.pet-settings').textContent");
     check('打包版设置页不再提供小猫桌宠', !settingsText.includes('小猫') && settingsText.includes('专属角色桌宠') && settingsText.includes('玻璃悬浮球'));
-    // 素材齐全时是“会根据当前状态自动切换动作”，缺帧时说明“暂用相近动作代替”；
+    // 素材齐全时是“会根据当前状态自动切换动作”，缺帧时说明“暂用待机动作代替”；
     // 两种都是用户语言，不允许出现“已接入 / N 个状态 / 第一版”这类工程说法。
-    check('打包版设置页说明仍是用户语言', /专属角色 · (会根据当前状态自动切换动作|.+动作素材缺失，暂用相近动作代替)/.test(settingsText) && !/已接入|第一版|开发中|fixture/.test(await panel.eval("document.querySelector('.page-settings').textContent")));
+    check('打包版设置页说明仍是用户语言', /专属角色 · (会根据当前状态自动切换动作|.+动作素材缺失，暂用待机动作代替)/.test(settingsText) && !/已接入|第一版|开发中|fixture/.test(await panel.eval("document.querySelector('.page-settings').textContent")));
     check('打包版动态效果只有标准 / 减少', await panel.eval("(()=>{const g=document.querySelector('[aria-label=\"桌宠动态效果\"]');return !!g&&g.querySelectorAll('button').length===2})()") === true);
     check('打包版作息时间表为 23:30–07:30 / 11:30 / 12:30', /23:30–07:30/.test(settingsText) && settingsText.includes('07:30–07:50') && settingsText.includes('11:30–12:00') && settingsText.includes('12:30–14:00'));
     check('打包版夜间开关可关闭并持久化', await panel.eval("window.dayhub.change({type:'settings',pet:{nightRest:false}}).then(s=>s.settings.pet.nightRest===false)") === true);

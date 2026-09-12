@@ -5,15 +5,17 @@ import os from 'node:os';
 import path from 'node:path';
 import {initial,apply,epoch} from '../src/core.ts';
 import {migrateLive,snapshot,personStatus,petDefaults} from '../src/live.ts';
-import {CompanionTimeline,companionDisplay,companionDisplayAssets,companionRailLabel,reminderHoldMs,reminderNudgeMs} from '../src/companion-display.ts';
+import {CompanionTimeline,companionDisplay,companionRailLabel,reminderHoldMs,reminderNudgeMs} from '../src/companion-display.ts';
 import {currentStateToPetDisplay,petRoutineSummary,resolvePetState,routineKindToPetState} from '../src/companion-display.ts';
 import {emptyRoutine,legacyDefaultRoutine,type RoutineProfile,type RoutineRule} from '../src/routine.ts';
 import {companionTone,companionToneOf,companionToneColors} from '../src/companion-colors.ts';
 import {presenceStateFor,statusLabel} from '../src/live.ts';
 import {resolveCompanionAssets,companionRequiredStates} from '../src/companion-assets.ts';
-import {companionFrame} from '../src/companion-frame.ts';
+import {resolveCompanionFrame} from '../src/companion-frame.ts';
 import {companionFallbackIdle} from '../src/companion-fallback-idle.ts';
-import {companionGeometry,companionCharacter,companionFrame as companionFrameBox,companionRail,petSpriteFor} from '../src/companion-layout.ts';
+import {companionGeometry,companionCharacter,companionFrame as companionFrameBox,companionRail} from '../src/companion-layout.ts';
+import {companionVisualStates} from '../src/companion-visual.ts';
+import {DEFAULT_AVATAR_PACK_ID,resolveAvatarFrame,ydDefaultAvatarPack} from '../src/avatar.ts';
 import {buildCompanionMenu,companionMenuHeight,companionMenuMetrics,companionToggleShortcut,type CompanionMenuItem} from '../src/companion-menu.ts';
 import type {PersonStatus,StatusCode} from '../src/live.ts';
 import type {PersonStateKind} from '../src/state/types.ts';
@@ -32,7 +34,7 @@ const petBase=(s:ReturnType<typeof base>,now:number,subjectId=subjectOf(s))=>res
 const routineVisualAt=(t:number)=>snapshot(base(),t).display.scheduled;
 
 test('0.2.20 显示态收敛到十种（含四个时间状态），业务状态映射稳定',()=>{
-  assert.deepEqual(Object.keys(companionDisplayAssets).sort(),['busy_class','busy_work','eating','gentle','idle','nap','night_sleep','reminder','upcoming','wake_up']);
+  assert.deepEqual([...companionVisualStates].sort(),['busy_class','busy_work','eating','gentle','idle','nap','night_sleep','reminder','upcoming','wake_up']);
   const s=base();
   // 上课中 -> busy_class
   assert.equal(petBase(s,epoch('2027-02-23T10:00')),'busy_class');
@@ -224,7 +226,7 @@ test('0.2.20 时间状态优先级：业务忙碌与提醒压过时间状态，�
   assert.equal(petBase(s,night),'night_sleep');
   const live=snapshot(s,night);
   assert.equal(live.display.state,'night_sleep');
-  assert.equal(live.display.asset,'night_sleep');
+  assert.equal(resolveAvatarFrame(DEFAULT_AVATAR_PACK_ID,live.display.state).asset,'night_sleep');
   assert.equal(live.display.nightly,true);
   // 时间状态来自桌宠主体（同行者）自己的 Routine，而不是任何全局常量。
   assert.equal(live.display.scheduled,'night_sleep');
@@ -389,7 +391,7 @@ test('0.2.15 状态短文案保持低打扰且不暴露关系称呼',()=>{
 test('0.2.15 快照默认带上显示态；偏好新增字段有默认值',()=>{
   const s=base(),now=epoch('2027-02-23T10:00'),live=snapshot(s,now);
   assert.equal(live.display.state,'busy_class');
-  assert.equal(live.display.asset,'busy_class');
+  assert.equal(resolveAvatarFrame(DEFAULT_AVATAR_PACK_ID,live.display.state).asset,'busy_class');
   assert.equal(live.preferences.mode,petDefaults.mode);
   assert.equal(live.preferences.reduceMotion,false);
   assert.equal(live.preferences.miniPanel,true);
@@ -423,13 +425,15 @@ test('0.2.20 旧版偏好迁移补全新字段、保留用户选择，删除小�
   assert.deepEqual(migrateLive(structuredClone(migrated)),migrated);
 });
 
-test('0.2.20 仓库内的素材清单可直接解析（十态素材，缺帧只回退到相近动作）',()=>{
+test('0.2.20 仓库内的素材清单可直接解析（十态素材由默认 Avatar Pack 声明）',()=>{
   const assets=resolveCompanionAssets(path.join(process.cwd(),'src','ui'));
   assert.equal(assets.available,true,assets.reason);
   // 十态名单来自统一的 display 映射表，业务代码里没有第二份图片名单。
   assert.deepEqual([...companionRequiredStates].sort(),['busy_class','busy_work','eating','happy','idle','nap','night_sleep','relaxed','reminder','wake_up']);
   assert.equal(assets.manifest?.format,'dayhub-companion');
-  assert.ok(Math.abs(assets.aspect-assets.manifest!.canvas.width/assets.manifest!.canvas.height)<1e-9);
+  assert.equal(assets.resolvedPackId,DEFAULT_AVATAR_PACK_ID);
+  assert.equal(assets.pack.version,'1.0.0');
+  assert.ok(Math.abs(assets.aspect-assets.pack.canvas.width/assets.pack.canvas.height)<1e-9);
   // 0.2.20 十宫格素材随包发布：十个状态都必须能直接解析成可用的 PNG。
   assert.deepEqual(assets.missing,[]);
   for(const key of companionRequiredStates){
@@ -440,15 +444,16 @@ test('0.2.20 仓库内的素材清单可直接解析（十态素材，缺帧只�
     assert.ok(bytes.length>2000);
   }
   // 每一个显示态都能拿到自己的素材帧，不再依赖“相近动作”兜底。
-  for(const state of Object.keys(companionDisplayAssets) as (keyof typeof companionDisplayAssets)[]){
-    const meta=companionDisplayAssets[state];
-    assert.equal(companionFrame(assets.images,meta.asset,meta.fallbacks),assets.images[meta.asset],state);
+  for(const state of companionVisualStates){
+    const resolved=resolveCompanionFrame(assets,state);
+    assert.equal(resolved.url,assets.images[resolved.asset],state);
+    assert.equal(resolved.fallback,'none',state);
   }
   // 缺帧时只记录缺失并回退，不会让整个形象不可用。
   for(const key of assets.missing)assert.ok(companionRequiredStates.includes(key),key);
 });
 
-test('0.2.20 素材缺失时逐级回退：缺帧回退相邻状态，整组缺失回退同形象内置待机帧（不再有猫）',()=>{
+test('4A 素材缺失时逐级回退：缺帧回到同 Pack 待机，整组缺失回到内置待机帧（不再有猫）',()=>{
   const layout=(root:string)=>path.join(root,'assets','companion','custom');
   const dir=layout(fs.mkdtempSync(path.join(os.tmpdir(),'dayhub-companion-')));
   try{
@@ -460,10 +465,13 @@ test('0.2.20 素材缺失时逐级回退：缺帧回退相邻状态，整组缺�
     assert.equal(partial.available,true);
     // 老素材包缺的帧只会回退，不会让整个专属角色不可用。
     assert.deepEqual(partial.missing.sort(),['busy_work','eating','happy','nap','night_sleep','relaxed','reminder','wake_up']);
-    assert.match(partial.reason,/相近动作/);
-    // 缺 busy_work 时用 busy_class 顶替，缺其他状态时回到 idle
-    assert.equal(companionFrame(partial.images,companionDisplayAssets.busy_work.asset,companionDisplayAssets.busy_work.fallbacks),partial.images.busy_class);
-    assert.equal(companionFrame(partial.images,companionDisplayAssets.reminder.asset,companionDisplayAssets.reminder.fallbacks),partial.images.idle);
+    assert.match(partial.reason,/待机动作/);
+    // 任意缺失 state 都优先保持同一角色身份，回到这个 Pack 自己的 idle。
+    const missingBusy=resolveCompanionFrame(partial,'busy_work');
+    assert.equal(missingBusy.url,partial.images.idle);
+    assert.equal(missingBusy.resolvedState,'idle');
+    assert.equal(missingBusy.fallback,'pack-state');
+    assert.equal(resolveCompanionFrame(partial,'reminder').url,partial.images.idle);
 
     const empty=fs.mkdtempSync(path.join(os.tmpdir(),'dayhub-companion-empty-'));
     try{
@@ -473,7 +481,8 @@ test('0.2.20 素材缺失时逐级回退：缺帧回退相邻状态，整组缺�
       // 整组素材读不到时，仍然使用同一形象的内置待机帧；文案里不出现任何其它角色。
       assert.match(none.reason,/专属角色/);
       assert.doesNotMatch(none.reason,/猫/);
-      assert.equal(companionFrame(none.images,'eating',['relaxed','idle']),companionFallbackIdle);
+      assert.equal(resolveCompanionFrame(none,'eating').url,companionFallbackIdle);
+      assert.equal(resolveCompanionFrame(none,'eating').fallback,'embedded');
       assert.match(companionFallbackIdle,/^data:image\/png;base64,/);
       assert.ok(companionFallbackIdle.length>2000);
     }finally{fs.rmSync(empty,{recursive:true,force:true});}
@@ -522,8 +531,8 @@ test('3B 显示态与人物状态解耦：角色只认识 CurrentState.kind，�
 
 test('0.2.20 桌宠窗口固定且比人物本体大一圈，姿态偏移集中在布局表里',()=>{
   const assets=resolveCompanionAssets(path.join(process.cwd(),'src','ui'));
-  const canvas=assets.manifest!.canvas,baseline=assets.manifest!.baseline??canvas.height;
-  const bodyRatio=(assets.manifest!.bodyHeight??canvas.height)/canvas.height;
+  const canvas=assets.pack.canvas,assetManifest=assets.manifest!,baseline=assetManifest.baseline??canvas.height;
+  const bodyRatio=(assetManifest.bodyHeight??canvas.height)/canvas.height;
   const aspect=canvas.width/canvas.height;
   const geometry=(size:'small'|'medium'|'large')=>companionGeometry('custom',size,aspect);
   const small=geometry('small'),medium=geometry('medium'),large=geometry('large');
@@ -541,13 +550,12 @@ test('0.2.20 桌宠窗口固定且比人物本体大一圈，姿态偏移集中�
   assert.ok(visible>=150&&visible<=190,`可见人物高度 ${visible}px`);
   // 同一份画布里，脚底基线之上才是人物本体，基线之下只留透明边距。
   assert.ok(baseline<canvas.height,'画布底部应有透明安全区');
-  // 每个状态都有调参项，且只允许很小的偏移：换动作不会让角色跳位。
-  for(const state of Object.keys(companionDisplayAssets)){
-    const tuning=petSpriteFor(state);
+  // 每个状态的调参属于当前 Pack，且保持 4A 前的既有落点。
+  for(const state of companionVisualStates){
+    const tuning=ydDefaultAvatarPack.frames[state]!.geometry;
     assert.ok(tuning.scale>=0.9&&tuning.scale<=1.1,state);
     assert.ok(Math.abs(tuning.offsetX)<=6&&Math.abs(tuning.offsetY)<=6,state);
   }
-  assert.deepEqual(petSpriteFor('unknown-state'),petSpriteFor('idle'));
   const orb=companionGeometry('orb','medium',aspect);
   assert.equal(orb.width,orb.height);
 });

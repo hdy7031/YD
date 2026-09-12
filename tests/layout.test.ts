@@ -2,8 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { companionGeometry, companionRail, companionSizes, companionCharacter, companionFrame, companionOrb, petSpriteTuning } from '../src/companion-layout.ts';
-import { companionDisplayAssets, type CompanionDisplayState } from '../src/companion-display.ts';
+import { companionGeometry, companionRail, companionSizes, companionCharacter, companionFrame, companionOrb } from '../src/companion-layout.ts';
 import { clampToArea, keepVisible, resolveDragStep, type DragAnchor } from '../src/geometry.ts';
 import { courseTone, courseTones } from '../src/selectors.ts';
 
@@ -24,8 +23,9 @@ test('0.2.20 桌宠画布是固定尺寸：状态与素材内容无法改变窗�
   // 素材比例异常时退回安全比例而不是生成 0 宽窗口。
   assert.deepEqual(companionGeometry('custom','medium',0),companionGeometry('custom','medium',0.68));
   assert.deepEqual(companionGeometry('custom','medium',Number.NaN),companionGeometry('custom','medium',0.68));
-  // 十态调参表必须覆盖所有显示态：状态机新增状态时不会静默缺省。
-  assert.deepEqual(Object.keys(petSpriteTuning).sort(),Object.keys(companionDisplayAssets).sort());
+  // Window geometry only consumes the selected Pack canvas ratio; it has no
+  // display-state or character-id branch.
+  assert.doesNotMatch(companionGeometry.toString(),/busy_class|yd-default/);
 });
 
 test('0.2.20 渲染层透明安全区与主进程画布常量一致',()=>{

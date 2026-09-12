@@ -15,35 +15,22 @@ import type { PersonId } from './types.ts';
 import { stateShortLabel } from './state/presentation.ts';
 import type { CurrentState } from './state/types.ts';
 import { type RoutineKind, type RoutineProfile, type RoutineRule } from './routine.ts';
+import type { CompanionDisplayState } from './companion-visual.ts';
+export type { CompanionDisplayState } from './companion-visual.ts';
 
-export type CompanionDisplayState =
-  | 'idle' | 'upcoming' | 'busy_class' | 'busy_work' | 'reminder' | 'gentle'
-  | 'night_sleep' | 'eating' | 'nap' | 'wake_up';
-
-export interface CompanionDisplayAsset {
-  // Asset key inside the custom companion manifest.
-  asset: string;
-  // Ordered fallbacks used when a frame is missing from the asset bundle.
-  fallbacks: string[];
-  label: string;
-}
-
-// Display state -> asset. Six of them are the original 0.2.15 states (idle,
-// upcoming/relaxed, busy_class, busy_work, reminder, gentle/happy) that keep
-// their ids, triggers and business meaning; the four time states are the 0.2.20
-// additions. Asset keys match the split ten-pose sheet, so business code never
-// names an image file.
-export const companionDisplayAssets: Record<CompanionDisplayState, CompanionDisplayAsset> = {
-  idle: { asset: 'idle', fallbacks: [], label: '空闲' },
-  upcoming: { asset: 'relaxed', fallbacks: ['idle'], label: '即将开始' },
-  busy_class: { asset: 'busy_class', fallbacks: ['busy_work', 'idle'], label: '上课中' },
-  busy_work: { asset: 'busy_work', fallbacks: ['busy_class', 'idle'], label: '忙碌中' },
-  reminder: { asset: 'reminder', fallbacks: ['idle'], label: '待处理提醒' },
-  gentle: { asset: 'happy', fallbacks: ['idle'], label: '完成' },
-  night_sleep: { asset: 'night_sleep', fallbacks: ['idle'], label: '夜间睡觉' },
-  eating: { asset: 'eating', fallbacks: ['relaxed', 'idle'], label: '吃饭中' },
-  nap: { asset: 'nap', fallbacks: ['night_sleep', 'idle'], label: '午睡中' },
-  wake_up: { asset: 'wake_up', fallbacks: ['relaxed', 'idle'], label: '刚睡醒' },
+// Display semantics own wording only. Asset and geometry selection belong to
+// the Avatar Pack resolver (src/avatar.ts).
+export const companionDisplayLabels: Record<CompanionDisplayState, string> = {
+  idle: '空闲',
+  upcoming: '即将开始',
+  busy_class: '上课中',
+  busy_work: '忙碌中',
+  reminder: '待处理提醒',
+  gentle: '完成',
+  night_sleep: '夜间睡觉',
+  eating: '吃饭中',
+  nap: '午睡中',
+  wake_up: '刚睡醒',
 };
 
 // 桌宠时间状态（四个有专属素材的作息姿态）。它是显示层的词汇，不是人物状态：
@@ -116,8 +103,6 @@ export interface CompanionDisplay {
   state: CompanionDisplayState;
   // Display state without the reminder hold window applied.
   base: CompanionDisplayState;
-  asset: string;
-  fallbacks: string[];
   label: string;
   pending: number;
   // 当前是否处在夜间休息窗口（即使提醒姿态临时覆盖，也仍然为真）。
@@ -232,13 +217,10 @@ export function companionDisplay(input: CompanionDisplayInput): CompanionDisplay
   const resolved = resolvePetState(input);
   const pending = Math.max(0, input.pending);
   const state = resolved.state;
-  const meta = companionDisplayAssets[state];
   return {
     state,
     base: resolved.base,
-    asset: meta.asset,
-    fallbacks: meta.fallbacks,
-    label: pending > 0 ? `${pending} 条待处理` : meta.label,
+    label: pending > 0 ? `${pending} 条待处理` : companionDisplayLabels[state],
     pending,
     nightly: resolved.base === 'night_sleep',
     nudgeId: pending > 0 ? input.nudgeId ?? 0 : 0,
