@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { apply, epoch, initial, validateState } from '../src/core.ts';
-import { getScheduledPetState, type ScheduledPetState } from '../src/companion-display.ts';
+import { routineKindToPetState, type ScheduledPetState } from '../src/companion-display.ts';
 import {
   activeRoutine, assertRoutineProfile, assertRoutineRule, emptyRoutine, legacyDefaultRoutine,
   nextRoutineBoundary, routineKindPriority, routineOccurrences,
@@ -268,6 +268,7 @@ test('legacy 默认作息走桌宠适配器后与 0.2.x 写死的时间表逐分
   const reference = legacyDefaultRoutine(0);
   for (let minutes = 0; minutes < 1440; minutes += 1) {
     const time = `${MONDAY}T${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
-    assert.equal(getScheduledPetState(reference, at(time)), scheduledAt(minutes), `第 ${minutes} 分钟（${time}）`);
+    // 桌宠姿态的来源已经统一到 StateEngine：这里用同一个 kind → 姿态映射验证逐分钟等价。
+    assert.equal(routineKindToPetState(activeRoutine(reference, at(time))?.kind ?? 'custom'), scheduledAt(minutes), `第 ${minutes} 分钟（${time}）`);
   }
 });

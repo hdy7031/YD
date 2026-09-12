@@ -44,7 +44,8 @@ test('Solo 会议：新建会议自动归属本人，occurrence 与状态正确'
   assert.deepEqual(today.map(o => [o.kind, o.person]), [['event', 'alex']]);
   const status = personStatus(s, at('2027-03-01T10:30'), 'alex');
   assert.equal(status.code, 'BUSY_EVENT');
-  assert.equal(status.currentEvent?.title, 'Project Review');
+  assert.equal(status.current.kind, 'meeting');
+  assert.equal(status.current.meta?.title, 'Project Review');
 });
 
 test('Solo 提醒：本人的课程 / 会议 / 待办照常生成提醒', () => {
@@ -117,8 +118,8 @@ test('Together 回归：状态、提醒、暂定、教研、调课与周网格�
   // 单次调课仍然作用于实际 occurrence，不改课程模板。
   const courseTemplate = s.courses.find(c => c.person === 'partner' && c.weekday === 2 && c.first === 3)!;
   const moved = apply(s, { type: 'save', entity: 'exceptions', value: { id: 'x', courseId: courseTemplate.id, date: '2027-02-23', cancelled: false, start: '2027-02-24T23:50', end: '2027-02-25T00:20' } }, at('2027-02-22T00:00'));
-  assert.equal(personStatus(moved, at('2027-02-23T10:00'), 'partner').current.length, 0);
-  assert.equal(personStatus(moved, at('2027-02-25T00:00'), 'partner').currentCourse?.title, courseTemplate.title);
+  assert.equal(personStatus(moved, at('2027-02-23T10:00'), 'partner').current.kind, 'idle');
+  assert.equal(personStatus(moved, at('2027-02-25T00:00'), 'partner').current.label, courseTemplate.title);
   assert.deepEqual(moved.courses, s.courses, '课程模板不被调课改写');
   // 周网格与状态使用同一份 occurrence：原日期消失，调课后的实例（跨午夜会拆段）出现。
   const grid = scheduleDays(moved, '2027-02-22', 'partner');

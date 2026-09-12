@@ -153,6 +153,19 @@ export function getCurrentState(state: State, personId: PersonId, now: number): 
 }
 
 /**
+ * 作息层候选：只回答"这个人的作息此刻命中的是哪一段"，**不做任何优先级裁决**。
+ *
+ * 用途只有一个：让显示层如实记录分层事实——例如"正在开会（人物状态）"的同时，
+ * "作息本来是午睡"。CurrentState 仍然是唯一的人物状态真相，这个候选不能被
+ * 任何消费方当成"现在在做什么"的答案。
+ */
+export function getRoutineState(state: State, personId: PersonId, now: number): CurrentState | null {
+  const profile = getProfileById(state, personId);
+  if (!profile) throw new Error('作息查询的档案不存在');
+  return routineCandidate(profile, now);
+}
+
+/**
  * 工作区里每个人的当前状态：1 个档案 1 条、2 个档案 2 条。
  * 顺序取 profiles 的显示顺序，但身份语义来自档案自身（role / id），从不来自数组位置。
  */

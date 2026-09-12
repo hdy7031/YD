@@ -123,7 +123,11 @@ test('状态投影按档案数量：单人一条、双人两条，缺失档案�
   const solo = stateWith([profile('alex', 'self')], { domainVersion: 3 });
   const missing = personStatus(solo, 0, 'partner');
   assert.equal(missing.code, 'UNKNOWN');
-  assert.deepEqual(missing.current, []);
+  // 缺失档案不会让投影崩掉：当前状态退化为"空闲 / 状态暂不可用"，
+  // 身份语义仍然由 code = UNKNOWN 表达。
+  assert.equal(missing.current.kind, 'idle');
+  assert.equal(missing.current.source, 'idle');
+  assert.equal(missing.routine, null);
   const soloLive = snapshot(solo, 0);
   assert.deepEqual(soloLive.people.map(p => p.person), ['alex'], '单人工作区不产生幽灵同行者');
   assert.deepEqual(soloLive.people.map(p => p.code), ['NO_SCHEDULE'], '存在但没有课表的档案是 NO_SCHEDULE，而不是 UNKNOWN');

@@ -13,7 +13,7 @@ function fixture(){
 test('0.2.8 学期、单双周、上课边界及周末由同一状态引擎推导',()=>{
   const s=fixture();assert.equal(personStatus(s,start-DAY,'me').code,'TERM_NOT_STARTED');
   assert.equal(personStatus(s,epoch('2026-09-07T08:10'),'me').code,'BUSY_CLASS');
-  for(const t of ['2026-09-07T08:45','2026-09-12T08:10','2026-09-14T08:10'])assert.equal(personStatus(s,epoch(t),'me').current.length,0);
+  for(const t of ['2026-09-07T08:45','2026-09-12T08:10','2026-09-14T08:10'])assert.equal(personStatus(s,epoch(t),'me').current.kind,'idle');
   assert.equal(personStatus(s,epoch('2026-09-21T08:10'),'me').code,'BUSY_CLASS');
 });
 test('0.2.8 本次停课与跨日调课保留课程模板，原时间为空新时间上课',()=>{
@@ -29,7 +29,8 @@ test('0.2.10 有课表的 Ta 直接显示明确状态，无数据另有空状态
     const status=personStatus(s,epoch('2026-09-07T'+time),'partner');assert.equal(status.code,code);assert.equal(statusLabel(status),label);
   }
   assert.equal(personStatus(initial(start),start,'partner').code,'NO_SCHEDULE');
-  assert.equal(statusLabel(personStatus(initial(start),start,'partner')),'尚未录入课表');
+  // 未录入课表时："空闲"才显示「尚未录入课表」；落在作息里时如实显示作息状态。
+  assert.equal(statusLabel(personStatus(initial(start),epoch('2026-09-07T10:00'),'partner')),'尚未录入课表');
   assert.notEqual(emptyScheduleText(0),emptyScheduleText(1));
 });
 test('0.2.8 单一未处理集合在触发、确认、延后时同步，确认不完成待办',()=>{

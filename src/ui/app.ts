@@ -1,5 +1,5 @@
 import { InboxHub } from './inbox.ts';
-import { snapshot, profileAlias } from '../live.ts';
+import { snapshot, profileAlias, statusLabel } from '../live.ts';
 import type { PersonStatus } from '../live.ts';
 import { pendingReminders as selectPendingReminders, attentionSummary } from '../selectors.ts';
 import { useLive, Titlebar, DesktopPet, Bubble, Mini, PresenceTip, PetMenu, StatusRows, PetSettings } from './companion.ts';
@@ -54,21 +54,6 @@ function courseTiming(state:State,course?:Course){
   const periodText=course.first===course.last?`第 ${course.first} 节`:`第 ${course.first}—${course.last} 节`;
   return {profile,start,end,periodText};
 }
-function partnerHeadline(status:PersonStatus){
-  if(status.conflict)return '安排冲突';
-  switch(status.code){
-    case 'BUSY_CLASS':return status.research?'教研中':'上课中';
-    case 'BUSY_EVENT':return '活动中';
-    case 'BUSY_MEETING':return '会议中';
-    case 'DAY_FINISHED':return '今日课程已结束';
-    case 'NO_CLASS_TODAY':return '今天无课';
-    case 'TERM_NOT_STARTED':return '课表尚未开始';
-    case 'TERM_ENDED':return '本学期课程已结束';
-    case 'NO_SCHEDULE':return '尚未录入课表';
-    case 'UNKNOWN':return '状态暂不可用';
-    default:return '当前无课';
-  }
-}
 function nextCourseText(course:Occurrence,now:number){
   const date=dateOf(course.start),today=dateOf(now),offset=Math.round((epoch(date)-epoch(today))/DAY);
   const clock=fmt(course.start);
@@ -78,17 +63,16 @@ function nextCourseText(course:Occurrence,now:number){
   return `${shortDate(date)} ${clock} · ${course.title}`;
 }
 function PartnerStatusCard({status,updatedAt,now}:{status:PersonStatus;updatedAt:number;now:number}){
-  const current=status.currentCourse||status.currentEvent;
-  const next=status.nextCourse;
+  // 当前状态来自统一状态引擎（日程或作息）；文案与 Home / Mini / Tip / Tray 完全同源。
+  const current=status.current,next=status.nextCourse,active=current.kind!=='idle';
+  // 只有"空闲"时才用日程阶段补充说明这一天的课表情况。
+  const summary:Record<string,string>={DAY_FINISHED:`今天共 ${status.todayCount} 节课`,NO_CLASS_TODAY:'今天没有已录入课程',NO_SCHEDULE:'导入课表后，这里会显示当前和下一节安排。',TERM_ENDED:'当前学期已结束，没有下一节已录入课程。'};
   return h('section',{className:'partner-status-card'},
     h('div',{className:'partner-status-main'},
       h('div',{className:'partner-status-kicker'},'当前状态'),
-      h('h2',{className:'partner-status-headline'},partnerHeadline(status)),
-      current?h(React.Fragment,null,h('p',{className:'partner-current-title'},current.title),h('p',{className:'partner-current-time'},`${fmt(current.start)} — ${fmt(current.end)}`)):null,
-      !current&&status.code==='DAY_FINISHED'?h('p',{className:'partner-status-summary'},`今天共 ${status.todayCount} 节课`):null,
-      !current&&status.code==='NO_CLASS_TODAY'?h('p',{className:'partner-status-summary'},'今天没有已录入课程'):null,
-      !current&&status.code==='NO_SCHEDULE'?h('p',{className:'partner-status-summary'},'导入课表后，这里会显示当前和下一节安排。'):null,
-      !current&&status.code==='TERM_ENDED'?h('p',{className:'partner-status-summary'},'当前学期已结束，没有下一节已录入课程。'):null,
+      h('h2',{className:'partner-status-headline'},statusLabel(status)),
+      active?h(React.Fragment,null,h('p',{className:'partner-current-title'},current.label),h('p',{className:'partner-current-time'},`${fmt(current.startAt)} — ${fmt(current.endAt??current.startAt)}`)):null,
+      !active&&summary[status.code]?h('p',{className:'partner-status-summary'},summary[status.code]):null,
       next?h('p',{className:'partner-next-course'},h('span',null,status.code==='TERM_NOT_STARTED'?'首节 · ':'下一节 · '),nextCourseText(next,now)):null),
     h('small',{className:'partner-status-meta'},`课表更新 · ${fmt(updatedAt,true)}`));
 }
@@ -252,7 +236,8 @@ function App(){
       h('div',{className:'day-rail','aria-hidden':true},...rows.map(o=>h('span',{key:o.id,className:`day-rail-seg tone-${courseTone(o.courseId??o.id)}${o.cancelled?' cancelled':''}`,style:{left:`${((o.start-from)/span*100).toFixed(2)}%`,width:`${Math.max(1.2,(o.end-o.start)/span*100).toFixed(2)}%`}}))),
       h('span',{className:'partner-day-span'},`${fmt(from)} — ${fmt(to)}`));
   }
-  const active=s.courses.filter(c=>c.person===activePerson),current=live?.people.find(p=>p.person===selfId)?.current[0],next=live?.people.find(p=>p.person===selfId)?.next,attention=attentionSummary(s,now);
+  // 本人状态投影：当前状态来自统一 StateEngine（page/焦点条/状态行共用），next 仍是独立的日程信息。
+  const active=s.courses.filter(c=>c.person===activePerson),selfStatus=live?.people.find(p=>p.person===selfId),current=selfStatus?.current,next=selfStatus?.next,attention=attentionSummary(s,now);
   const visibleTasks=s.tasks.filter(t=>(t.title+' '+t.notes).toLowerCase().includes(query.toLowerCase())).filter(t=>filter==='all'||filter==='done'&&t.done||filter==='overdue'&&!t.done&&!!t.due&&epoch(t.due)<now||filter==='today'&&!t.done&&!!t.due&&t.due.startsWith(dateOf(now))||filter==='week'&&!t.done&&!!t.due&&epoch(t.due)>=epoch(dateOf(now))&&epoch(t.due)<epoch(addDays(dateOf(now),7))).sort((a,b)=>Number(a.done)-Number(b.done)||(a.due?epoch(a.due):Infinity)-(b.due?epoch(b.due):Infinity));
   const myDay=all.filter(o=>o.person===selfId);
   const activeIds=new Set(active.map(c=>c.id));
@@ -290,7 +275,7 @@ function App(){
         attention.total?h('section',{className:'attention-panel'},h('div',{className:'attention-title'},h('div',null,h('div',{className:'eyebrow'},'需要处理'),h('h2',null,`需要处理 ${attention.total}`))),h('div',{className:'attention-items'},attention.notices?b(`${attention.notices} 条通知待核对`,()=>setTab('inbox'),'attention-link'):null,attention.reminders?b(`${attention.reminders} 个提醒已到时间`,()=>setTab('reminders'),'attention-link'):null,attention.overdue?b(`${attention.overdue} 个待办已逾期`,()=>setTab('tasks'),'attention-link'):null)):null,
         h('div',{className:'home-grid'},
           h('div',{className:'home-primary'},
-            h('section',{className:'focus-strip'},h('div',null,h('div',{className:'eyebrow'},'接下来'),h('h2',null,next?.title||'今天没有后续安排'),h('p',null,next?`${fmt(next.start,true)} · ${next.place||'地点未填写'}`:'当前没有即将发生的课程或会议')),h('div',{className:'focus-detail'},next?h('span',null,until(now,next.start)):h('span',null,'可以安心安排其他事情'),current?h('small',null,`正在进行：${current.title} · ${fmt(current.end)} 结束`):null)),
+            h('section',{className:'focus-strip'},h('div',null,h('div',{className:'eyebrow'},'接下来'),h('h2',null,next?.title||'今天没有后续安排'),h('p',null,next?`${fmt(next.start,true)} · ${next.place||'地点未填写'}`:'当前没有即将发生的课程或会议')),h('div',{className:'focus-detail'},next?h('span',null,until(now,next.start)):h('span',null,'可以安心安排其他事情'),current&&current.kind!=='idle'?h('small',null,`正在进行：${current.label}${current.endAt?` · ${fmt(current.endAt)} 结束`:''}`):null)),
             h('section',{className:'panel'},
               h('div',{className:'section-head'},h('div',null,h('h2',null,selectedIsToday?'今日日程':'当日日程'),h('small',{className:'section-subtitle'},selectedDateText)),h('input',{'aria-label':'查看日期',type:'date',value:selectedDate,onChange:(e:any)=>{if(e.target.value)setDate(e.target.value);}})),
               myDay.length?h('div',{className:'entry-list'},...myDay.map(occurrenceCard)):h(EmptyState,{title:selectedIsToday?'今天没有安排':'这一天没有安排',description:'课程、会议与活动会显示在这里。',actions:h(React.Fragment,null,selectedIsToday?b('新建会议',()=>open('events'),'secondary'):null,b('管理课表',()=>setTab('courses'),'ghost'))}))))):null,

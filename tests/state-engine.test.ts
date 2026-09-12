@@ -6,7 +6,7 @@
 // personStatus 在 Schedule 场景一致"的安全绳（消费者迁移留 Phase 3B）。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apply, epoch, initial } from '../src/core.ts';
+import { apply, epoch, initial, occurrences } from '../src/core.ts';
 import { personStatus } from '../src/live.ts';
 import { getCurrentState, getWorkspaceCurrentStates, STATE_SOURCE_PRIORITY } from '../src/state/engine.ts';
 import { emptyRoutine, routineKindPriority, type RoutineProfile, type RoutineRule } from '../src/routine.ts';
@@ -239,21 +239,26 @@ test('纯函数：不修改 State，也不依赖调用顺序', () => {
   assert.deepEqual(state, before);
 });
 
-test('Together 回归：合成课表上引擎与 personStatus 的 Schedule 语义一致', () => {
+test('Together 回归：personStatus.current 就是 StateEngine 的结果（单一真相）', () => {
   const state = syntheticState(at('2027-02-22T00:00'));
   const now = at('2027-02-23T10:00');
   const status = personStatus(state, now, 'partner');
   const current = getCurrentState(state, 'partner', now);
-  assert.equal(status.code, 'BUSY_CLASS');
+  assert.deepEqual(status.current, current, '状态投影必须与引擎逐字段一致');
+  assert.equal(status.code, 'BUSY_CLASS', '日程阶段码由状态派生');
   assert.equal(current.kind, 'class');
-  assert.equal(current.label, status.currentCourse?.title);
   assert.equal(current.source, 'schedule');
-  assert.equal(current.startAt, status.currentCourse?.start);
-  assert.equal(current.endAt, status.currentCourse?.end);
+  const ongoing = occurrences(state, now, now + 1, 'partner')[0];
+  assert.equal(current.label, ongoing.title);
+  assert.equal(current.startAt, ongoing.start);
+  assert.equal(current.endAt, ongoing.end);
   assert.equal(current.tentative, true, '暂定学期透出到状态，交给消费方决定怎么呈现');
+  assert.equal(status.routine, null, '10:00 不在默认作息里，作息层为空');
   // 没有日程但落在作息里时，引擎给出真实人物状态——这正是 Phase 3B 的消费起点。
   assert.equal(personStatus(state, at('2027-02-23T12:45'), 'partner').code, 'FREE');
-  assert.equal(getCurrentState(state, 'partner', at('2027-02-23T12:45')).kind, 'nap');
+  assert.equal(personStatus(state, at('2027-02-23T12:45'), 'partner').current.kind, 'nap');
+  // 作息层是投影字段：它如实记录"作息本来在午睡"，但绝不参与状态判断。
+  assert.equal(personStatus(state, at('2027-02-23T12:45'), 'partner').routine?.meta?.routineKind, 'nap');
   assert.equal(getCurrentState(state, 'me', at('2027-02-23T12:45')).kind, 'idle', '本人的空作息不伪造状态');
 });
 

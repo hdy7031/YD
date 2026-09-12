@@ -1,7 +1,7 @@
 import React,{useState,useEffect,useRef} from 'react';
 import type { LiveSnapshot,PersonStatus,PetPreferences,PresenceState } from '../live.ts';
 import type { PersonId, Profile, State } from '../types.ts';
-import {clockText,petDefaults,presenceMeta,presenceStateFor,statusLabel} from '../live.ts';
+import {clockText,petDefaults,presenceStateFor,statusLabel} from '../live.ts';
 import {companionTone} from '../companion-colors.ts';
 import {companionFrame,companionRail} from '../companion-layout.ts';
 import {petRoutineSummary} from '../companion-display.ts';
@@ -21,7 +21,11 @@ import {BrandGlyph} from './brand.ts';
 const h=React.createElement,api=window.dayhub;
 export function useLive(){const [live,set]=useState<LiveSnapshot|null>(null);useEffect(()=>{let mounted=true,received=false;const off=api.onLive(v=>{received=true;if(mounted)set(v);});void api.live().then(v=>{if(mounted&&!received)set(v);});return()=>{mounted=false;off();};},[]);return live;}
 function detail(p:PersonStatus,now:number){
-  if(p.current.length)return p.current.map(o=>`${o.title} · ${clockText(o.end)} 结束（${Math.max(1,Math.ceil((o.end-now)/60000))} 分钟）`).join('；');
+  // 人物状态（日程或作息）优先——它只来自统一状态引擎；这里只负责排版。
+  const current=p.current;
+  if(current.kind!=='idle')return current.endAt
+    ?`${current.label} · ${clockText(current.endAt)} 结束（${Math.max(1,Math.ceil((current.endAt-now)/60000))} 分钟）`
+    :`${current.label} · 进行中`;
   if(p.code==='TERM_NOT_STARTED')return `${p.termStart} 开始${p.next?' · 下一项 '+clockText(p.next.start)+' '+p.next.title:''}`;
   if(p.code==='DAY_FINISHED')return `今天共 ${p.todayCount} 节课${p.next?' · 下一项 '+clockText(p.next.start)+' '+p.next.title:''}`;
   if(p.next)return `下一项 ${new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric'}).format(p.next.start)} ${clockText(p.next.start)} · ${p.next.title}`;
@@ -36,10 +40,11 @@ export function StatusRows({live,compact=false,detailed=false}:{live:LiveSnapsho
     const identity=compact?p.alias:p.role==='self'?'我的':p.name;
     // 迷你面板负责“读详情”，因此可以带当前事项与下一项；桌宠旁的小标签
     // 只留最短结论，避免在小窗口里堆字。
+    const current=p.current;
     const secondary=!compact?detail(p,live!.now)
-      :detailed&&p.current.length?`当前 ${p.current.map(o=>o.title).join('、')} · ${clockText(Math.min(...p.current.map(o=>o.end)))} 结束`
+      :detailed&&current.kind!=='idle'?`当前 ${current.label}${current.endAt?` · ${clockText(current.endAt)} 结束`:''}`
       :detailed&&p.next?`下一项 ${nextText(p)}`
-      :p.current.length?`${clockText(Math.min(...p.current.map(o=>o.end)))} 结束`
+      :current.kind!=='idle'?(current.endAt?`${clockText(current.endAt)} 结束`:'进行中')
       :p.code==='TERM_NOT_STARTED'?p.termStart+' 开始'
       :p.next?`${nextText(p)}`:'暂无下一项';
     // 三个层级：称呼（谁）→ 状态（发生了什么）→ 依据（时间与地点），
@@ -63,7 +68,8 @@ function PresenceZone({person,status,marker,onHover}:{person:PersonId;status?:Pe
 }
 // 悬浮球按实际档案渲染状态区域：2 人时保持左右双方（视觉不变），1 人时只渲染一个居中的区域。
 function PresenceOrb({animate,people,onHover}:{animate:boolean;people:PersonStatus[];onHover?:(person:PersonId)=>void}){
-  const labels=people.map(status=>presenceMeta[presenceStateFor(status)].label).join('、');
+  // 无障碍文案与 Mini / Tip / Tray 同源（statusLabel），不再有第二套粗粒度状态词。
+  const labels=people.map(status=>statusLabel(status)).join('、');
   return h('div',{className:`presence-orb${animate?' motion':''}`,'aria-label':people.length>1?`双方状态：${labels}`:`当前状态：${labels}`},
     h('div',{className:`presence-surface${people.length<2?' solo':''}`},
       ...people.map(status=>h(PresenceZone,{key:status.person,person:status.person,status,marker:status.alias,onHover}))));

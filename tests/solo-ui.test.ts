@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { apply, epoch } from '../src/core.ts';
-import { companionBusinessState } from '../src/companion-display.ts';
+import { resolvePetState } from '../src/companion-display.ts';
 import { personStatus, snapshot } from '../src/live.ts';
 import { getCompanionProfile, getSelfProfile, resolvePetSubject } from '../src/people.ts';
 import { personOptions, profileLabelFor, shellTabs, tabShortcuts } from '../src/ui/shell.ts';
@@ -80,8 +80,9 @@ test('Together 桌宠主体仍是同行者，家庭忙碌与即将开始语义�
   const withMeeting = apply(state, { type: 'save', entity: 'events', value: { id: 'solo-ui-meeting', title: '临时会议', start: '2027-02-28T10:00', end: '2027-02-28T11:00', place: '', notes: '', reminders: [], checklist: [] } }, epoch('2027-02-28T09:00'));
   assert.equal(snapshot(withMeeting, epoch('2027-02-28T10:20')).display.state, 'busy_work');
   assert.equal(withMeeting.events[0].person, 'me', '本人新建的会议归属本人');
-  // 直接调用业务状态函数时，主体显式传入。
-  assert.equal(companionBusinessState(snapshot(state, busy).people, busy, 'partner'), 'busy_class');
+  // 直接解析桌宠姿态时，主体显式传入；"在做什么"仍来自统一 StateEngine 的 CurrentState。
+  const petBase = (subjectId: 'me' | 'partner') => resolvePetState({ people: snapshot(state, busy).people, subjectId, pending: 0, now: busy }).base;
+  assert.equal(petBase('partner'), 'busy_class');
   // 同刻把主体换成本人：本人空闲，但另一位（同行者）正在上课 → 仍然是家庭忙碌。
-  assert.equal(companionBusinessState(snapshot(state, busy).people, busy, 'me'), 'busy_work');
+  assert.equal(petBase('me'), 'busy_work');
 });

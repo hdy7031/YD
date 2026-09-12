@@ -1,7 +1,10 @@
 import { pendingReminders } from './selectors.ts';
 import { occurrences, epoch, dateOf, DAY } from './core.ts';
-import { companionDisplay, getScheduledPetState, type CompanionDisplay, type ScheduledPetState } from './companion-display.ts';
+import { companionDisplay, type CompanionDisplay } from './companion-display.ts';
 import { defaultAliasFor, effectiveRole, personAlias, resolvePetSubject } from './people.ts';
+import { getCurrentState, getRoutineState, STATE_SOURCE_PRIORITY } from './state/engine.ts';
+import { stateLabel, stateTone } from './state/presentation.ts';
+import type { CurrentState } from './state/types.ts';
 import type { State, PersonId, ProfileRole, Occurrence } from './types.ts';
 
 export interface PetPreferences {
@@ -24,7 +27,10 @@ export interface PetPreferences {
   nightRest:boolean;
 }
 export const petDefaults:PetPreferences={mode:'custom',size:'medium',animate:true,reduceMotion:false,bubbles:true,duration:8,pausedUntil:0,miniPanel:true,rememberPosition:true,nightRest:true};
-export type StatusCode="FREE"|"BUSY_CLASS"|"BUSY_EVENT"|"BUSY_MEETING"|"UPCOMING"|"UNKNOWN"|"TERM_NOT_STARTED"|"NO_SCHEDULE"|"TERM_ENDED"|"DAY_FINISHED"|"NO_CLASS_TODAY";
+// 日程阶段码：只描述"课表层面现在是什么阶段"，不描述人在做什么。
+// BUSY_CLASS / BUSY_EVENT 由统一状态引擎选出的 CurrentState 派生（source = schedule），
+// 其余码只在 CurrentState 为 idle 时补充说明（今天无课 / 学期结束 / 尚未录入…）。
+export type StatusCode="FREE"|"BUSY_CLASS"|"BUSY_EVENT"|"UPCOMING"|"UNKNOWN"|"TERM_NOT_STARTED"|"NO_SCHEDULE"|"TERM_ENDED"|"DAY_FINISHED"|"NO_CLASS_TODAY";
 // 状态短代号的默认值（D / Y）由 people.ts 的身份解析决定：显式 shortAlias 优先。
 export const profileAlias=(p:{id:PersonId;role?:ProfileRole;shortAlias?:string},index=0)=>p.shortAlias??defaultAliasFor(p,index);
 export interface PersonStatus {
@@ -35,11 +41,12 @@ export interface PersonStatus {
   /** 档案显示名称（用于「我的 / Alex」这类称呼）。 */
   name:string;
   conflict:boolean;
-  research:boolean;
   person:PersonId;
-  current:Occurrence[];
-  currentCourse?:Occurrence;
-  currentEvent?:Occurrence;
+  /** 唯一的状态真相：统一 StateEngine 的 CurrentState（永远有答案，不会是 null）。 */
+  current:CurrentState;
+  /** 该人的作息层（不做优先级裁决）：只供显示层记录"业务压过作息"这类分层事实。 */
+  routine:CurrentState|null;
+  /** 以下都是日程投影（不是状态判断）：下一项、今天、学期等。 */
   next?:Occurrence;
   nextCourse?:Occurrence;
   today:Occurrence[];
@@ -49,14 +56,16 @@ export interface PersonStatus {
   tentative:boolean;
 }
 export type PresenceState='idle'|'upcoming'|'busy'|'focus'|'dnd'|'offline';
-export const presenceMeta:Record<PresenceState,{label:string}>={idle:{label:'空闲'},upcoming:{label:'即将有安排'},busy:{label:'忙碌'},focus:{label:'专注'},dnd:{label:'勿扰'},offline:{label:'离线'}};
-export function statusLabel(status?:Pick<PersonStatus,'code'|'research'|'conflict'>):string {
+/**
+ * 人物状态的完整文案：Home / Mini / Tip / Tray 共用同一份实现。
+ * 文案由 CurrentState 决定（经由 state/presentation.ts）；只有"空闲"时才用
+ * 日程阶段补充说明，保证"此刻在做什么"永远只有一个来源。
+ */
+export function statusLabel(status?:Pick<PersonStatus,'code'|'current'|'conflict'>):string {
   if(!status)return '状态暂不可用';
   if(status.conflict)return '安排冲突';
+  if(status.current.kind!=='idle')return stateLabel(status.current);
   switch(status.code){
-    case 'BUSY_CLASS':return status.research?'教研中':'上课中';
-    case 'BUSY_MEETING':return '会议中';
-    case 'BUSY_EVENT':return '活动中';
     case 'UPCOMING':return '即将有安排';
     case 'DAY_FINISHED':return '今日课程已结束';
     case 'NO_CLASS_TODAY':return '今天无课';
@@ -68,16 +77,18 @@ export function statusLabel(status?:Pick<PersonStatus,'code'|'research'|'conflic
   }
 }
 export function presenceStateFor(status?:PersonStatus):PresenceState {
-  if(!status||['UNKNOWN','NO_SCHEDULE','TERM_ENDED'].includes(status.code))return 'offline';
-  // 冲突是真正的警示色，优先于其它语义；教研用专注色，上课/会议/活动用忙碌色，
-  // 即将开始单独一档，其余空闲。颜色只由这里决定，不在渲染层再分叉。
+  if(!status)return 'offline';
+  // 颜色语义只由 presentation.stateTone(CurrentState) 决定：
+  // 冲突 → 警示，上课/活动 → 忙碌，教研/专注 → 专注色，其余（含作息）→ 平静。
+  // 这里只把 tone 翻译成界面用的 presence 词汇，并在"空闲"时补上日程阶段提示。
+  // status.conflict 与 current.meta.conflict 同源（都由引擎给出），任一处设立即为警示色。
   if(status.conflict)return 'dnd';
-  // 教研只在“正在进行教研”时才是专注色：单独一个 research 标记不能让
-  // 文案已经写着“空闲”的状态变成另一种颜色。
-  // 只有“上课中 + 教研”这一种组合是专注色；活动与会议即使带上 research 标记
-  // 也仍然是忙碌色，保证「文案 → 颜色」是单值映射。
-  if(status.code==='BUSY_CLASS')return status.research?'focus':'busy';
-  if(status.code==='BUSY_EVENT'||status.code==='BUSY_MEETING')return 'busy';
+  const tone=stateTone(status.current);
+  if(tone==='alert')return 'dnd';
+  if(tone==='busy')return 'busy';
+  if(tone==='focus')return 'focus';
+  if(status.current.kind!=='idle')return 'idle';
+  if(['UNKNOWN','NO_SCHEDULE','TERM_ENDED'].includes(status.code))return 'offline';
   if(status.code==='UPCOMING')return 'upcoming';
   return 'idle';
 }
@@ -88,30 +99,30 @@ export function personStatus(s:State,now:number,person:PersonId):PersonStatus {
   const index=s.profiles.findIndex(p=>p.id===person),p=index<0?undefined:s.profiles[index];
   // 单人工作区（Phase 1A 起合法）没有同行者档案：返回“状态暂不可用”而不是抛错。
   // 双人工作区一定命中档案，行为与之前完全一致。
-  if(!p)return {person,code:'UNKNOWN',alias:defaultAliasFor({id:person}),role:'self',name:person,conflict:false,research:false,current:[],today:[],todayCount:0,termStart:'',tentative:false};
-  const all=occurrences(s,-Infinity,Infinity,person),current=all.filter(o=>o.start<=now&&now<o.end),next=all.find(o=>o.start>now);
-  const currentCourse=current.find(o=>o.kind==='course'),currentEvent=current.find(o=>o.kind==='event');
+  if(!p)return {person,code:'UNKNOWN',alias:defaultAliasFor({id:person}),role:'self',name:person,conflict:false,routine:null,current:{personId:person,kind:'idle',label:'空闲',source:'idle',startAt:now,priority:STATE_SOURCE_PRIORITY.idle},today:[],todayCount:0,termStart:'',tentative:false};
+  // 唯一的"现在在做什么"来源：统一状态引擎。日程投影（next / today / 学期）另行计算。
+  const current=getCurrentState(s,person,now);
+  const all=occurrences(s,-Infinity,Infinity,person),ongoing=all.filter(o=>o.start<=now&&now<o.end),next=all.find(o=>o.start>now);
   const nextCourse=all.find(o=>o.kind==='course'&&o.start>now);
   const dayStart=epoch(dateOf(now)),dayEnd=dayStart+DAY;
   const today=all.filter(o=>o.start<dayEnd&&o.end>dayStart);
   const todayCourses=today.filter(o=>o.kind==='course');
   const hasSchedule=s.courses.some(c=>c.person===person);
   const termStart=epoch(p.startDate),termEnd=termStart+p.weeks*7*DAY;
-  const code:StatusCode=currentCourse?'BUSY_CLASS':currentEvent?'BUSY_EVENT':!hasSchedule?'NO_SCHEDULE':now<termStart?'TERM_NOT_STARTED':now>=termEnd&&!nextCourse?'TERM_ENDED':todayCourses.length&&todayCourses.every(o=>o.end<=now)?'DAY_FINISHED':!todayCourses.length?'NO_CLASS_TODAY':nextCourse&&nextCourse.start-now<=30*60000?'UPCOMING':'FREE';
-  const research=!!currentCourse&&activity(s,currentCourse)==='教研';
-  const boundaries=[...current.map(o=>o.end),...(next?[next.start]:[]),termStart,termEnd].filter(n=>n>now);
-  return {person,code,alias:profileAlias(p,index),role:effectiveRole(p,index),name:p.name,conflict:current.length>1,research,current,currentCourse,currentEvent,next,nextCourse,today,todayCount:todayCourses.length,nextChange:boundaries.length?Math.min(...boundaries):undefined,termStart:p.startDate,tentative:!!p.tentative};
+  // BUSY_* 由引擎选出的状态派生（不再各自判断"是不是在上课"）；其余码是日程阶段。
+  const code:StatusCode=current.source==='schedule'?(current.meta?.scheduleKind==='course'?'BUSY_CLASS':'BUSY_EVENT'):!hasSchedule?'NO_SCHEDULE':now<termStart?'TERM_NOT_STARTED':now>=termEnd&&!nextCourse?'TERM_ENDED':todayCourses.length&&todayCourses.every(o=>o.end<=now)?'DAY_FINISHED':!todayCourses.length?'NO_CLASS_TODAY':nextCourse&&nextCourse.start-now<=30*60000?'UPCOMING':'FREE';
+  const boundaries=[...ongoing.map(o=>o.end),...(next?[next.start]:[]),termStart,termEnd].filter(n=>n>now);
+  return {person,code,alias:profileAlias(p,index),role:effectiveRole(p,index),name:p.name,conflict:current.meta?.conflict===true,current,routine:getRoutineState(s,person,now),next,nextCourse,today,todayCount:todayCourses.length,nextChange:boundaries.length?Math.min(...boundaries):undefined,termStart:p.startDate,tentative:!!p.tentative};
 }
-export function snapshot(s:State,now:number,display?:{reminderSince?:number;nudgeId?:number;scheduled?:ScheduledPetState|null}):LiveSnapshot{
+export function snapshot(s:State,now:number,display?:{reminderSince?:number;nudgeId?:number}):LiveSnapshot{
   // 按工作区实际档案投影：1 人 1 条、2 人 2 条；顺序取 profiles 的显示顺序，
   // 身份语义来自 role，而不是固定的 me / partner。
   const people=s.profiles.map(profile=>personStatus(s,now,profile.id)),pending=pendingReminders(s).length;
   const preferences={...petDefaults,...s.settings.pet};
   const subject=resolvePetSubject(s);
-  // 时间状态的唯一来源：桌宠主体自己的 Routine。主进程的 clock 只是同一纯函数的缓存，
-  // 因此这里不传 scheduled 时也能算出完全一致的结果（托盘、测试、渲染层都用同一条路径）。
-  const scheduled=display?.scheduled===undefined?getScheduledPetState(subject.routine,now):display.scheduled;
-  return {now,source:'北京时间 · Windows 系统时钟（未联网校准）',people,pending,preferences,subject:subject.id,display:companionDisplay({people,pending,now,subjectId:subject.id,nightRest:preferences.nightRest,...display,scheduled})};
+  // 桌宠姿态完全由统一状态引擎 + 显示层叠加得出：这里不再有独立的时间表、
+  // 也不再有"启动时读一次"的状态缓存——每次投影都直接反映当前状态。
+  return {now,source:'北京时间 · Windows 系统时钟（未联网校准）',people,pending,preferences,subject:subject.id,display:companionDisplay({people,pending,now,subjectId:subject.id,nightRest:preferences.nightRest,...display})};
 }
 export interface BubbleEvent { id:string; at:number; text:string }
 export function bubbleEvents(s:State,from:number,to:number):BubbleEvent[]{

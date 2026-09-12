@@ -68,11 +68,14 @@ app.whenReady().then(async()=>{
   check('D/Y与左右状态点严格对称',Math.abs((symmetry.marks[0].cx+symmetry.marks[1].cx)/2-(symmetry.surface.x+symmetry.surface.width/2))<.1&&Math.abs(symmetry.marks[0].cy-symmetry.marks[1].cy)<.1&&Math.abs((symmetry.dots[0].cx+symmetry.dots[1].cx)/2-(symmetry.surface.x+symmetry.surface.width/2))<.1&&Math.abs(symmetry.dots[0].cy-symmetry.dots[1].cy)<.1&&Math.abs(symmetry.dots[0].width-6)<.1&&Math.abs(symmetry.dots[0].width-symmetry.dots[1].width)<.1);
   check('中央分割线和原生title均已删除',await orb.webContents.executeJavaScript("!document.querySelector('.presence-seam')&&!document.querySelector('.pet-handle').hasAttribute('title')"));
   check('默认球体仅显示D/Y且无旧贴图',await orb.webContents.executeJavaScript("document.body.textContent.trim()==='DY'&&!/[我Ta]/.test(document.body.textContent)&&!document.querySelector('.split-orb')&&!document.querySelector('.orb-shell')"));
-  orb.webContents.send('dayhub:live',{...next,preferences:{...next.preferences,mode:'orb'},people:next.people.map(p=>({...p,code:p.person==='me'?'BUSY_EVENT':'BUSY_CLASS',research:p.person==='partner'}))});await wait(80);
+  // 状态语义来自统一 StateEngine 的 CurrentState.kind（不再是 code / research 标记）：
+  // me → meeting（忙碌色），partner → research（专注色）。
+  const injectKinds=value=>({...value,preferences:{...value.preferences,mode:'orb'},people:value.people.map(p=>({...p,current:{...p.current,kind:p.person==='me'?'meeting':'research'}}))});
+  orb.webContents.send('dayhub:live',injectKinds(next));await wait(80);
   // 主进程每秒会广播一次真实快照，注入的快照可能被下一帧覆盖，因此重试几次。
   let zones=false;
   for(let i=0;i<6&&!zones;i++){
-    orb.webContents.send('dayhub:live',{...next,preferences:{...next.preferences,mode:'orb'},people:next.people.map(p=>({...p,code:p.person==='me'?'BUSY_EVENT':'BUSY_CLASS',research:p.person==='partner'}))});
+    orb.webContents.send('dayhub:live',injectKinds(next));
     await wait(60);
     zones=await orb.webContents.executeJavaScript("!!document.querySelector('.presence-me.state-busy')&&!!document.querySelector('.presence-partner.state-focus')");
   }
