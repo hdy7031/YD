@@ -16,6 +16,7 @@ import { getCurrentState, getRoutineState, STATE_SOURCE_PRIORITY } from '../src/
 import { activeManualOverride, manualOverrideActive, pruneManualOverrides } from '../src/state/manual.ts';
 import { stateSourceLabel } from '../src/state/presentation.ts';
 import { emptyRoutine, routineKindPriority, type RoutineProfile, type RoutineRule } from '../src/routine.ts';
+import { DEFAULT_AVATAR_PACK_ID } from '../src/avatar.ts';
 import type { Course, PersonId, Profile, ProfileRole, State } from '../src/types.ts';
 
 const at = (text: string) => epoch(text);
@@ -32,7 +33,7 @@ const rule = (over: Partial<RoutineRule> & { id: string }): RoutineRule => {
 };
 const routineOf = (...rules: RoutineRule[]): RoutineProfile => ({ source: 'user', updatedAt: 0, rules });
 const person = (id: PersonId, role: ProfileRole, name = id, routine: RoutineProfile = emptyRoutine(0)): Profile =>
-  ({ id, role, name, routine, startDate: MONDAY, weeks: 16, periods, updatedAt: 0 });
+  ({ id, role, name, routine, avatar:{packId:DEFAULT_AVATAR_PACK_ID,source:'default'}, startDate: MONDAY, weeks: 16, periods, updatedAt: 0 });
 const workspace = (profiles: Profile[]): State => {
   const state = initial(at(`${MONDAY}T00:00`));
   state.profiles = profiles;

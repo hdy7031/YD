@@ -65,6 +65,7 @@ export function v020Synthetic(now = v020Now): State {
   // 迁移测试才能证明 v1 → v2 → v3 → v4 → v5 的身份、归属、作息与手动状态真的发生过。
   for(const profile of s.profiles) delete profile.role;
   for(const profile of s.profiles) delete profile.routine;
+  for(const profile of s.profiles) delete profile.avatar;
   for(const event of s.events) delete event.person;
   delete (s as { manualOverrides?: unknown }).manualOverrides;
   delete s.settings.domainVersion;

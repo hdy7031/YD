@@ -87,6 +87,11 @@ class Session {
     sessions.push(panel, orb);
     await panel.ready; await orb.ready;
 
+    const state = await panel.eval('window.dayhub.get()');
+    const live = await panel.eval('window.dayhub.live()');
+    check('打包版 Profile.avatar 已迁移到 v6', state.settings.domainVersion === 6 && state.profiles.every(p => p.avatar?.packId === 'yd-default' && p.avatar?.source === 'default'));
+    check('打包版 PetInstance 与 companion Profile 一致', live.petInstance?.subjectId === state.profiles.find(p => p.role === 'companion')?.id && live.petInstance?.avatarPackId === 'yd-default');
+
     // ---- 素材：十态名单、缺帧说明、无猫 --------------------------------
     const bundle = await panel.eval('window.dayhub.companionAssets().then(a=>({available:a.available,count:Object.keys(a.images).length,reason:a.reason,source:a.source,frames:Object.keys(a.manifest?.states??{}),missing:a.missing??[],requestedPackId:a.requestedPackId,resolvedPackId:a.resolvedPackId,packId:a.pack?.id,packVersion:a.pack?.version,packCanvas:a.pack?.canvas,packFrames:Object.keys(a.pack?.frames??{}),fallbackState:a.pack?.fallbackState}))');
     check('打包版素材来源指向 app.asar 内的 assets/companion/custom', /app\.asar|assets[\\/]companion[\\/]custom/.test(bundle.source));

@@ -17,6 +17,7 @@ export function v3TogetherSynthetic(now = v020Now): State {
   const state = personAwareMigrationV3(identityRoleMigration(v020Synthetic(now)));
   // v4 才引入 profile.routine：这里明确保持在迁移前的形态。
   for (const profile of state.profiles) delete profile.routine;
+  for (const profile of state.profiles) delete profile.avatar;
   state.settings.domainVersion = v3DomainVersion;
   return state;
 }

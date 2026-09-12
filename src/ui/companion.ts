@@ -95,7 +95,7 @@ function useSurface(name:string){
   },[name]);
 }
 export function DesktopPet(){
-  const live=useLive(),assets=useCompanionAssets(),drag=useRef<{x:number;y:number;pointerId:number;target:HTMLButtonElement}|null>(null),moved=useRef(false),draggingRef=useRef(false),hoverArmed=useRef(true),[dragging,setDragging]=useState(false);useSurface('pet-body');
+  const live=useLive(),assets=useCompanionAssets(live?.petInstance.avatarPackId),drag=useRef<{x:number;y:number;pointerId:number;target:HTMLButtonElement}|null>(null),moved=useRef(false),draggingRef=useRef(false),hoverArmed=useRef(true),[dragging,setDragging]=useState(false);useSurface('pet-body');
   const p=live?.preferences??petDefaults;
   // 专属角色桌宠是唯一默认形象：素材即使读不到也只用“同一形象的待机帧”，
   // 不会再切换到其它角色。
@@ -313,7 +313,7 @@ function RoutineSettings({state,busy,onError}:{state:State;busy:boolean;onError:
 
 export function PetSettings({live,settings,state}:{live:LiveSnapshot|null;settings?:{launch:boolean;trayResident?:boolean};state?:State}){
   const [error,setError]=useState('');const [busy,setBusy]=useState(false);
-  const assets=useCompanionAssets();
+  const assets=useCompanionAssets(live?.petInstance.avatarPackId);
   const p=live?.preferences??petDefaults;
   const run=(fn:()=>Promise<unknown>)=>{setBusy(true);return fn().then(()=>setError('')).catch(e=>setError(String(e))).finally(()=>setBusy(false));};
   const save=(pet:Partial<PetPreferences>)=>run(()=>api.change({type:'settings',pet}));

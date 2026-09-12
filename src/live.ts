@@ -1,7 +1,8 @@
 import { pendingReminders } from './selectors.ts';
 import { occurrences, epoch, dateOf, DAY } from './core.ts';
 import { companionDisplay, type CompanionDisplay } from './companion-display.ts';
-import { defaultAliasFor, effectiveRole, personAlias, resolvePetSubject } from './people.ts';
+import { defaultAliasFor, effectiveRole, personAlias } from './people.ts';
+import { resolvePetInstance, type PetInstance } from './pet-instance.ts';
 import { getCurrentState, getRoutineState, STATE_SOURCE_PRIORITY } from './state/engine.ts';
 import { stateLabel, stateTone } from './state/presentation.ts';
 import type { CurrentState } from './state/types.ts';
@@ -92,7 +93,7 @@ export function presenceStateFor(status?:PersonStatus):PresenceState {
   if(status.code==='UPCOMING')return 'upcoming';
   return 'idle';
 }
-export interface LiveSnapshot { now:number; source:string; people:PersonStatus[]; pending:number; preferences:PetPreferences; display:CompanionDisplay; /** 桌宠当前代表谁（有同行者时是同行者，Solo 时是本人）。 */ subject:PersonId; bubble?:{id:string;text:string;below?:boolean}; hoverTip?:{person:PersonId;text:string;state:PresenceState}; }
+export interface LiveSnapshot { now:number; source:string; people:PersonStatus[]; pending:number; preferences:PetPreferences; display:CompanionDisplay; petInstance:PetInstance; /** Compatibility projection of petInstance.subjectId. */ subject:PersonId; bubble?:{id:string;text:string;below?:boolean}; hoverTip?:{person:PersonId;text:string;state:PresenceState}; }
 export const clockText=(n:number)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(n);
 export function activity(s:State,o:Occurrence){return o.kind==='event'?'会议/活动':s.courses.find(c=>c.id===o.courseId)?.activity==='research'?'教研':'上课';}
 export function personStatus(s:State,now:number,person:PersonId):PersonStatus {
@@ -119,10 +120,10 @@ export function snapshot(s:State,now:number,display?:{reminderSince?:number;nudg
   // 身份语义来自 role，而不是固定的 me / partner。
   const people=s.profiles.map(profile=>personStatus(s,now,profile.id)),pending=pendingReminders(s).length;
   const preferences={...petDefaults,...s.settings.pet};
-  const subject=resolvePetSubject(s);
+  const petInstance=resolvePetInstance(s);
   // 桌宠姿态完全由统一状态引擎 + 显示层叠加得出：这里不再有独立的时间表、
   // 也不再有"启动时读一次"的状态缓存——每次投影都直接反映当前状态。
-  return {now,source:'北京时间 · Windows 系统时钟（未联网校准）',people,pending,preferences,subject:subject.id,display:companionDisplay({people,pending,now,subjectId:subject.id,nightRest:preferences.nightRest,...display})};
+  return {now,source:'北京时间 · Windows 系统时钟（未联网校准）',people,pending,preferences,petInstance,subject:petInstance.subjectId,display:companionDisplay({people,pending,now,subjectId:petInstance.subjectId,nightRest:preferences.nightRest,...display})};
 }
 export interface BubbleEvent { id:string; at:number; text:string }
 export function bubbleEvents(s:State,from:number,to:number):BubbleEvent[]{

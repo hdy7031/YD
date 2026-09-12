@@ -37,6 +37,7 @@ export function v3SoloSynthetic(now = soloNow): State {
   const profile = { ...self, id: soloPersonId, role: 'self' as const, name: 'Alex', shortAlias: 'A', startDate: '2027-03-01', weeks: 16, updatedAt: now };
   // v4 之前档案没有 routine：删掉 initial() 种下的字段，让这份 fixture 真的是"迁移前"。
   delete profile.routine;
+  delete profile.avatar;
   // v5 之前也没有临时状态（Phase 3C）：fixture 固定表示 v3 形态。
   delete (state as { manualOverrides?: unknown }).manualOverrides;
   state.profiles = [profile];

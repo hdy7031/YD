@@ -7,12 +7,13 @@
 //     桌宠消费方仍在 Phase 2B 才切换，迁移只种下 0.2.x 的默认时间表）。
 // 5 = v0.3 Phase 3C：临时手动状态（ManualOverride[]，每人最多一条），
 //     优先级 Manual > Schedule > Routine > Idle；旧数据补空数组即可。
+// 6 = v0.3 Phase 4B：每个 Profile 持有稳定 Avatar Pack 选择。
 //
 // 任何语义变化都必须先经过 src/migration.ts 的备份闸门，再提升这个数字。
 // 这里保持为无依赖的叶子模块，避免 core ↔ migration ↔ backup 形成循环。
 import type { State } from './types.ts';
 
-export const DOMAIN_VERSION = 5;
+export const DOMAIN_VERSION = 6;
 
 // 从未迁移过的安装（以及 v0.2.x 的备份文件）没有该字段，一律视为 1。
 export function stateDomainVersion(state: Pick<State, 'settings'>): number {

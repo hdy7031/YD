@@ -4,6 +4,8 @@ import { DOMAIN_VERSION, stateDomainVersion } from './domain.ts';
 import { isProfileRole, isSelfId, requireSelfProfile, roleCounts } from './people.ts';
 import { assertRoutineProfile, emptyRoutine, legacyDefaultRoutine } from './routine.ts';
 import { MANUAL_LABEL_LIMIT, MANUAL_OVERRIDE_LIMIT, assertManualOverride, isManualStateKind, pruneManualOverrides } from './state/manual.ts';
+import { assertAvatarSelection, resetAvatarPack, setAvatarPack } from './avatar-selection.ts';
+import { DEFAULT_AVATAR_PACK_ID } from './avatar.ts';
 import type { State, Profile, PersonId, ProfileRole, Course, Task, Event, Notice, Exception, Occurrence, Reminder, Command, Entity, SchedulePackage } from './types.ts';
 import type { RoutineProfile } from './routine.ts';
 export const DAY = 86400000;
@@ -16,7 +18,7 @@ export function weekday(date: string): number { return new Date(date + 'T12:00:0
 export function initial(now = Date.now()): State {
   const date = dateOf(now), monday = addDays(date, 1 - weekday(date));
   // 默认首次启动仍然是当前的双人体验（本人 + 同行者）；由 Onboarding 决定几个人的事情留到后续阶段。
-  const profile = (pid: PersonId, role: ProfileRole, name: string, routine: RoutineProfile): Profile => ({ id: pid, role, name, routine, startDate: monday, weeks: 20, periods: [{start:'08:00',end:'08:45'},{start:'08:55',end:'09:40'},{start:'10:00',end:'10:45'},{start:'10:55',end:'11:40'},{start:'14:00',end:'14:45'},{start:'14:55',end:'15:40'},{start:'16:00',end:'16:45'},{start:'16:55',end:'17:40'}], updatedAt: now });
+  const profile = (pid: PersonId, role: ProfileRole, name: string, routine: RoutineProfile): Profile => ({ id: pid, role, name, routine, avatar: { packId: DEFAULT_AVATAR_PACK_ID, source: 'default' }, startDate: monday, weeks: 20, periods: [{start:'08:00',end:'08:45'},{start:'08:55',end:'09:40'},{start:'10:00',end:'10:45'},{start:'10:55',end:'11:40'},{start:'14:00',end:'14:45'},{start:'14:55',end:'15:40'},{start:'16:00',end:'16:45'},{start:'16:55',end:'17:40'}], updatedAt: now });
   // v4 起每个档案都必须带 RoutineProfile：本人从空规则开始；同行者沿用 0.2.x 的默认
   // 桌宠时间表（由 routine.ts 的统一 factory 生成，这里不写 magic time）。
   const profiles = [profile('me','self','我', emptyRoutine(now)), profile('partner','companion','Ta', legacyDefaultRoutine(now))];
@@ -45,6 +47,7 @@ export function validate(entity: Entity, v: any, state: State) {
     // 作息规则随档案一起保存；缺省表示"这次保存不带 routine"（由合并语义保留旧值），
     // 整个 State 的"每个档案都必须有合法 RoutineProfile"不变式见 validateState。
     if(v.routine!==undefined)assertRoutineProfile(v.routine,'个人作息');
+    if(v.avatar!==undefined)assertAvatarSelection(v.avatar,'个人 Avatar 选择');
     assert(date(v.startDate) && weekday(v.startDate)===1, '学期起始日必须是第一教学周的周一');
     assert(Number.isInteger(v.weeks) && v.weeks>=1 && v.weeks<=60, '教学周数应为 1—60');
     assert(Array.isArray(v.periods) && v.periods.length>0 && v.periods.length<=24, '请配置 1—24 节作息');
@@ -134,6 +137,9 @@ export function apply(state: State, cmd: Command, now=Date.now()): State {
   }
   if(cmd.type==='save'){
     const entity=cmd.entity; const v=structuredClone(cmd.value) as any; if(entity==='events'&&v&&v.end==='')v.end=null;
+    // Avatar 有独立 command；通用 Profile 编辑只能原样携带已有选择，不能绕过
+    // Registry 校验写入任意 packId。历史数据缺字段时也保持缺失，交给 v6 migration。
+    if(entity==='profiles'&&v){const stored=s.profiles.find(profile=>profile.id===v.id);if(stored)v.avatar=stored.avatar;}
     // 会议默认归属工作区本人：界面尚无归属人选择器（Phase 1C 再开放），
     // 但归属必须由身份层解析，而不是写死 'me'。
     if(entity==='events'&&v&&v.person===undefined)v.person=requireSelfProfile(s).id;
@@ -217,6 +223,10 @@ export function apply(state: State, cmd: Command, now=Date.now()): State {
     }else{
       s.manualOverrides=(s.manualOverrides??[]).filter(o=>!isSelfId(s,o.personId));
     }
+  }else if(cmd.type==='avatarSet'){
+    setAvatarPack(s,cmd.personId,cmd.packId,now);
+  }else if(cmd.type==='avatarReset'){
+    resetAvatarPack(s,cmd.personId,now);
   }else throw new Error('不支持的操作');
   return migrateInbox(s);
 }
@@ -239,6 +249,7 @@ export function validateState(value: unknown): State {
   // v5 起临时状态是显式集合（旧版本由迁移补空数组）；记录必须属于存在的档案。
   assert(s.manualOverrides===undefined||Array.isArray(s.manualOverrides)&&s.manualOverrides.length<=MANUAL_OVERRIDE_LIMIT,'临时状态记录无效或过多');
   if(stateDomainVersion(s)>=5)assert(Array.isArray(s.manualOverrides),'临时状态记录缺失，请重新迁移或从备份恢复');
+  if(stateDomainVersion(s)>=6)for(const p of s.profiles)assertAvatarSelection(p.avatar,'个人 Avatar 选择');
   for(const override of s.manualOverrides??[]){assertManualOverride(override);assert(s.profiles.some(p=>p.id===override.personId),'临时状态所属人不存在');}
   for(const key of ['profiles','courses','events','tasks','notices','exceptions'] as Entity[]){assert(new Set(s[key].map(v=>v.id)).size===s[key].length,'记录编号重复');for(const v of s[key]){validate(key,v,s);assert(Number.isFinite(v.updatedAt),'更新时间无效');}}
   for(const item of [...s.courses,...s.tasks,...s.events])assert(!item.sourceId||s.notices.some(n=>n.id===item.sourceId),'备份来源关联缺失');

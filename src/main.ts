@@ -10,6 +10,7 @@ import { execFile } from 'node:child_process';
 import initSqlJs from 'sql.js';
 import { Companion } from './companion.ts';
 import { resolveCompanionAssets } from './companion-assets.ts';
+import { resolvePetInstance } from './pet-instance.ts';
 import { companionGeometry } from './companion-layout.ts';
 import { companionToggleShortcut } from './companion-menu.ts';
 import { migrateLive, petDefaults, snapshot, statusLabel } from './live.ts';
@@ -32,7 +33,6 @@ app.setAppUserModelId(APP_ID);
 // 这样 0.2.17 升级后仍读写同一份 dayhub.sqlite，用户数据不迁移、不丢失。
 app.setPath('userData',process.env.DAYHUB_TEST_DATA?path.resolve(process.env.DAYHUB_TEST_DATA):path.join(app.getPath('appData'),'事务助手'));
 let companion:Companion|undefined;
-let companionAssets:ReturnType<typeof resolveCompanionAssets>;
 let inboxService:InboxService;
 const delivery=new DesktopDelivery(toast);
 let quitting=false, orb:BrowserWindow, panel:BrowserWindow, tray:Tray, store:Store, attachments:string, data:string;
@@ -143,7 +143,10 @@ function setupHandlers(){
   handler('parseNotice',(id:string,text?:string,fromOcr?:boolean)=>inboxService.parse(id,text,fromOcr===true));
   handler('clipboardText',()=>clipboard.readText());
   handler('live',()=>companion?.get()??snapshot(store.state,Date.now()));
-  handler('companionAssets',()=>companionAssets??resolveCompanionAssets(__dirname));
+  handler('companionAssets',(packId?:unknown)=>{
+    if(packId!==undefined&&typeof packId!=='string')throw new Error('Avatar Pack 编号无效');
+    return resolveCompanionAssets(__dirname,packId as string|undefined);
+  });
   handler('pointer',(interactive:boolean)=>{if(typeof interactive!=='boolean')throw new Error('参数无效');});
   // Restrict click-through control to the sending companion window.
   ipcMain.removeHandler('dayhub:pointer');
@@ -290,9 +293,10 @@ else{
       const run=await runMigrations(store,{target:DOMAIN_VERSION,version:domainVersion,steps:migrationSteps,backupDirectory:path.join(data,'backups'),attachments,log:message=>runtimeLog('info',message)});
       if(run.migrated)runtimeLog('info',`领域迁移 v${run.from}→v${run.to} 完成 · ${run.steps.join('、')} · 备份 ${run.backup?.dayhub??''}`);
     }
-    // Custom companion assets ship with the app; the manifest is validated once
-    // here so every window reads the same resolved frames.
-    companionAssets=resolveCompanionAssets(__dirname);
+    // Validate and log the current subject's Pack before the windows appear.
+    // Renderer requests later use LiveSnapshot.petInstance.avatarPackId.
+    const initialPet=resolvePetInstance(store.state);
+    const companionAssets=resolveCompanionAssets(__dirname,initialPet.avatarPackId);
     runtimeLog('info',`桌宠素材 ${companionAssets.reason}`);
     Menu.setApplicationMenu(null);
     const initial=companionGeometry(store.state.settings.pet?.mode??'custom','medium',companionAssets.aspect);
@@ -301,7 +305,7 @@ else{
     panel=new BrowserWindow({...windowOptions(),width:1050,height:780,minWidth:750,minHeight:550,title:'YD · Your Day',icon:path.join(__dirname,'icon.png'),frame:false,show:false});
     lockWindow(orb);lockWindow(panel);
     orb.setTitle('YD · 桌宠');
-    companion=new Companion(store,orb,panel,windowOptions(),path.join(__dirname,'index.html'),lockWindow,companionAssets);
+    companion=new Companion(store,orb,panel,windowOptions(),path.join(__dirname,'index.html'),lockWindow);
     companion.setMenuActions({
       settings:()=>{showPanel();panel.webContents.send('dayhub:settings');},
       // 临时状态的入口在桌宠菜单里，但对话框在主窗口：先拉起主窗口再投递事件。

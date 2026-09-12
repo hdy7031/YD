@@ -9,28 +9,28 @@ import { presenceStateFor, type LiveSnapshot } from '../live.ts';
 const h=React.createElement;
 const api=()=>window.dayhub;
 
-// Assets are fetched once per window and reused for every state switch, so a
-// crossfade never waits for disk or IPC.
+// Assets are fetched for the current PetInstance Pack and reused for every
+// display-state switch. A later selection change naturally requests its Pack.
 const decode=(url:string)=>new Promise<void>(resolve=>{
   const image=new Image();
   image.onload=()=>resolve();
   image.onerror=()=>resolve();
   image.src=url;
 });
-export function useCompanionAssets():CompanionAssets|null{
+export function useCompanionAssets(packId?:string):CompanionAssets|null{
   const [assets,set]=useState<CompanionAssets|null>(null);
   const request=useRef(0);
   useEffect(()=>{
     let active=true;const token=++request.current;
-    // 素材在一次运行内不会变化，每个窗口只取一次，避免每次改动都搬运整包图片。
+    // 同一个 packId 只在 effect 建立时读取；状态切换不会重复搬运整包图片。
     // 收到后先把全部 Pack 帧解码完成再交给界面：状态切换是纯内存切换，
     // 不会出现“先显示破图，再补上真图”的闪动。
-    void api().companionAssets().then(async value=>{
+    void api().companionAssets(packId).then(async value=>{
       if(value?.available)await Promise.all([...new Set(Object.values(value.packs).flatMap(pack=>Object.values(pack.images)))].map(decode));
       if(active&&token===request.current)set(value);
     }).catch(()=>{if(active&&token===request.current)set(null);});
     return()=>{active=false;};
-  },[]);
+  },[packId]);
   return assets;
 }
 

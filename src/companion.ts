@@ -4,7 +4,8 @@ import { snapshot, bubbleEvents, petDefaults, presenceStateFor, statusLabel, typ
 import { CompanionTimeline } from './companion-display.ts';
 import { buildCompanionMenu, companionMenuHeight, companionMenuMetrics, companionToggleShortcut } from './companion-menu.ts';
 import { companionGeometry } from './companion-layout.ts';
-import type { CompanionAssets } from './companion-assets.ts';
+import { resolveAvatarPack } from './avatar.ts';
+import { resolvePetInstance } from './pet-instance.ts';
 import { logError } from './logging.ts';
 import type { Store } from './store.ts';
 import type { PersonId } from './types.ts';
@@ -27,7 +28,7 @@ export class Companion {
   readonly bubble:BrowserWindow;readonly mini:BrowserWindow;readonly tip:BrowserWindow;readonly sheet:BrowserWindow;
   private shortcut={label:companionToggleShortcut.label,ready:false};
   private actions:{settings:()=>void;status:()=>void;quit:()=>void;toggleVisible:()=>void}={settings:()=>{},status:()=>{},quit:()=>{},toggleVisible:()=>{}};
-  constructor(private store:Store,readonly orb:BrowserWindow,private panel:BrowserWindow,options:Electron.BrowserWindowConstructorOptions,private file:string,lock:(w:BrowserWindow)=>void,readonly assets:CompanionAssets){
+  constructor(private store:Store,readonly orb:BrowserWindow,private panel:BrowserWindow,options:Electron.BrowserWindowConstructorOptions,private file:string,lock:(w:BrowserWindow)=>void){
     this.bubble=new BrowserWindow({...options,width:330,height:180,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false});
     this.mini=new BrowserWindow({...options,width:326,height:270,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false});
     this.tip=new BrowserWindow({...options,width:150,height:32,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false,hasShadow:false,roundedCorners:false});
@@ -68,7 +69,8 @@ export class Companion {
     // One fixed rectangle per mode and size. Never derived from the current
     // frame, the business state or the character bounding box.
     const mode=p.mode==='orb'?'orb':'custom';
-    const {width,height}=companionGeometry(mode,p.size,this.assets.aspect);
+    const pack=resolveAvatarPack(resolvePetInstance(this.store.state).avatarPackId);
+    const {width,height}=companionGeometry(mode,p.size,pack.canvas.width/pack.canvas.height);
     return {width,height,shape:mode==='orb'?circleShape(width):undefined};
   }
   resize(){

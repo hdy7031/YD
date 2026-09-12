@@ -4,13 +4,15 @@ import type { SourceMetadata, ParsedDraft, ParseStatus, DraftType, InboundPayloa
 export type PersonId = string;
 // 工作区内的身份角色：本人 / 同行者。v0.3 只解决 YD Solo / Together 的基础。
 export type ProfileRole = 'self' | 'companion';
+export type AvatarSelectionSource = 'default' | 'user';
+export interface AvatarSelection { packId: import('./avatar.ts').AvatarPackId; source: AvatarSelectionSource }
 export interface ChecklistItem { id: string; text: string; done: boolean }
 export interface AcademicCalendar { startDate: string; weeks: number }
 // role 在 v1 旧数据里不存在（由 src/people.ts 按 角色→历史 id→位置 解析）；
 // 迁移到 v2 之后必须显式存在。
 // routine 在 v3 及更早的数据里不存在（v4 起由 src/routine.ts 提供，迁移会补齐）；
 // 它嵌套在档案下，所以自身不再存 personId：Profile.id 就是唯一身份。
-export interface Profile extends AcademicCalendar { shortAlias?: string; tentative?: boolean; role?: ProfileRole; routine?: import('./routine.ts').RoutineProfile; id: PersonId; name: string; startDate: string; weeks: number; periods: { start: string; end: string }[]; updatedAt: number }
+export interface Profile extends AcademicCalendar { shortAlias?: string; tentative?: boolean; role?: ProfileRole; routine?: import('./routine.ts').RoutineProfile; avatar?: AvatarSelection; id: PersonId; name: string; startDate: string; weeks: number; periods: { start: string; end: string }[]; updatedAt: number }
 export interface Course { createdAt?: number; activity?: 'teaching'|'research'; id: string; person: PersonId; title: string; place: string; notes: string; weekday: number; first: number; last: number; weeks: number[]; reminders: number[]; checklist: ChecklistItem[]; sourceId?: string; updatedAt: number }
 export interface Exception { createdAt?: number; sourceInboxItemId?: string; id: string; courseId: string; date: string; cancelled: boolean; start?: string; end?: string; place?: string; updatedAt: number }
 // v3 起会议/活动必须归属某个档案（迁移会为旧数据补上工作区本人）；
@@ -28,7 +30,7 @@ export interface State { inboxVersion?: number; bubbleHistory?: {id:string;at:nu
 export interface SchedulePackage {
   format: 'dayhub-schedule'; version: 1; termName: string;
   // 课表包只承载"学期 + 节次 + 课程"：不携带 Routine，导入永远不会覆盖用户自己的作息规则。
-  profiles: Array<Omit<Profile, 'updatedAt' | 'routine'>>;
+  profiles: Array<Omit<Profile, 'updatedAt' | 'routine' | 'avatar'>>;
   courses: Array<Omit<Course, 'updatedAt'>>;
 }
 export interface Occurrence {
@@ -41,12 +43,12 @@ export interface Occurrence {
   rescheduled?: boolean;
 }
 export type Entity = 'profiles' | 'courses' | 'exceptions' | 'events' | 'tasks' | 'notices';
-export type Command = { type:"inbound"; payload:InboundPayload; id:string } | { type:"review"; noticeId:string; draft:ParsedDraft; allowDuplicate?:boolean; updateId?:string } | { type:"inboxStatus"; noticeId:string; status:"IGNORED"|"UNPARSED" } | {type:"draft";noticeId:string;draft:ParsedDraft} | { type: 'save'; entity: Entity; value: unknown } | { type: 'delete'; entity: Entity; id: string } | { type: 'convert'; noticeId: string; task: unknown } | { type: 'ack'; id: string } | { type: 'snooze'; id: string; minutes?: 10|30|60 } | { type: 'settings'; launch?: boolean; setup?: boolean; trayResident?: boolean; pet?: Partial<import('./live.ts').PetPreferences> } | { type: 'importSchedule'; value: SchedulePackage } | { type: 'manual'; kind: import('./state/manual.ts').ManualStateKind; label: string; endAt: number | null; personId?: PersonId } | { type: 'manualCancel'; id?: string };
+export type Command = { type:"inbound"; payload:InboundPayload; id:string } | { type:"review"; noticeId:string; draft:ParsedDraft; allowDuplicate?:boolean; updateId?:string } | { type:"inboxStatus"; noticeId:string; status:"IGNORED"|"UNPARSED" } | {type:"draft";noticeId:string;draft:ParsedDraft} | { type: 'save'; entity: Entity; value: unknown } | { type: 'delete'; entity: Entity; id: string } | { type: 'convert'; noticeId: string; task: unknown } | { type: 'ack'; id: string } | { type: 'snooze'; id: string; minutes?: 10|30|60 } | { type: 'settings'; launch?: boolean; setup?: boolean; trayResident?: boolean; pet?: Partial<import('./live.ts').PetPreferences> } | { type: 'importSchedule'; value: SchedulePackage } | { type: 'manual'; kind: import('./state/manual.ts').ManualStateKind; label: string; endAt: number | null; personId?: PersonId } | { type: 'manualCancel'; id?: string } | { type: 'avatarSet'; personId: PersonId; packId: import('./avatar.ts').AvatarPackId } | { type: 'avatarReset'; personId: PersonId };
 export interface DesktopAPI {
   onSettings(callback:()=>void):()=>void;
   // 桌宠右键菜单 → 主窗口：打开"设置当前状态"。
   onStatus(callback:()=>void):()=>void;
-  companionAssets():Promise<import('./companion-frame.ts').CompanionAssets>;
+  companionAssets(packId?:import('./avatar.ts').AvatarPackId):Promise<import('./companion-frame.ts').CompanionAssets>;
   live():Promise<import('./live.ts').LiveSnapshot>;
   onLive(callback:(value:import('./live.ts').LiveSnapshot)=>void):()=>void;
   window(action:'minimize'|'maximize'|'close'|'open'|'mini'|'menu'|'settings'):Promise<void>;

@@ -27,6 +27,7 @@ import { pack } from './backup.ts';
 import { DOMAIN_VERSION, stateDomainVersion } from './domain.ts';
 import { effectiveRole, getCompanionProfile, requireSelfProfile, resolvePetSubject } from './people.ts';
 import { emptyRoutine, legacyDefaultRoutine } from './routine.ts';
+import { DEFAULT_AVATAR_PACK_ID } from './avatar.ts';
 import type { Store } from './store.ts';
 import type { Course, State } from './types.ts';
 
@@ -41,6 +42,8 @@ export const PERSON_AWARE_DOMAIN_VERSION = 3;
 export const ROUTINE_DOMAIN_VERSION = 4;
 /** v4 → v5：临时手动状态（Phase 3C）。旧数据补空数组，其它字段逐字段不变。 */
 export const MANUAL_STATUS_DOMAIN_VERSION = 5;
+/** v5 → v6：每个档案持有 Avatar Pack 选择。 */
+export const AVATAR_SELECTION_DOMAIN_VERSION = 6;
 
 /**
  * v0.2 时代的一次性兼容规则（原先散落在 migrateLive() 里的私人业务分支）。
@@ -123,6 +126,15 @@ export function manualStatusMigrationV5(state: State): State {
   return state;
 }
 
+export function avatarSelectionMigrationV6(state: State): State {
+  state.profiles = state.profiles.map(profile => ({
+    ...profile,
+    avatar: profile.avatar ?? { packId: DEFAULT_AVATAR_PACK_ID, source: 'default' },
+  }));
+  state.settings.domainVersion = AVATAR_SELECTION_DOMAIN_VERSION;
+  return state;
+}
+
 // 每一步的 `to` 写成字面量：提升 DOMAIN_VERSION 时必须追加新步骤，
 // 由 tests/identity.test.ts 守住“最后一个步骤的 to === DOMAIN_VERSION”。
 export const migrationSteps: MigrationStep[] = [
@@ -130,6 +142,7 @@ export const migrationSteps: MigrationStep[] = [
   { from: IDENTITY_DOMAIN_VERSION, to: PERSON_AWARE_DOMAIN_VERSION, id: 'person-aware', migrate: personAwareMigrationV3 },
   { from: PERSON_AWARE_DOMAIN_VERSION, to: ROUTINE_DOMAIN_VERSION, id: 'routine-profile', migrate: routineProfileMigrationV4 },
   { from: ROUTINE_DOMAIN_VERSION, to: MANUAL_STATUS_DOMAIN_VERSION, id: 'manual-status', migrate: manualStatusMigrationV5 },
+  { from: MANUAL_STATUS_DOMAIN_VERSION, to: AVATAR_SELECTION_DOMAIN_VERSION, id: 'avatar-selection', migrate: avatarSelectionMigrationV6 },
 ];
 
 export interface MigrationStep {
