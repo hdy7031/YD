@@ -1,6 +1,8 @@
 import { InboxHub } from './inbox.ts';
-import { snapshot, profileAlias, statusLabel } from '../live.ts';
+import { snapshot, profileAlias, statusLabel, clockText } from '../live.ts';
 import type { PersonStatus } from '../live.ts';
+import type { ManualStateKind } from '../state/manual.ts';
+import { manualDurationOptions, manualKindOptions, manualLabelFor, manualStatusProblem } from './manual-status.ts';
 import { pendingReminders as selectPendingReminders, attentionSummary } from '../selectors.ts';
 import { useLive, Titlebar, DesktopPet, Bubble, Mini, PresenceTip, PetMenu, StatusRows, PetSettings } from './companion.ts';
 import { BrandGlyph } from './brand.ts';
@@ -76,6 +78,57 @@ function PartnerStatusCard({status,updatedAt,now}:{status:PersonStatus;updatedAt
       next?h('p',{className:'partner-next-course'},h('span',null,status.code==='TERM_NOT_STARTED'?'首节 · ':'下一节 · '),nextCourseText(next,now)):null),
     h('small',{className:'partner-status-meta'},`课表更新 · ${fmt(updatedAt,true)}`));
 }
+// Phase 3C：设置当前状态（临时手动状态）。
+//
+// 第一版只给本人开入口：状态由状态主体本人确认，本机用户不能替同行者声明
+// "你现在在做什么"。写入仍然走同一条命令链：api.change → core.apply → Store。
+function ManualStatusDialog({live,state,close,change,pending}:{live:ReturnType<typeof snapshot>|null;state:State;close:()=>void;change:(cmd:Command)=>Promise<State|null>;pending:boolean}){
+  const self=requireSelfProfile(state);
+  const now=live?.now??Date.now();
+  const current=live?.people.find(p=>p.person===self.id)?.current;
+  const active=current?.source==='manual'?current:null;
+  const [kind,setKind]=useState<ManualStateKind>('focus');
+  const [minutes,setMinutes]=useState<number|null|'custom'>(60);
+  const [custom,setCustom]=useState('');
+  const [until,setUntil]=useState(localStamp(now+3600000));
+  const [error,setError]=useState('');
+  const resolved=minutes==='custom'?(until?epoch(until):Number.NaN):minutes===null?null:now+minutes*60000;
+  const option=manualKindOptions.find(item=>item.kind===kind);
+  const save=async()=>{
+    const problem=manualStatusProblem(kind,custom,resolved,now);
+    if(problem){setError(problem);return;}
+    setError('');
+    const result=await change({type:'manual',kind,label:manualLabelFor(kind,custom),endAt:resolved as number|null});
+    if(result)close();
+  };
+  const cancel=async()=>{
+    if(!active)return;
+    setError('');
+    const result=await change({type:'manualCancel',id:active.sourceId});
+    if(result)close();
+  };
+  return h('div',{className:'modal-backdrop'},h('section',{className:'modal small manual-status',role:'dialog','aria-modal':true,'aria-label':'设置当前状态'},
+    h('div',{className:'modal-head'},h('h2',null,'设置当前状态')),
+    h('p',{className:'muted'},'告诉 YD 你现在实际上在做什么。到期后会自动恢复成课表 / 作息推导的状态，不需要手动改回。'),
+    active?h('p',{className:'setting-note','data-manual-active':'true'},`当前：${active.label} · 本人设置${active.endAt?` · 至 ${clockText(active.endAt)}`:' · 直至取消'}`):null,
+    h('div',{className:'field full'},h('span',null,'状态'),
+      h('div',{className:'manual-kind-choices',role:'radiogroup','aria-label':'临时状态类型'},
+        ...manualKindOptions.map(item=>h('button',{key:item.kind,type:'button',role:'radio','aria-checked':kind===item.kind,className:kind===item.kind?'active':'','data-manual-kind':item.kind,disabled:pending,onClick:()=>setKind(item.kind)},item.label)))),
+    kind==='custom'?h('label',{className:'field'},h('span',null,'名称'),h('input',{type:'text',value:custom,maxLength:40,'aria-label':'自定义状态名称',onChange:(e:React.ChangeEvent<HTMLInputElement>)=>setCustom(e.target.value)})):null,
+    h('div',{className:'field full'},h('span',null,'持续到'),
+      h('div',{className:'manual-duration-choices',role:'radiogroup','aria-label':'持续时间'},
+        ...manualDurationOptions.map(item=>h('button',{key:String(item.minutes),type:'button',role:'radio','aria-checked':minutes===item.minutes,className:minutes===item.minutes?'active':'','data-manual-duration':item.minutes===null?'until-cancel':String(item.minutes),disabled:pending,onClick:()=>setMinutes(item.minutes)},item.label)),
+        h('button',{type:'button',role:'radio','aria-checked':minutes==='custom',className:minutes==='custom'?'active':'','data-manual-duration':'custom',disabled:pending,onClick:()=>setMinutes('custom')},'自定义结束时间'))),
+    minutes==='custom'?h('label',{className:'field'},h('span',null,'结束时间（北京时间）'),h('input',{type:'datetime-local',value:until,'aria-label':'结束时间',onChange:(e:React.ChangeEvent<HTMLInputElement>)=>setUntil(e.target.value)})):null,
+    option?.hint?h('p',{className:'muted setting-note'},option.hint):null,
+    active?h('p',{className:'muted setting-note'},'保存会替换当前这一条临时状态。'):null,
+    error?h('p',{className:'error',role:'alert'},error):null,
+    h('div',{className:'modal-foot'},
+      active?h('button',{type:'button',className:'ghost','data-manual-action':'cancel',disabled:pending,onClick:cancel},'取消当前状态'):null,
+      h('span',{className:'modal-spacer'}),
+      h('button',{type:'button',className:'ghost',onClick:close,disabled:pending},'关闭'),
+      h('button',{type:'button',className:'primary','data-manual-action':'save',disabled:pending,onClick:save},'保存'))));
+}
 function ImageView({image}: {image?:string}){
   const [url,set]=useState(''),[error,err]=useState('');useEffect(()=>{set('');err('');let active=true;if(image)api.image(image).then(x=>{if(active)set(x);}).catch(e=>{if(active)err(msg(e));});return()=>{active=false;};},[image]);
   return error?h('p',{className:'error'},error):url?h('a',{href:url,onClick:(e:any)=>e.preventDefault(),className:'image-preview','aria-label':'原始图片'},h('img',{src:url,alt:'导入的原始课表或通知图片'})):null;
@@ -149,7 +202,9 @@ function Editor({entity,value,state,close,saved,convert,duplicate,remove,sourceO
 }
 function App(){
   const clock=useLive();
-  const {state,set,error,err}=useData(),now=clock?.now??Date.now(),[tab,setTab]=useState('today'),[editor,edit]=useState<any>(null),[message,say]=useState(''),[query,search]=useState(''),[filter,setFilter]=useState('all'),[selectedDate,setDate]=useState(dateOf(Date.now())),[person,setPerson]=useState<PersonId|null>(null),[selectedNotice,setSelectedNotice]=useState<string|null>(null),[pending,setPending]=useState(false),[importing,setImporting]=useState(false),[schedule,setSchedule]=useState<SchedulePackage|null>(null),[deletion,setDeletion]=useState<{entity:Entity;id:string}|null>(null);
+ const {state,set,error,err}=useData(),now=clock?.now??Date.now(),[tab,setTab]=useState('today'),[editor,edit]=useState<any>(null),[message,say]=useState(''),[query,search]=useState(''),[filter,setFilter]=useState('all'),[selectedDate,setDate]=useState(dateOf(Date.now())),[person,setPerson]=useState<PersonId|null>(null),[selectedNotice,setSelectedNotice]=useState<string|null>(null),[pending,setPending]=useState(false),[importing,setImporting]=useState(false),[schedule,setSchedule]=useState<SchedulePackage|null>(null),[deletion,setDeletion]=useState<{entity:Entity;id:string}|null>(null);
+  // Phase 3C：临时手动状态的对话框（首页状态行与桌宠菜单都能打开它）。
+  const [manualOpen,setManualOpen]=useState(false);
   // 全局粘贴截图：不在收件箱、也不在输入框里时，截图直接进通知收件箱。
   useEffect(()=>{
     const listener=(e:ClipboardEvent)=>{
@@ -181,6 +236,8 @@ function App(){
   const previousDay=useRef(dateOf(now));
   useEffect(()=>{const day=dateOf(now);if(day!==previousDay.current){setDate(d=>d===previousDay.current?day:d);previousDay.current=day;}},[now]);
   useEffect(()=>api.onSettings(()=>setTab('settings')),[]);
+  // 桌宠右键菜单的「设置当前状态」：主进程拉起主窗口后投递这个事件。
+  useEffect(()=>api.onStatus(()=>{setTab('today');setManualOpen(true);}),[]);
   async function change(cmd:Command){setPending(true);err('');try{const s=await api.change(cmd);set(s);return s;}catch(e){err(msg(e));return null;}finally{setPending(false);}}
   function open(entity:Entity,value?:any,convert?:string){if(entity==='notices'){setTab('inbox');setSelectedNotice(value?.id||null);return;}edit({entity,value:value||newValue(entity,activePerson,selfId),convert});err('');}
   async function importImage(paste=false){setImporting(true);err('');try{const result=await(paste?api.pasteImage():api.importImage());if(result){const noticeId=id();set(await api.change({type:'inbound',id:noticeId,payload:{image:result.image,sourceType:paste?'SCREENSHOT':'IMAGE_IMPORT'}}));setTab('inbox');setSelectedNotice(noticeId);try{const text=await api.ocr(result.image);if(text.trim())set(await api.parseNotice(noticeId,text,true));}catch(e){err(msg(e));}}else if(paste)say('剪贴板中没有图片，可使用粘贴文字。');}catch(e){err(msg(e));}finally{setImporting(false);}}
@@ -271,7 +328,7 @@ function App(){
       message?h('div',{className:'banner',role:'status'},message,b('知道了',()=>say(''),'ghost')):null,
       !s.settings.setup?h('section',{className:'setup-banner'},h('h2',null,'先核对双方的学校作息'),h('p',null,'请核对双方第一教学周和节次时间；已有记录会保留。'),h('div',{className:'actions'},...s.profiles.map(p=>b(`设置${p.name}的作息`,()=>open('profiles',p),'secondary')),b('已核对，开始使用',()=>change({type:'settings',setup:true}),'primary',pending))):null,
       kind==='today'?h(React.Fragment,null,
-        h(StatusRows,{live}),
+        h(StatusRows,{live,onSetStatus:()=>setManualOpen(true)}),
         attention.total?h('section',{className:'attention-panel'},h('div',{className:'attention-title'},h('div',null,h('div',{className:'eyebrow'},'需要处理'),h('h2',null,`需要处理 ${attention.total}`))),h('div',{className:'attention-items'},attention.notices?b(`${attention.notices} 条通知待核对`,()=>setTab('inbox'),'attention-link'):null,attention.reminders?b(`${attention.reminders} 个提醒已到时间`,()=>setTab('reminders'),'attention-link'):null,attention.overdue?b(`${attention.overdue} 个待办已逾期`,()=>setTab('tasks'),'attention-link'):null)):null,
         h('div',{className:'home-grid'},
           h('div',{className:'home-primary'},
@@ -308,6 +365,7 @@ function App(){
       )
     ),
     editor?h(Editor,{key:editor.entity+editor.value.id,entity:editor.entity,value:editor.value,convert:editor.convert,state:s,close:()=>edit(null),sourceOpen:(id:string)=>{edit(null);setTab('inbox');setSelectedNotice(id);},saved:(next:State)=>{set(next);say('已保存到本机。');},remove:(entity:Entity,id:string)=>{edit(null);setDeletion({entity,id});},duplicate:(course:Course)=>edit({entity:'courses',value:{...course,id:id(),title:course.title+'（副本）',checklist:course.checklist.map(x=>({...x,id:id(),done:false}))}})}):null,
+    manualOpen?h(ManualStatusDialog,{live,state:s,close:()=>setManualOpen(false),change,pending}):null,
     schedule?h('div',{className:'modal-backdrop'},h('section',{className:'modal small',role:'dialog','aria-modal':true,'aria-label':'核对课表导入'},h('div',{className:'import-kicker'},'课表文件已读取'),h('h2',null,schedule.termName),h('p',{className:'muted'},`共 ${schedule.courses.length} 门课程。载入后会替换下列人员当前已有的课程与临时调课，待办、会议和通知不受影响。`),h('div',{className:'import-summary'},...schedule.profiles.map(p=>h('div',{key:p.id},h('strong',null,p.name),h('span',null,`${p.startDate} 起 · ${p.weeks} 周`),h('small',null,`${schedule.courses.filter(c=>c.person===p.id).length} 门课程 · ${p.periods.length} 节作息`)))),h('div',{className:'modal-foot'},b('取消',()=>setSchedule(null),'ghost',pending),b(pending?'正在载入…':'确认载入课表',async()=>{if(await change({type:'importSchedule',value:schedule})){setSchedule(null);say(`${schedule.termName}课表已载入。`);}},'primary',pending)))):null,
     deletion?h('div',{className:'modal-backdrop'},h('section',{className:'modal small',role:'dialog','aria-modal':true,'aria-label':'确认删除'},h('h2',null,deletion.entity==='exceptions'?'恢复原课程？':deletion.entity==='courses'?'删除整门课程？':deletion.entity==='tasks'?'删除待办？':'删除会议或活动？'),h('p',null,deletion.entity==='courses'?'删除后，这门课程的单次调课、停课记录和未触发提醒也会一并移除。':deletion.entity==='exceptions'?'恢复后，本次课程会重新使用课表模板中的原时间和地点，提醒也会重新计算。':deletion.entity==='tasks'?'删除后，这条待办及其未触发提醒会被移除；此操作无法撤销。':'删除后，这场会议或活动及其未触发提醒会被移除；此操作无法撤销。'),h('div',{className:'actions'},b('取消',()=>setDeletion(null),'ghost'),b(deletion.entity==='exceptions'?'恢复原课':'确认删除',async()=>{if(await change({type:'delete',...deletion}))setDeletion(null);},'danger',pending)))):null
   );

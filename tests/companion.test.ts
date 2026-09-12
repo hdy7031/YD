@@ -576,6 +576,9 @@ test('0.2.20 桌宠右键菜单：样式切换、气泡暂停与快捷键提示�
   assert.equal(item(pet,'toggle')?.label,'隐藏桌宠');
   assert.equal(item(pet,'toggle')?.hint,companionToggleShortcut.label);
   assert.equal(item(pet,'quit')?.tone,'danger');
+  // Phase 3C：临时手动状态的入口就在菜单里，普通用户点两下就能纠正状态。
+  assert.equal(item(pet,'status')?.label,'设置当前状态');
+  assert.equal(pet.findIndex(entry=>entry.kind!=='sep'&&entry.id==='status'),2,'入口排在"查看双方状态"之后');
   assert.equal(pet.filter(entry=>entry.kind==='sep').length,3);
   assert.equal(companionToggleShortcut.accelerator,'Control+Alt+Y');
 
@@ -590,5 +593,5 @@ test('0.2.20 桌宠右键菜单：样式切换、气泡暂停与快捷键提示�
   // 行高与分隔高度由同一份常量决定，主进程算出的窗口高度必然等于渲染高度。
   const rows=pet.filter(entry=>entry.kind!=='sep').length,seps=pet.filter(entry=>entry.kind==='sep').length;
   assert.equal(companionMenuHeight(pet),companionMenuMetrics.paddingY*2+rows*companionMenuMetrics.rowHeight+seps*companionMenuMetrics.separator);
-  assert.equal(rows,8);
+  assert.equal(rows,9);
 });

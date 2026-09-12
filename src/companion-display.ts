@@ -57,6 +57,9 @@ const petDisplayOfState: Partial<Record<CurrentState['kind'], CompanionDisplaySt
   class: 'busy_class',
   research: 'busy_work',
   meeting: 'busy_work',
+  // 手动"忙碌"用同一套忙碌表达；rest / focus / commute / custom 没有专属素材，
+  // 由其它层级决定画面（手动状态不会被伪装成别的姿态）。
+  busy: 'busy_work',
   sleep: 'night_sleep',
   wake: 'wake_up',
   meal: 'eating',
@@ -130,6 +133,9 @@ export interface CompanionDisplay {
 }
 
 // Last finished occurrence of a person, used for the "done" reaction.
+const isTimePose = (state: CompanionDisplayState | null): state is ScheduledPetState =>
+  state === 'night_sleep' || state === 'wake_up' || state === 'eating' || state === 'nap';
+
 function lastFinishedEnd(status: PersonStatus | undefined, now: number): number | undefined {
   if (!status) return undefined;
   const finished = status.today.filter(o => !o.endUnknown && o.end <= now).map(o => o.end);
@@ -205,7 +211,12 @@ export function resolvePetState(input: CompanionDisplayInput): PetStateResolutio
     : 'idle';
   // 作息时间层：nightRest 只影响视觉，不改动作息数据。
   const routineVisual = routineStateToPetVisual(subject?.routine);
-  const planned = routineVisual === 'night_sleep' && input.nightRest === false ? null : routineVisual;
+  // 时间姿态有两种来源：人物状态直接就是时间姿态（作息命中，或手动"吃饭"），
+  // 或者业务状态压过了一条作息（开会时作息本来是午睡——这时照旧记录时间层）。
+  // 手动状态压过一切，因此它不会把背后的作息姿态透出来。
+  const timePose = isTimePose(subjectActivity) ? subjectActivity : subject?.current.source === 'manual' ? null : routineVisual;
+  const planned = timePose === 'night_sleep' && input.nightRest === false ? null : timePose;
+  const scheduled = routineVisual === 'night_sleep' && input.nightRest === false ? null : routineVisual;
   // 业务忙碌（上课 / 教研 / 会议 / 活动）与刚结束的庆祝压过时间姿态；
   // 其余情况时间姿态优先于"即将开始 / 空闲"。
   const temporary = business === 'busy_class' || business === 'busy_work' || business === 'gentle';
@@ -214,7 +225,7 @@ export function resolvePetState(input: CompanionDisplayInput): PetStateResolutio
   const reminderSince = pending > 0 ? input.reminderSince ?? input.now : 0;
   const holdingReminder = pending > 0 && input.now - reminderSince <= reminderHoldMs;
   const state: CompanionDisplayState = holdingReminder ? 'reminder' : base;
-  return { state, base, scheduled: planned, holdingReminder };
+  return { state, base, scheduled, holdingReminder };
 }
 
 export function companionDisplay(input: CompanionDisplayInput): CompanionDisplay {

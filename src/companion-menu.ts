@@ -33,6 +33,8 @@ export function buildCompanionMenu(context: CompanionMenuContext): CompanionMenu
   return [
     { kind: 'item', id: 'open', label: '打开 YD' },
     { kind: 'item', id: 'mini', label: '查看双方状态' },
+    // Phase 3C：临时手动状态的入口（打开主窗口里的对话框）。
+    { kind: 'item', id: 'status', label: '设置当前状态' },
     { kind: 'sep' },
     { kind: 'radio', id: 'mode:custom', label: '显示为桌宠', checked: context.mode !== 'orb' },
     { kind: 'radio', id: 'mode:orb', label: '显示为悬浮球', checked: context.mode === 'orb' },

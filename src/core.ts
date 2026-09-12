@@ -1,8 +1,9 @@
 import { migrateInbox, receive, confirmDraft } from './inbox.ts';
 import { validDraft } from './inbox-types.ts';
 import { DOMAIN_VERSION, stateDomainVersion } from './domain.ts';
-import { isProfileRole, requireSelfProfile, roleCounts } from './people.ts';
+import { isProfileRole, isSelfId, requireSelfProfile, roleCounts } from './people.ts';
 import { assertRoutineProfile, emptyRoutine, legacyDefaultRoutine } from './routine.ts';
+import { MANUAL_LABEL_LIMIT, MANUAL_OVERRIDE_LIMIT, assertManualOverride, isManualStateKind, pruneManualOverrides } from './state/manual.ts';
 import type { State, Profile, PersonId, ProfileRole, Course, Task, Event, Notice, Exception, Occurrence, Reminder, Command, Entity, SchedulePackage } from './types.ts';
 import type { RoutineProfile } from './routine.ts';
 export const DAY = 86400000;
@@ -19,7 +20,7 @@ export function initial(now = Date.now()): State {
   // v4 起每个档案都必须带 RoutineProfile：本人从空规则开始；同行者沿用 0.2.x 的默认
   // 桌宠时间表（由 routine.ts 的统一 factory 生成，这里不写 magic time）。
   const profiles = [profile('me','self','我', emptyRoutine(now)), profile('partner','companion','Ta', legacyDefaultRoutine(now))];
-  return { version: 1, profiles, courses: [], exceptions: [], events: [], tasks: [], notices: [], reminders: [], settings: { domainVersion: DOMAIN_VERSION, launch: false, setup: false }, lastTick: now };
+  return { version: 1, profiles, courses: [], exceptions: [], events: [], tasks: [], notices: [], reminders: [], manualOverrides: [], settings: { domainVersion: DOMAIN_VERSION, launch: false, setup: false }, lastTick: now };
 }
 function assert(v: unknown, message: string): asserts v { if (!v) throw new Error(message); }
 function text(v: unknown, max = 20000): v is string { return typeof v === 'string' && v.length <= max; }
@@ -120,6 +121,9 @@ export function tick(state: State, now: number): {due: Reminder[]; missed: boole
 }
 export function apply(state: State, cmd: Command, now=Date.now()): State {
   const s=structuredClone(state); assert(cmd && typeof cmd.type==='string', '操作无效');
+  // 每次写入顺手清理已过期的手动状态："保存时清理"是唯一清理点——
+  // tick 每秒只是读，不会为了清理产生每秒磁盘写入。
+  pruneManualOverrides(s,now);
   if(cmd.type==='inbound')return receive(s,cmd.payload,cmd.id,now);
   if(cmd.type==='review')return confirmDraft(s,cmd,now);
   if(cmd.type==='inboxStatus'||cmd.type==='draft'){
@@ -195,6 +199,24 @@ export function apply(state: State, cmd: Command, now=Date.now()): State {
     const ids=new Set(s.courses.map(c=>c.id));
     for(const raw of value.courses){assert(people.has(raw.person),'课程所属人不在本次导入范围');assert(!ids.has(raw.id),'课表文件中的课程编号重复');const course={...structuredClone(raw),updatedAt:now};validate('courses',course,s);s.courses.push(course);ids.add(course.id);reschedule(s,now,`courses:${course.id}`);}
     s.settings.setup=true;
+  }else if(cmd.type==='manual'){
+    // 第一版：只有本人可以给自己设置临时状态——状态由状态主体本人确认，
+    // 本机用户不能替同行者声明"你现在在做什么"。
+    const personId=cmd.personId??requireSelfProfile(s).id;
+    assert(isSelfId(s,personId),'当前版本只能设置本人的状态');
+    assert(isManualStateKind(cmd.kind),'临时状态类型无效');
+    assert(cmd.endAt===null||(Number.isFinite(cmd.endAt)&&cmd.endAt>now),'结束时间必须晚于现在');
+    assert(text(cmd.label,MANUAL_LABEL_LIMIT)&&cmd.label.trim().length>0,'状态名称应为 1—40 字');
+    // 每个人同一时刻只有一条覆盖：新的临时状态直接替换旧的。
+    s.manualOverrides=[...(s.manualOverrides??[]).filter(o=>o.personId!==personId),{id:id(),personId,kind:cmd.kind,label:cmd.label.trim(),startAt:now,endAt:cmd.endAt,createdAt:now}];
+  }else if(cmd.type==='manualCancel'){
+    if(cmd.id!==undefined){
+      const target=(s.manualOverrides??[]).find(o=>o.id===cmd.id);
+      assert(target&&isSelfId(s,target.personId),'临时状态不存在或不属于本人');
+      s.manualOverrides=(s.manualOverrides??[]).filter(o=>o.id!==cmd.id);
+    }else{
+      s.manualOverrides=(s.manualOverrides??[]).filter(o=>!isSelfId(s,o.personId));
+    }
   }else throw new Error('不支持的操作');
   return migrateInbox(s);
 }
@@ -214,6 +236,10 @@ export function validateState(value: unknown): State {
   if(stateDomainVersion(s)>=3)for(const e of s.events)assert(e.person!==undefined,'会议缺少所属人，请重新迁移或从备份恢复');
   // v4 起每个档案都必须带自己的作息（规则本身可以为空；旧版本由迁移补齐）。
   if(stateDomainVersion(s)>=4)for(const p of s.profiles)assertRoutineProfile(p.routine,'个人作息');
+  // v5 起临时状态是显式集合（旧版本由迁移补空数组）；记录必须属于存在的档案。
+  assert(s.manualOverrides===undefined||Array.isArray(s.manualOverrides)&&s.manualOverrides.length<=MANUAL_OVERRIDE_LIMIT,'临时状态记录无效或过多');
+  if(stateDomainVersion(s)>=5)assert(Array.isArray(s.manualOverrides),'临时状态记录缺失，请重新迁移或从备份恢复');
+  for(const override of s.manualOverrides??[]){assertManualOverride(override);assert(s.profiles.some(p=>p.id===override.personId),'临时状态所属人不存在');}
   for(const key of ['profiles','courses','events','tasks','notices','exceptions'] as Entity[]){assert(new Set(s[key].map(v=>v.id)).size===s[key].length,'记录编号重复');for(const v of s[key]){validate(key,v,s);assert(Number.isFinite(v.updatedAt),'更新时间无效');}}
   for(const item of [...s.courses,...s.tasks,...s.events])assert(!item.sourceId||s.notices.some(n=>n.id===item.sourceId),'备份来源关联缺失');
   assert(s.settings&&typeof s.settings.launch==='boolean'&&typeof s.settings.setup==='boolean'&&Number.isFinite(s.lastTick),'备份设置无效');

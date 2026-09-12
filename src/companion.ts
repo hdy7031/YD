@@ -26,7 +26,7 @@ export class Companion {
   private timeline=new CompanionTimeline();
   readonly bubble:BrowserWindow;readonly mini:BrowserWindow;readonly tip:BrowserWindow;readonly sheet:BrowserWindow;
   private shortcut={label:companionToggleShortcut.label,ready:false};
-  private actions:{settings:()=>void;quit:()=>void;toggleVisible:()=>void}={settings:()=>{},quit:()=>{},toggleVisible:()=>{}};
+  private actions:{settings:()=>void;status:()=>void;quit:()=>void;toggleVisible:()=>void}={settings:()=>{},status:()=>{},quit:()=>{},toggleVisible:()=>{}};
   constructor(private store:Store,readonly orb:BrowserWindow,private panel:BrowserWindow,options:Electron.BrowserWindowConstructorOptions,private file:string,lock:(w:BrowserWindow)=>void,readonly assets:CompanionAssets){
     this.bubble=new BrowserWindow({...options,width:330,height:180,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false});
     this.mini=new BrowserWindow({...options,width:326,height:270,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false});
@@ -106,7 +106,7 @@ export class Companion {
   // 主进程注册全局快捷键后把结果告诉桌宠：菜单右侧的提示文字与真实可用性一致。
   setShortcut(shortcut:{label:string;ready:boolean}){this.shortcut=shortcut;}
   // 打开设置 / 退出 / 显示隐藏桌宠由 main 负责，这里只负责转达。
-  setMenuActions(actions:{settings:()=>void;quit:()=>void;toggleVisible:()=>void}){this.actions=actions;}
+  setMenuActions(actions:{settings:()=>void;status:()=>void;quit:()=>void;toggleVisible:()=>void}){this.actions=actions;}
   hideMenu(){if(!this.sheet.isDestroyed()&&this.sheet.isVisible())this.sheet.hide();}
   openMenu(){
     const p={...petDefaults,...this.store.state.settings.pet};
@@ -144,6 +144,7 @@ export class Companion {
       this.reset();return;
     }
     if(id==='settings'){this.actions.settings();return;}
+    if(id==='status'){this.actions.status();return;}
     if(id==='toggle'){this.actions.toggleVisible();return;}
     if(id==='quit'){this.actions.quit();return;}
   }

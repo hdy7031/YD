@@ -304,6 +304,8 @@ else{
     companion=new Companion(store,orb,panel,windowOptions(),path.join(__dirname,'index.html'),lockWindow,companionAssets);
     companion.setMenuActions({
       settings:()=>{showPanel();panel.webContents.send('dayhub:settings');},
+      // 临时状态的入口在桌宠菜单里，但对话框在主窗口：先拉起主窗口再投递事件。
+      status:()=>{showPanel();panel.webContents.send('dayhub:status');},
       quit:confirmQuit,
       toggleVisible:togglePetWindow,
     });

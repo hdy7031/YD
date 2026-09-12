@@ -2120,3 +2120,20 @@ input:hover, select:hover, textarea:hover { border-color: #C3CDC8; }
 .routine-editor .field.full > span { display: block; }
 .routine-settings .empty-state { padding: 0; }
 .routine-settings .empty-state-actions { padding-left: 0; }
+
+/* V0.3 Phase 3C — 临时手动状态：状态行入口 + 对话框里的类型 / 时长选择 */
+.person-status-set { margin-left: auto; align-self: center; white-space: nowrap; }
+.manual-status .field { display: grid; gap: 6px; }
+.manual-status .field > span { color: var(--yd-muted); font-size: 12px; }
+.manual-kind-choices, .manual-duration-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.manual-kind-choices button, .manual-duration-choices button {
+  min-height: 32px; padding: 6px 13px;
+  border: 1px solid var(--yd-line); border-radius: 11px; background: #FFFFFF;
+  color: var(--yd-ink); font-size: 12.5px;
+}
+.manual-kind-choices button.active, .manual-duration-choices button.active {
+  border-color: var(--yd-brand-line); background: var(--yd-brand-soft); color: var(--yd-brand-deep); font-weight: 600;
+}
+.manual-kind-choices button:disabled, .manual-duration-choices button:disabled { opacity: .55; cursor: not-allowed; }
+.manual-status .setting-note { margin: 0; }
+.manual-status input[type="text"], .manual-status input[type="datetime-local"] { width: 100%; }

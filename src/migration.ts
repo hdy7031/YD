@@ -39,6 +39,8 @@ export const IDENTITY_DOMAIN_VERSION = 2;
 export const PERSON_AWARE_DOMAIN_VERSION = 3;
 /** v3 → v4：每个档案拥有自己的 RoutineProfile（Phase 2A；桌宠消费方仍在 2B 切换）。 */
 export const ROUTINE_DOMAIN_VERSION = 4;
+/** v4 → v5：临时手动状态（Phase 3C）。旧数据补空数组，其它字段逐字段不变。 */
+export const MANUAL_STATUS_DOMAIN_VERSION = 5;
 
 /**
  * v0.2 时代的一次性兼容规则（原先散落在 migrateLive() 里的私人业务分支）。
@@ -108,12 +110,26 @@ export function routineProfileMigrationV4(state: State, now: number): State {
   return state;
 }
 
+/**
+ * v4 → v5：临时手动状态。
+ *
+ * 旧安装没有任何手动覆盖，因此只需要补一个空数组；课程 / 会议 / 待办 / 提醒 /
+ * 调课 / 通知 / 作息 / 设置全部逐字段保留，且幂等（已有的覆盖原样保留，
+ * 只有真的过期记录会在保存路径里被清理，见 src/state/manual.ts）。
+ */
+export function manualStatusMigrationV5(state: State): State {
+  state.manualOverrides = state.manualOverrides ?? [];
+  state.settings.domainVersion = MANUAL_STATUS_DOMAIN_VERSION;
+  return state;
+}
+
 // 每一步的 `to` 写成字面量：提升 DOMAIN_VERSION 时必须追加新步骤，
 // 由 tests/identity.test.ts 守住“最后一个步骤的 to === DOMAIN_VERSION”。
 export const migrationSteps: MigrationStep[] = [
   { from: 1, to: IDENTITY_DOMAIN_VERSION, id: 'identity-roles', migrate: identityRoleMigration },
   { from: IDENTITY_DOMAIN_VERSION, to: PERSON_AWARE_DOMAIN_VERSION, id: 'person-aware', migrate: personAwareMigrationV3 },
   { from: PERSON_AWARE_DOMAIN_VERSION, to: ROUTINE_DOMAIN_VERSION, id: 'routine-profile', migrate: routineProfileMigrationV4 },
+  { from: ROUTINE_DOMAIN_VERSION, to: MANUAL_STATUS_DOMAIN_VERSION, id: 'manual-status', migrate: manualStatusMigrationV5 },
 ];
 
 export interface MigrationStep {

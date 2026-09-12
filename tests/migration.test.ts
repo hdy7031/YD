@@ -14,7 +14,7 @@ import { validateState } from '../src/core.ts';
 import { unpack } from '../src/backup.ts';
 import { getCompanionProfile, getSelfProfile } from '../src/people.ts';
 import { legacyDefaultRoutine } from '../src/routine.ts';
-import { DOMAIN_VERSION, IDENTITY_DOMAIN_VERSION, PERSON_AWARE_DOMAIN_VERSION, ROUTINE_DOMAIN_VERSION, createMigrationBackup, domainVersion, migrationStamp, migrationSteps, personAwareMigrationV3, restoreMigrationBackup, routineProfileMigrationV4, runMigrations, type MigrationStep } from '../src/migration.ts';
+import { DOMAIN_VERSION, IDENTITY_DOMAIN_VERSION, MANUAL_STATUS_DOMAIN_VERSION, PERSON_AWARE_DOMAIN_VERSION, ROUTINE_DOMAIN_VERSION, createMigrationBackup, domainVersion, migrationStamp, migrationSteps, manualStatusMigrationV5, personAwareMigrationV3, restoreMigrationBackup, routineProfileMigrationV4, runMigrations, type MigrationStep } from '../src/migration.ts';
 import type { State } from '../src/types.ts';
 import { v020Now, v020Synthetic } from './fixtures/v020-synthetic.ts';
 import { v2LegacySynthetic } from './fixtures/v2-legacy-synthetic.ts';
@@ -185,7 +185,7 @@ test('回滚路径是字节还原：备份保持 v1 形态，不依赖旧版读�
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('身份 / 归属 / 作息迁移 v1 → v4：补角色、会议归属与作息，保 id、保业务数据、生成备份', async () => {
+test('身份 / 归属 / 作息 / 手动状态迁移 v1 → v5：补角色、会议归属、作息与空手动状态，保 id、保业务数据、生成备份', async () => {
   const { dir, store, backups } = await seeded();
   try {
     const before = store.snapshot();
@@ -193,7 +193,7 @@ test('身份 / 归属 / 作息迁移 v1 → v4：补角色、会议归属与作�
     assert.ok(before.profiles.every(profile => profile.role === undefined));
     const run = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
     assert.equal(run.migrated, true);
-    assert.deepEqual(run.steps, ['identity-roles', 'person-aware', 'routine-profile']);
+    assert.deepEqual(run.steps, ['identity-roles', 'person-aware', 'routine-profile', 'manual-status']);
     for (const file of [run.backup!.dayhub, run.backup!.sqlite, run.backup!.receipt]) assert.ok(fs.existsSync(file), file);
     const receipt = JSON.parse(fs.readFileSync(run.backup!.receipt, 'utf8'));
     assert.equal(receipt.fromDomainVersion, 1);
@@ -221,6 +221,8 @@ test('身份 / 归属 / 作息迁移 v1 → v4：补角色、会议归属与作�
     });
     // 其它集合数量与内容都不变；课程仍然引用原来的 person id。
     for (const key of ['courses', 'exceptions', 'tasks', 'notices', 'reminders'] as const) assert.deepEqual(after[key], before[key], key);
+    // 临时状态：旧数据没有这一层，迁移只补一个空数组。
+    assert.deepEqual(after.manualOverrides, [], '旧数据不应凭空出现手动状态');
     assert.deepEqual([...new Set(after.courses.map(c => c.person))].sort(), ['me', 'partner']);
     // 设置：只多了 domainVersion。
     for (const key of Object.keys(before.settings) as (keyof typeof after.settings)[]) assert.deepEqual(after.settings[key], before.settings[key], key);
@@ -258,7 +260,7 @@ test('迁移失败仍然回滚：后续版本的步骤抛错时数据库回到�
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('v2 → v4：旧会议归本人、课程 activity 补全、v0.2 一次性归一化只发生在迁移里，并补齐作息', async () => {
+test('v2 → v5：旧会议归本人、课程 activity 补全、v0.2 一次性归一化只发生在迁移里，并补齐作息与手动状态', async () => {
   const { dir, store, backups } = await seeded(v2LegacySynthetic());
   try {
     const before = store.snapshot();
@@ -268,7 +270,7 @@ test('v2 → v4：旧会议归本人、课程 activity 补全、v0.2 一次性�
 
     const run = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
     assert.equal(run.migrated, true);
-    assert.deepEqual(run.steps, ['person-aware', 'routine-profile'], 'v2 需要跑归属与作息两步');
+    assert.deepEqual(run.steps, ['person-aware', 'routine-profile', 'manual-status'], 'v2 需要跑归属、作息与手动状态三步');
     for (const file of [run.backup!.dayhub, run.backup!.sqlite, run.backup!.receipt]) assert.ok(fs.existsSync(file), file);
     const receipt = JSON.parse(fs.readFileSync(run.backup!.receipt, 'utf8'));
     assert.equal(receipt.fromDomainVersion, IDENTITY_DOMAIN_VERSION);
@@ -310,14 +312,16 @@ test('v2 → v4：旧会议归本人、课程 activity 补全、v0.2 一次性�
     // domainVersion 是这一步唯一允许变化的设置项（2 → 4）。
     for (const key of Object.keys(before.settings) as (keyof typeof after.settings)[]) if (key !== 'domainVersion') assert.deepEqual(after.settings[key], before.settings[key], key);
     assert.equal(after.settings.domainVersion, DOMAIN_VERSION);
-    // 5) 幂等：v3 语义步骤在 v3 输入上不改变结果；v4 的作息步骤在 v4 输入上同样不改变结果。
+    // 5) 幂等：每一步在自己的输入版本上都不改变结果。
     const v3Once = personAwareMigrationV3(structuredClone(v2LegacySynthetic()));
     assert.deepEqual(personAwareMigrationV3(structuredClone(v3Once)), v3Once);
-    assert.deepEqual(routineProfileMigrationV4(structuredClone(after), v020Now), after);
+    const v4Shape = { ...structuredClone(after), settings: { ...after.settings, domainVersion: ROUTINE_DOMAIN_VERSION } };
+    assert.deepEqual(routineProfileMigrationV4(v4Shape, v020Now).settings.domainVersion, ROUTINE_DOMAIN_VERSION);
+    assert.deepEqual(manualStatusMigrationV5(structuredClone(after)), after, '手动状态步骤幂等');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('v3 → v4（Together）：只有桌宠主体获得 legacy 默认作息，其他人不被虚构作息，业务数据不动', async () => {
+test('v3 → v5（Together）：只有桌宠主体获得 legacy 默认作息，其他人不被虚构作息，业务数据不动', async () => {
   const { dir, store, backups } = await seeded(v3TogetherSynthetic());
   try {
     const before = store.snapshot();
@@ -327,7 +331,7 @@ test('v3 → v4（Together）：只有桌宠主体获得 legacy 默认作息，�
 
     const run = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
     assert.equal(run.migrated, true);
-    assert.deepEqual(run.steps, ['routine-profile']);
+    assert.deepEqual(run.steps, ['routine-profile', 'manual-status']);
     for (const file of [run.backup!.dayhub, run.backup!.sqlite, run.backup!.receipt]) assert.ok(fs.existsSync(file), file);
     const receipt = JSON.parse(fs.readFileSync(run.backup!.receipt, 'utf8'));
     assert.equal(receipt.fromDomainVersion, ROUTINE_DOMAIN_VERSION - 1);
@@ -353,11 +357,16 @@ test('v3 → v4（Together）：只有桌宠主体获得 legacy 默认作息，�
     assert.equal(after.lastTick, before.lastTick);
     assert.equal(after.version, before.version);
     assert.doesNotThrow(() => validateState(structuredClone(after)), 'v4 不变式要求每个档案都有合法作息');
-    assert.deepEqual(routineProfileMigrationV4(structuredClone(after), v020Now), after, '作息步骤幂等');
+    // 作息步骤幂等：在 v4 版本号的状态上重复执行不改变任何字段。
+    const v4Shape = structuredClone(after);
+    v4Shape.settings.domainVersion = ROUTINE_DOMAIN_VERSION;
+    const v4Again = routineProfileMigrationV4(structuredClone(v4Shape), v020Now);
+    assert.deepEqual(omit(v4Again, ['settings']), omit(v4Shape, ['settings']), '作息步骤不应改变档案与业务数据');
+    assert.deepEqual(v4Again.settings.domainVersion, ROUTINE_DOMAIN_VERSION);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('v3 → v4（Solo）：主体是本人，本人获得 legacy 作息，且不产生幽灵同行者', async () => {
+test('v3 → v5（Solo）：主体是本人，本人获得 legacy 作息，且不产生幽灵同行者', async () => {
   const { dir, store, backups } = await seeded(v3SoloSynthetic());
   try {
     const before = store.snapshot();
@@ -366,7 +375,7 @@ test('v3 → v4（Solo）：主体是本人，本人获得 legacy 作息，且�
     assert.equal(getCompanionProfile(before), undefined);
 
     const run = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
-    assert.deepEqual(run.steps, ['routine-profile']);
+    assert.deepEqual(run.steps, ['routine-profile', 'manual-status']);
 
     const after = store.snapshot();
     assert.equal(after.profiles.length, 1, '迁移不会凭空增加档案');
@@ -377,5 +386,37 @@ test('v3 → v4（Solo）：主体是本人，本人获得 legacy 作息，且�
     assert.deepEqual(self.routine?.rules, legacyDefaultRoutine(v020Now).rules);
     for (const key of ['courses', 'exceptions', 'events', 'tasks', 'notices', 'reminders'] as const) assert.deepEqual(after[key], before[key], key);
     assert.doesNotThrow(() => validateState(structuredClone(after)));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('v4 → v5：只补空的临时状态集合，档案 / 作息 / 业务数据与设置逐字段不变', async () => {
+  // 用 v3 的 Together fixture 先跑一次 v4 的作息步骤，得到真正的 v4 形态输入。
+  const v4State = routineProfileMigrationV4(v3TogetherSynthetic(), v020Now);
+  assert.equal(domainVersion(v4State), ROUTINE_DOMAIN_VERSION);
+  assert.equal((v4State as { manualOverrides?: unknown }).manualOverrides, undefined, 'v4 数据没有临时状态字段');
+  const { dir, store, backups } = await seeded(v4State);
+  try {
+    const before = store.snapshot();
+    const run = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
+    assert.equal(run.migrated, true);
+    assert.deepEqual(run.steps, ['manual-status'], 'v4 只需要跑手动状态一步');
+    // 迁移前的备份保持 v4 形态：回滚靠字节还原，而不是让旧版读新库。
+    const restored = unpack(fs.readFileSync(run.backup!.dayhub, 'utf8'));
+    assert.equal((restored.state as { manualOverrides?: unknown }).manualOverrides, undefined);
+    assert.equal(restored.state.settings.domainVersion, ROUTINE_DOMAIN_VERSION);
+
+    const after = store.snapshot();
+    assert.equal(domainVersion(after), MANUAL_STATUS_DOMAIN_VERSION);
+    assert.deepEqual(after.manualOverrides, [], '旧数据补空数组');
+    // 除新集合与 domainVersion 外，其它字段逐字段保持。
+    assert.deepEqual(omit(after, ['manualOverrides', 'settings']), omit(before, ['settings']));
+    assert.deepEqual(after.profiles, before.profiles);
+    for (const key of ['courses', 'exceptions', 'events', 'tasks', 'notices', 'reminders'] as const) assert.deepEqual(after[key], before[key], key);
+    for (const key of Object.keys(before.settings) as (keyof typeof after.settings)[]) if (key !== 'domainVersion') assert.deepEqual(after.settings[key], before.settings[key], key);
+    assert.doesNotThrow(() => validateState(structuredClone(after)));
+    // 幂等：再跑一次不写盘、不改变任何字段。
+    const again = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now + 1000 });
+    assert.equal(again.migrated, false);
+    assert.deepEqual(store.snapshot(), after);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

@@ -18,6 +18,7 @@
 import { occurrences } from '../core.ts';
 import { getProfileById } from '../people.ts';
 import { activeRoutine, routineDayStart, routineOccurrences, type RoutineKind } from '../routine.ts';
+import { activeManualOverride } from './manual.ts';
 import type { Course, Occurrence, PersonId, Profile, State } from '../types.ts';
 import type { CurrentState, CurrentStateMeta, PersonStateKind, PersonStateSource } from './types.ts';
 
@@ -37,6 +38,30 @@ export const STATE_SOURCE_PRIORITY: Record<PersonStateSource, number> = {
 // "空闲从什么时候开始"的回看窗口：只需要覆盖最近几天的日程与作息。
 const SCHEDULE_LOOKBACK_MS = 7 * 86400000;
 const ROUTINE_LOOKBACK_MS = 8 * 86400000;
+
+/**
+ * 手动状态候选：用户通过界面确认的"我现在实际上在做什么"。
+ *
+ * 它是唯一会带上 confidence = 1 的来源——本人确认不是概率；Schedule / Routine
+ * 都是推导状态，不虚构 0.6 / 0.8 这类数字（source 本身已经说明可信度层级）。
+ */
+function manualCandidate(state: State, profile: Profile, now: number): CurrentState | null {
+  const override = activeManualOverride(state, profile.id, now);
+  if (!override) return null;
+  return {
+    personId: profile.id,
+    kind: override.kind,
+    label: override.label,
+    source: 'manual',
+    sourceId: override.id,
+    startAt: override.startAt,
+    // endAt === null（直到取消）在 CurrentState 里表现为"没有结束时刻"。
+    endAt: override.endAt ?? undefined,
+    priority: STATE_SOURCE_PRIORITY.manual,
+    confidence: 1,
+    meta: { manualKind: override.kind },
+  };
+}
 
 /** Routine kind → 人物状态 kind：七个作息类型都是真实的人状态（1:1，不伪造映射）。 */
 export function routineStateKind(kind: RoutineKind): PersonStateKind {
@@ -141,7 +166,8 @@ function idleState(state: State, profile: Profile, now: number): CurrentState {
 }
 
 /**
- * 这个人此刻的实际状态。优先级：schedule (80) > routine (40) > idle (10)。
+ * 这个人此刻的实际状态。优先级：manual (100) > schedule (80) > routine (40) > idle (10)。
+ * DailyException 仍然是 Schedule 的修饰层（体现在 occurrences 里），不参与这个排序。
  *
  * 查询不存在的档案会明确失败（而不是静默给一个假状态）；需要遍历工作区时用
  * getWorkspaceCurrentStates()，它只投影真实存在的档案。
@@ -149,7 +175,7 @@ function idleState(state: State, profile: Profile, now: number): CurrentState {
 export function getCurrentState(state: State, personId: PersonId, now: number): CurrentState {
   const profile = getProfileById(state, personId);
   if (!profile) throw new Error('状态查询的档案不存在');
-  return scheduleCandidate(state, profile, now) ?? routineCandidate(profile, now) ?? idleState(state, profile, now);
+  return manualCandidate(state, profile, now) ?? scheduleCandidate(state, profile, now) ?? routineCandidate(profile, now) ?? idleState(state, profile, now);
 }
 
 /**

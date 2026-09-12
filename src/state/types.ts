@@ -8,6 +8,7 @@
 // 也不允许出现人物称呼（"她"、"我的"），人物是谁由消费方按 Profile 决定。
 import type { PersonId } from '../types.ts';
 import type { RoutineKind } from '../routine.ts';
+import type { ManualStateKind } from './manual.ts';
 
 /**
  * 状态的来源层。Phase 3A 只有 schedule / routine / idle 会真正产生；
@@ -30,6 +31,9 @@ export type PersonStateKind =
   | 'commute'
   | 'focus'
   | 'custom'
+  // 日程推导不会产生、但手动确认会出现的现实状态（Phase 3C）。
+  | 'busy'
+  | 'rest'
   | 'idle';
 
 /** 消费方不必再回头查 Course / Routine / Event 就能知道的基本语义。 */
@@ -44,6 +48,8 @@ export interface CurrentStateMeta {
   activity?: 'teaching' | 'research';
   /** Routine 规则类型（kind 的同义字段，便于前端取图标 / 分组）。 */
   routineKind?: RoutineKind;
+  /** 手动状态的类型（source === 'manual' 时由用户选择）。 */
+  manualKind?: ManualStateKind;
   /**
    * 同一时刻这个人还有其它并行的日程事项（现有产品的「安排冲突」语义）。
    * 只记录事实，不改变选出的主状态。

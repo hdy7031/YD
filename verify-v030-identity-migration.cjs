@@ -43,7 +43,7 @@ app.whenReady().then(async () => {
     await wait(300);
 
     const state = await panel.webContents.executeJavaScript('window.dayhub.get()');
-    check('领域版本升级到 4', state.settings.domainVersion === 4, String(state.settings.domainVersion));
+    check('领域版本升级到 5', state.settings.domainVersion === 5, String(state.settings.domainVersion));
     check('本人档案 role=self', state.profiles.find(p => p.id === 'me')?.role === 'self');
     check('同行者档案 role=companion', state.profiles.find(p => p.id === 'partner')?.role === 'companion');
     check('旧会议自动归属工作区本人', state.events.length > 0 && state.events.every(event => event.person === 'me'));
@@ -68,8 +68,8 @@ app.whenReady().then(async () => {
       backups.some(n => n.endsWith('.dayhub')) && backups.some(n => n.endsWith('.sqlite')) && backups.some(n => n.endsWith('.json')),
       backups.join(','));
     const receipt = JSON.parse(fs.readFileSync(path.join(output, 'backups', backups.find(n => n.endsWith('.json'))), 'utf8'));
-    check('备份回执记录 v1 → v4 与迁移前数量',
-      receipt.fromDomainVersion === 1 && receipt.targetDomainVersion === 4 && receipt.counts.courses === 15 && receipt.counts.reminders === 3);
+    check('备份回执记录 v1 → v5 与迁移前数量',
+      receipt.fromDomainVersion === 1 && receipt.targetDomainVersion === 5 && receipt.counts.courses === 15 && receipt.counts.reminders === 3);
 
     check('双人状态行仍然渲染两条', await panel.webContents.executeJavaScript("document.querySelectorAll('.dual-status .person-status').length===2"));
     check('导航仍然是七项', await panel.webContents.executeJavaScript("document.querySelectorAll('.nav-item').length===7"));

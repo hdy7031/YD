@@ -2,6 +2,7 @@ import React,{useState,useEffect,useRef} from 'react';
 import type { LiveSnapshot,PersonStatus,PetPreferences,PresenceState } from '../live.ts';
 import type { PersonId, Profile, State } from '../types.ts';
 import {clockText,petDefaults,presenceStateFor,statusLabel} from '../live.ts';
+import {stateSourceLabel} from '../state/presentation.ts';
 import {companionTone} from '../companion-colors.ts';
 import {companionFrame,companionRail} from '../companion-layout.ts';
 import {petRoutineSummary} from '../companion-display.ts';
@@ -21,11 +22,14 @@ import {BrandGlyph} from './brand.ts';
 const h=React.createElement,api=window.dayhub;
 export function useLive(){const [live,set]=useState<LiveSnapshot|null>(null);useEffect(()=>{let mounted=true,received=false;const off=api.onLive(v=>{received=true;if(mounted)set(v);});void api.live().then(v=>{if(mounted&&!received)set(v);});return()=>{mounted=false;off();};},[]);return live;}
 function detail(p:PersonStatus,now:number){
-  // 人物状态（日程或作息）优先——它只来自统一状态引擎；这里只负责排版。
+  // 人物状态（手动 / 日程 / 作息）优先——它只来自统一状态引擎；这里只负责排版。
+  // 来源说明（本人设置 / 按课表推测 / 按作息推测）是 Phase 3C 的信任信号。
   const current=p.current;
-  if(current.kind!=='idle')return current.endAt
-    ?`${current.label} · ${clockText(current.endAt)} 结束（${Math.max(1,Math.ceil((current.endAt-now)/60000))} 分钟）`
-    :`${current.label} · 进行中`;
+  if(current.kind!=='idle'){
+    const source=stateSourceLabel(current);
+    const window=current.endAt?`${clockText(current.endAt)} 结束（${Math.max(1,Math.ceil((current.endAt-now)/60000))} 分钟）`:'进行中';
+    return [current.label,source,window].filter(Boolean).join(' · ');
+  }
   if(p.code==='TERM_NOT_STARTED')return `${p.termStart} 开始${p.next?' · 下一项 '+clockText(p.next.start)+' '+p.next.title:''}`;
   if(p.code==='DAY_FINISHED')return `今天共 ${p.todayCount} 节课${p.next?' · 下一项 '+clockText(p.next.start)+' '+p.next.title:''}`;
   if(p.next)return `下一项 ${new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric'}).format(p.next.start)} ${clockText(p.next.start)} · ${p.next.title}`;
@@ -34,17 +38,18 @@ function detail(p:PersonStatus,now:number){
   return '暂无下一项记录';
 }
 const nextText=(p:PersonStatus)=>p.next?`${new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric'}).format(p.next.start)} ${clockText(p.next.start)} · ${p.next.title}`:'';
-export function StatusRows({live,compact=false,detailed=false}:{live:LiveSnapshot|null;compact?:boolean;detailed?:boolean}){
+export function StatusRows({live,compact=false,detailed=false,onSetStatus}:{live:LiveSnapshot|null;compact?:boolean;detailed?:boolean;onSetStatus?:(person:PersonId)=>void}){
   const rows=(live?.people||[]).map(p=>{
     // 称呼来自档案：本人是「我的」，同行者用档案显示名称（默认就是当前产品里的 Ta）。
     const identity=compact?p.alias:p.role==='self'?'我的':p.name;
     // 迷你面板负责“读详情”，因此可以带当前事项与下一项；桌宠旁的小标签
     // 只留最短结论，避免在小窗口里堆字。
     const current=p.current;
+    const source=stateSourceLabel(current);
     const secondary=!compact?detail(p,live!.now)
-      :detailed&&current.kind!=='idle'?`当前 ${current.label}${current.endAt?` · ${clockText(current.endAt)} 结束`:''}`
+      :detailed&&current.kind!=='idle'?`当前 ${current.label}${source?` · ${source}`:''}${current.endAt?` · ${clockText(current.endAt)} 结束`:''}`
       :detailed&&p.next?`下一项 ${nextText(p)}`
-      :current.kind!=='idle'?(current.endAt?`${clockText(current.endAt)} 结束`:'进行中')
+      :current.kind!=='idle'?(current.endAt?`${source?source+' · ':''}${clockText(current.endAt)} 结束`:(source||'进行中'))
       :p.code==='TERM_NOT_STARTED'?p.termStart+' 开始'
       :p.next?`${nextText(p)}`:'暂无下一项';
     // 三个层级：称呼（谁）→ 状态（发生了什么）→ 依据（时间与地点），
@@ -54,7 +59,9 @@ export function StatusRows({live,compact=false,detailed=false}:{live:LiveSnapsho
       h('div',{className:'person-status-body'},
         h('span',{className:'person-status-label'},identity),
         h('strong',null,statusLabel(p)),
-        h('small',null,secondary))
+        h('small',null,secondary)),
+      // 只给本人开入口：状态由状态主体本人确认（Phase 3C §7）。
+      onSetStatus&&p.role==='self'?h('button',{type:'button',className:'text-button person-status-set','data-set-status':p.person,onClick:()=>onSetStatus(p.person)},'设置当前状态'):null
     );
   });
   return h('div',{className:compact?'status-pills':'dual-status'},...rows);

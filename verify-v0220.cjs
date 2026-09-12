@@ -149,16 +149,17 @@ app.whenReady().then(async()=>{
     check('右键菜单会展开',menuWindow.isVisible());
     fs.writeFileSync(path.join(output,'pet-menu.png'),(await menuWindow.webContents.capturePage()).toPNG());
     const rows=await menu("[...document.querySelectorAll('.pet-menu-item .pet-menu-label')].map(b=>b.textContent.trim())");
-    check('菜单包含样式切换 / 气泡 / 隐藏 / 退出',rows.length===8
-      && rows[0]==='打开 YD'&&rows[1]==='查看双方状态'
-      && rows[2]==='显示为桌宠'&&rows[3]==='显示为悬浮球'
-      && rows[4]==='暂停气泡提醒 1 小时'&&rows[5]==='桌宠设置'
-      && rows[6]==='隐藏桌宠'&&rows[7]==='退出 YD',rows.join('|'));
-    check('菜单用勾选标记当前样式',await menu("document.querySelector('[role=menuitemradio][aria-checked=true] .pet-menu-label')?.textContent.trim()==='显示为桌宠'&&document.querySelectorAll('.pet-menu-mark').length===8"));
+    // Phase 3C：新增「设置当前状态」，普通用户从桌宠右键即可纠正自己的状态。
+    check('菜单包含状态设置 / 样式切换 / 气泡 / 隐藏 / 退出',rows.length===9
+      && rows[0]==='打开 YD'&&rows[1]==='查看双方状态'&&rows[2]==='设置当前状态'
+      && rows[3]==='显示为桌宠'&&rows[4]==='显示为悬浮球'
+      && rows[5]==='暂停气泡提醒 1 小时'&&rows[6]==='桌宠设置'
+      && rows[7]==='隐藏桌宠'&&rows[8]==='退出 YD',rows.join('|'));
+    check('菜单用勾选标记当前样式',await menu("document.querySelector('[role=menuitemradio][aria-checked=true] .pet-menu-label')?.textContent.trim()==='显示为桌宠'&&document.querySelectorAll('.pet-menu-mark').length===9"));
     check('隐藏行显示快捷键提示',await menu("document.querySelectorAll('.pet-menu-hint').length===1&&document.querySelector('.pet-menu-hint').textContent==='Ctrl+Alt+Y'"));
     check('菜单是瓷白卡片而不是系统原生菜单',await menu("(()=>{const d=document.querySelector('.pet-menu'),s=getComputedStyle(d);return !!d&&s.borderRadius!=='0px'&&/rgba\\(252, 251, 248/.test(s.backgroundColor)})()"));
     const menuSize=menuWindow.getSize();
-    check('菜单窗口高度与模型一致',menuSize[1]>=300&&menuSize[1]<=320,menuSize.join('x'));
+    check('菜单窗口高度与模型一致',menuSize[1]>=340&&menuSize[1]<=360,menuSize.join('x'));
     // 点“显示为悬浮球”：菜单收起、桌宠窗口按悬浮球尺寸重建。
     await menu("[...document.querySelectorAll('.pet-menu-item')].find(b=>b.querySelector('.pet-menu-label').textContent.trim()==='显示为悬浮球').click()");
     await wait(600);
