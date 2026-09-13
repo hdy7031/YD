@@ -1,3 +1,24 @@
+## 未发布 · UI convergence（Phase 1 / Phase 2）
+
+### Phase 2 · Dual Status Dock（`ui: replace legacy orb with dual status dock`）
+
+- legacy 黄色玻璃悬浮球退役：`presence-orb.css` 重写，删除 `.presence-orb` /
+  `.presence-surface` / `.identity-mark` 结构、深金玻璃渐变与 D / Y 字母标记。
+- `'orb'` 显示模式改为 **YD Dual Status Dock**：圆角状态牌（12px 圆角、1px 极淡边框、
+  极轻阴影、mist 白底），每行 = 状态点 + 档案显示名 + 当前状态（必要时补「至 HH:MM」）。
+- 人物 label 来自 `Profile.name`（我 / TA / 丹 / 喻老师…），状态来自 `CurrentState`，
+  与首页 / Mini / Tip / 托盘同源；Solo 自动折成一行，不保留空的同行者行。
+- 修复启动位置回收使用占位 300×128 尺寸、把一个合法保存位置挤到屏幕另一侧的问题；
+  首次启动改为按当前模式真实画布尺寸落在右下角。
+- 设置与右键菜单文案由「玻璃悬浮球」更新为「状态浮标」；位置持久化、拖动、托盘、
+  快捷键与点击穿透行为保持不变。
+
+### Phase 1 · Daily Summary（`ui: unify self and companion daily summaries`）
+
+- 导航统一为「我的安排 / <名称>的安排」，「TA」只是没有用户名称时的 fallback。
+- Self 与 Companion 共用 DailyPlan / DailySummary / DailyTimeline / DailyAgendaList /
+  DailyEmptyState；空状态上对齐、受 max-width 控制，不再垂直居中漂浮。
+
 ## 0.2.20 · 桌宠十态、时间作息与稳定落点
 
 本轮只动桌宠：把「专属角色」做成唯一默认形象，删除小猫桌宠，补齐吃饭 / 午睡 / 刚睡醒 /

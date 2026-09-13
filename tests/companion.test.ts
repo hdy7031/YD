@@ -556,8 +556,11 @@ test('0.2.20 桌宠窗口固定且比人物本体大一圈，姿态偏移集中�
     assert.ok(tuning.scale>=0.9&&tuning.scale<=1.1,state);
     assert.ok(Math.abs(tuning.offsetX)<=6&&Math.abs(tuning.offsetY)<=6,state);
   }
-  const orb=companionGeometry('orb','medium',aspect);
-  assert.equal(orb.width,orb.height);
+  // Phase 2：Dock 是固定尺寸的横向状态牌，尺寸与素材、状态、行数都无关。
+  const dock=companionGeometry('orb','medium',aspect);
+  assert.ok(dock.width>dock.height,'Dock 不是正方形球体');
+  assert.equal(dock.shape,'rounded');
+  assert.deepEqual(dock,companionGeometry('orb','medium',0.68),'Dock 不消费素材比例');
 });
 
 test('0.2.20 内置小猫桌宠已彻底删除：没有猫的形象、几何或素材',()=>{

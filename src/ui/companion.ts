@@ -44,8 +44,9 @@ function detail(p:PersonStatus,now:number){
 const nextText=(p:PersonStatus)=>p.next?`${new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric'}).format(p.next.start)} ${clockText(p.next.start)} · ${p.next.title}`:'';
 export function StatusRows({live,compact=false,detailed=false,onSetStatus}:{live:LiveSnapshot|null;compact?:boolean;detailed?:boolean;onSetStatus?:(person:PersonId)=>void}){
   const rows=(live?.people||[]).map(p=>{
-    // 称呼来自档案：本人是「我的」，同行者用档案显示名称（默认就是当前产品里的 Ta）。
-    const identity=compact?p.alias:p.role==='self'?'我的':p.name;
+    // 称呼来自档案自身的显示名称（「我 / TA / 丹 / 喻老师」都由 Profile 提供）；
+    // 紧凑标签仍可用短代号，但不再把本人硬编码成「我的」。
+    const identity=compact?p.alias:p.name;
     // 迷你面板负责“读详情”，因此可以带当前事项与下一项；桌宠旁的小标签
     // 只留最短结论，避免在小窗口里堆字。
     const current=p.current;
@@ -71,19 +72,29 @@ export function StatusRows({live,compact=false,detailed=false,onSetStatus}:{live
   return h('div',{className:compact?'status-pills':'dual-status'},...rows);
 }
 export function Titlebar(){return h('header',{className:'titlebar'},h('span',{className:'titlebar-brand'},h(BrandGlyph,{className:'yd-glyph',title:''}),h('b',null,'YD'),h('em',null,'· Your Day')),h('div',{className:'window-controls'},...([['minimize','−','最小化'],['maximize','□','最大化或还原'],['close','×','收起到托盘']] as const).map(([action,label,title])=>h('button',{key:action,title,'aria-label':title,onClick:()=>void api.window(action)},label))));}
-function IdentityMark({letter}:{letter:string}){return h('span',{className:'identity-mark','aria-hidden':true},letter);}
 function StatusCore({state}:{state:PresenceState}){return h('span',{className:'status-core','aria-hidden':true},h('i',{className:'status-ring'}),h('i',{className:'status-dot'}));}
-function PresenceZone({person,status,marker,onHover}:{person:PersonId;status?:PersonStatus;marker:string;onHover?:(person:PersonId)=>void}){
+/**
+ * Dual Status Dock 的一行：人物 label（来自档案，不硬编码）+ 状态点 + 状态。
+ * 文字过长时由 CSS 省略号接管；状态永远来自 CurrentState（见 live.statusLabel）。
+ */
+function DockRow({status,onHover}:{status:PersonStatus;onHover?:(person:PersonId)=>void}){
+  const person=status.person;
   const state=presenceStateFor(status);
-  return h('span',{className:`presence-zone presence-${person} state-${state}`,'data-person':person,onPointerEnter:()=>onHover?.(person)},h(IdentityMark,{letter:marker}),h(StatusCore,{state}));
+  const current=status.current;
+  // 进行中且有明确结束时刻时补一个低调的时间点；没有可靠数据就不显示。
+  const timing=current.kind!=='idle'&&current.endAt!==undefined?`至 ${clockText(current.endAt)}`:'';
+  const text=current.kind!=='idle'?statusLabel(status):timing||statusLabel(status);
+  return h('div',{className:`dock-row presence-${person} state-${state}`,'data-person':person,onPointerEnter:()=>onHover?.(person)},
+    h(StatusCore,{state}),
+    h('span',{className:'dock-label'},status.name),
+    h('span',{className:'dock-status'},text));
 }
-// 悬浮球按实际档案渲染状态区域：2 人时保持左右双方（视觉不变），1 人时只渲染一个居中的区域。
-function PresenceOrb({animate,people,onHover}:{animate:boolean;people:PersonStatus[];onHover?:(person:PersonId)=>void}){
+// Dock 按实际档案渲染状态行：2 人两行，1 人自动折成一行，不保留空的同行者行。
+function CompanionDock({animate,people,onHover}:{animate:boolean;people:PersonStatus[];onHover?:(person:PersonId)=>void}){
   // 无障碍文案与 Mini / Tip / Tray 同源（statusLabel），不再有第二套粗粒度状态词。
-  const labels=people.map(status=>statusLabel(status)).join('、');
-  return h('div',{className:`presence-orb${animate?' motion':''}`,'aria-label':people.length>1?`双方状态：${labels}`:`当前状态：${labels}`},
-    h('div',{className:`presence-surface${people.length<2?' solo':''}`},
-      ...people.map(status=>h(PresenceZone,{key:status.person,person:status.person,status,marker:status.alias,onHover}))));
+  const labels=people.map(status=>`${status.name} ${statusLabel(status)}`).join('、');
+  return h('div',{className:`dock-surface${people.length<2?' solo':''}${animate?' motion':''}`,'role':'status','aria-label':people.length>1?`双方状态：${labels}`:`当前状态：${labels}`},
+    ...people.map(status=>h(DockRow,{key:status.person,status,onHover})));
 }
 function useSurface(name:string){
   useEffect(()=>{
@@ -126,7 +137,7 @@ export function DesktopPet(){
   },[dragging]);
   const hover=(person:PersonId)=>{if(!draggingRef.current&&hoverArmed.current)void api.presence('enter',person);};
   const leave=()=>{hidePresence();if(!draggingRef.current)hoverArmed.current=true;};
-  const label=p.mode==='orb'?'拖动悬浮球，单击查看状态':'拖动桌宠，单击查看双方状态';
+  const label=p.mode==='orb'?'拖动状态浮标，单击查看状态':'拖动桌宠，单击查看双方状态';
   // 手势：pointerdown 立刻进入 is-dragging 并让主进程接管窗口位置，pointermove
   // 只转发坐标，pointerup / cancel / 失去捕获都会收尾。拖动期间不产生任何 CSS
   // 动画、transform 或滤镜，桌面看到的位移只来自窗口本身。
@@ -148,12 +159,12 @@ export function DesktopPet(){
     onLostPointerCapture:()=>{hoverArmed.current=false;finishDrag();},
     onClick:()=>{if(!moved.current)void api.window('mini');},
   };
-  const handle=h('button',{'data-interactive':true,className:'pet-handle','aria-label':label,...dragHandlers},
+  const handle=h('button',{'data-interactive':true,className:`pet-handle${p.mode==='orb'?' dock-handle':''}`,'aria-label':label,...dragHandlers},
     custom
       // 固定画布：stage 只负责角色本体与动作，rail 是它的兄弟节点，
       // 两者的 transform / 动画永远不会互相影响，拖动时也不会被裁掉。
       ?h('div',{className:'sprite-stage'},h('div',{className:'sprite-inner'},h('span',{className:'sprite-shadow','aria-hidden':true}),h(CustomCompanionArt,{assets,display:live?.display,frozen:dragging,...motion})))
-      :h(PresenceOrb,{animate:motion.animate,people,onHover:hover}));
+      :h(CompanionDock,{animate:motion.animate,people,onHover:hover}));
   const side=custom
     ?h('div',{className:'status-rail'},h('button',{'data-interactive':true,className:'companion-rail-button',title:'查看双方状态',onClick:()=>void api.window('mini')},h(CompanionRail,{live})))
     :null;
@@ -205,7 +216,7 @@ export function Mini(){
 }
 const modeOptions:[PetPreferences['mode'],string,string][]=[
   ['custom','专属角色桌宠','默认形象，随时段与双方状态切换动作'],
-  ['orb','玻璃悬浮球','最克制，只显示两个状态点'],
+  ['orb','状态浮标','常驻的轻量状态 Dock：每行一个人，显示当前状态与结束时间'],
 ];
 
 const motionOptions:['standard'|'reduced',string,string][]=[

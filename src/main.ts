@@ -88,9 +88,11 @@ function toast(title:string,body:string){
   const notification=new Notification({title,body,silent:true});notifications.add(notification);
   notification.on('click',showPanel);notification.on('close',()=>notifications.delete(notification));notification.on('failed',()=>notifications.delete(notification));notification.show();
 }
-function clampPosition(x:number,y:number,snap=false){
+function clampPosition(x:number,y:number,snap=false,size?:{width:number;height:number}){
   const {workArea:a}=screen.getDisplayNearestPoint({x:Math.round(x+38),y:Math.round(y+38)});
-  const [width,height]=orb&&!orb.isDestroyed()?orb.getSize():[300,128];
+  // 启动时窗口还没创建，必须用即将使用的真实画布尺寸回收；
+  // 否则会把一个本来合法的保存位置按占位尺寸（300×128）挤到屏幕另一侧。
+  const [width,height]=size?[size.width,size.height]:orb&&!orb.isDestroyed()?orb.getSize():[300,128];
   return clampToArea(x,y,width,height,a,snap);
 }
 function moveOrb(x:number,y:number,width?:number,height?:number){
@@ -309,7 +311,9 @@ else{
     runtimeLog('info',`桌宠素材 ${companionAssets.reason}`);
     Menu.setApplicationMenu(null);
     const initial=companionGeometry(store.state.settings.pet?.mode??'custom','medium',companionAssets.aspect);
-    const area=screen.getPrimaryDisplay().workArea,pos=clampPosition(store.state.settings.orb?.x??area.x+area.width-90,store.state.settings.orb?.y??area.y+area.height-160);
+    // 首次启动（没有保存位置）落在右下角：用当前模式的真实画布尺寸留 24px 边距，
+    // 这样 Dock（很扁）与桌宠（较高）都不会把窗口放在工作区之外。
+    const area=screen.getPrimaryDisplay().workArea,pos=clampPosition(store.state.settings.orb?.x??area.x+area.width-initial.width-24,store.state.settings.orb?.y??area.y+area.height-initial.height-24,false,initial);
     orb=new BrowserWindow({...windowOptions(),width:initial.width,height:initial.height,thickFrame:false,hasShadow:false,roundedCorners:false,x:pos.x,y:pos.y,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false});
     panel=new BrowserWindow({...windowOptions(),width:1050,height:780,minWidth:750,minHeight:550,title:'YD · Your Day',icon:path.join(__dirname,'icon.png'),frame:false,show:false});
     lockWindow(orb);lockWindow(panel);

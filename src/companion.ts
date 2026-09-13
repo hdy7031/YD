@@ -11,12 +11,20 @@ import { logError } from './logging.ts';
 import type { Store } from './store.ts';
 import type { PersonId } from './types.ts';
 
-function circleShape(size:number,inset=0){
-  const diameter=size-inset*2,radius=diameter/2,center=inset+radius,rects:Electron.Rectangle[]=[];
-  for(let y=inset;y<inset+diameter;y++){
-    const dy=(y+.5-center)/radius,half=radius*Math.sqrt(Math.max(0,1-dy*dy));
-    const left=Math.max(inset,Math.ceil(center-half)),right=Math.min(inset+diameter,Math.floor(center+half));
-    if(right>left)rects.push({x:left,y,width:right-left,height:1});
+/**
+ * Dual Status Dock 的窗口形状：圆角矩形（10–12px 视觉圆角）。
+ * Electron 的 setShape 只接受整数像素矩形列表，因此用逐行扫描生成同样的轮廓；
+ * 它与 CSS 的 border-radius 取同一组数字，窗口裁剪和渲染不会出现两套圆角。
+ */
+function roundedShape(width:number,height:number,radius:number){
+  const r=Math.max(0,Math.min(radius,Math.floor(Math.min(width,height)/2)));
+  if(r===0)return [{x:0,y:0,width,height}] as Electron.Rectangle[];
+  const rects:Electron.Rectangle[]=[];
+  for(let y=0;y<height;y++){
+    const edge=y<r?y:y>=height-r?height-1-y:r;
+    const inset=edge<r?Math.round(r-Math.sqrt(Math.max(0,r*r-(r-edge-1)*(r-edge-1)))):0;
+    const rowWidth=width-inset*2;
+    if(rowWidth>0)rects.push({x:inset,y,width:rowWidth,height:1});
   }
   return rects;
 }
@@ -85,8 +93,9 @@ export class Companion {
     // frame, the business state or the character bounding box.
     const mode=p.mode==='orb'?'orb':'custom';
     const pack=resolveAvatarPack(this.activeAvatar.resolvedPackId);
-    const {width,height}=companionGeometry(mode,p.size,pack.canvas.width/pack.canvas.height);
-    return {width,height,shape:mode==='orb'?circleShape(width):undefined};
+    const {width,height,shape}=companionGeometry(mode,p.size,pack.canvas.width/pack.canvas.height);
+    // Dual Status Dock：圆角矩形窗口裁剪；桌宠画布保持方角，避免裁掉角色动作。
+    return {width,height,shape:shape==='rounded'?roundedShape(width,height,12):undefined};
   }
   resize(){
     // Never resize while the window is being dragged: the move loop owns the
@@ -106,10 +115,10 @@ export class Companion {
     const display=screen.getDisplayMatching(before).workArea;
     x=Math.max(display.x,Math.min(x,display.x+display.width-width));
     y=Math.max(display.y,Math.min(y,display.y+display.height-height));
-    this.orb.setResizable(true);this.orb.setMinimumSize(1,1);
+    // 不切换 resizable：Windows 会因此改动窗口样式位并让透明窗口重新对齐，
+    // 是 Dock 窗口在切换模式时慢慢"长大"1–3px 的来源。这里只改 bounds 与形状。
     this.orb.setBounds({x,y,width,height},false);
     this.orb.setShape(shape??[{x:0,y:0,width,height}]);
-    this.orb.setResizable(false);
     this.applied=key;
     this.position();this.broadcast();
   }

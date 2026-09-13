@@ -36,20 +36,34 @@ export const companionCharacter = {
   minWidth: 124,
 };
 
-export const companionOrb = {
-  size: { small: 98, medium: 102, large: 108 } as Record<CompanionSize, number>,
+/**
+ * YD Dual Status Dock（Phase 2）：取代 legacy 黄色悬浮球的常驻状态牌。
+ *
+ * 字号固定，窗口按 1–2 行状态取尺寸；单人工作区把两行折成一行，
+ * 但窗口尺寸不随状态或行数变化（拖动与热区必须稳定）。
+ * 具体像素按实际字体与 DPI 取整，落在产品定义的建议区间内：
+ * collapsed 宽 120–170 / 高 52–68（小/中档），大档只放大一档呼吸感。
+ */
+export const companionDock = {
+  collapsed: {
+    small: { width: 150, height: 56 },
+    medium: { width: 166, height: 62 },
+    large: { width: 182, height: 70 },
+  } as Record<CompanionSize, CompanionGeometry>,
 };
 
 export interface CompanionGeometry {
   width: number;
   height: number;
+  /** 窗口形状提示：rounded = Dual Status Dock；未设置 = 方角画布（桌宠）。 */
+  shape?: 'rounded';
 }
 
 // Single source of truth for every companion window size.
 export function companionGeometry(mode: CompanionMode, size: CompanionSize, aspect: number): CompanionGeometry {
   if (mode === 'orb') {
-    const value = companionOrb.size[size];
-    return { width: value, height: value };
+    const { width, height } = companionDock.collapsed[size];
+    return { width, height, shape: 'rounded' };
   }
   // Avatar Pack supplies the canvas ratio; window policy stays generic.
   const character = companionCharacter.height[size];

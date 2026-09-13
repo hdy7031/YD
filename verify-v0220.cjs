@@ -55,7 +55,7 @@ app.whenReady().then(async()=>{
     /* ---------- B. 小猫已删除 ---------- */
     check('桌宠窗口没有任何猫形象或猫标签',await pet("!document.querySelector('.pet-art')&&!document.querySelector('.pet-labels')&&!document.querySelector('.teacher-prop')"));
     await run("window.dayhub.window('settings')");await wait(400);
-    check('设置页只剩专属角色与悬浮球',await run("(()=>{const t=document.querySelector('.pet-settings')?.textContent??'';return !!t&&!t.includes('小猫')&&t.includes('专属角色桌宠')&&t.includes('玻璃悬浮球')})()"));
+    check('设置页只剩专属角色与状态浮标',await run("(()=>{const t=document.querySelector('.pet-settings')?.textContent??'';return !!t&&!t.includes('小猫')&&t.includes('专属角色桌宠')&&t.includes('状态浮标')})()"));
     check('源码与文案里不再回退到猫',!fs.readFileSync(path.join(__dirname,'src','companion-assets.ts'),'utf8').includes('小猫'));
 
     /* ---------- C. 时间状态（默认迁移作息，左闭右开） ---------- */
@@ -152,7 +152,7 @@ app.whenReady().then(async()=>{
     // Phase 3C：新增「设置当前状态」，普通用户从桌宠右键即可纠正自己的状态。
     check('菜单包含状态设置 / 样式切换 / 气泡 / 隐藏 / 退出',rows.length===9
       && rows[0]==='打开 YD'&&rows[1]==='查看双方状态'&&rows[2]==='设置当前状态'
-      && rows[3]==='显示为桌宠'&&rows[4]==='显示为悬浮球'
+      && rows[3]==='显示为桌宠'&&rows[4]==='显示为状态浮标'
       && rows[5]==='暂停气泡提醒 1 小时'&&rows[6]==='桌宠设置'
       && rows[7]==='隐藏桌宠'&&rows[8]==='退出 YD',rows.join('|'));
     check('菜单用勾选标记当前样式',await menu("document.querySelector('[role=menuitemradio][aria-checked=true] .pet-menu-label')?.textContent.trim()==='显示为桌宠'&&document.querySelectorAll('.pet-menu-mark').length===9"));
@@ -160,10 +160,11 @@ app.whenReady().then(async()=>{
     check('菜单是瓷白卡片而不是系统原生菜单',await menu("(()=>{const d=document.querySelector('.pet-menu'),s=getComputedStyle(d);return !!d&&s.borderRadius!=='0px'&&/rgba\\(252, 251, 248/.test(s.backgroundColor)})()"));
     const menuSize=menuWindow.getSize();
     check('菜单窗口高度与模型一致',menuSize[1]>=340&&menuSize[1]<=360,menuSize.join('x'));
-    // 点“显示为悬浮球”：菜单收起、桌宠窗口按悬浮球尺寸重建。
-    await menu("[...document.querySelectorAll('.pet-menu-item')].find(b=>b.querySelector('.pet-menu-label').textContent.trim()==='显示为悬浮球').click()");
+    // 点“显示为状态浮标”：菜单收起、桌宠窗口按 Dock 尺寸重建（Phase 2 起不再是单球体）。
+    await menu("[...document.querySelectorAll('.pet-menu-item')].find(b=>b.querySelector('.pet-menu-label').textContent.trim()==='显示为状态浮标').click()");
     await wait(600);
-    check('从菜单切到悬浮球样式',!menuWindow.isVisible()&&Math.abs(orb.getSize()[0]-102)<=2&&await pet("!!document.querySelector('.presence-orb')"));
+    const dockSize=orb.getSize();
+    check('从菜单切到状态浮标（Dual Status Dock）',!menuWindow.isVisible()&&dockSize[0]>dockSize[1]&&dockSize[0]>=150&&dockSize[0]<=190&&await pet("!!document.querySelector('.dock-surface')&&document.querySelectorAll('.dock-row').length===2"),dockSize.join('x'));
     await pet("window.dayhub.window('menu')");await wait(400);
     await menu("[...document.querySelectorAll('.pet-menu-item')].find(b=>b.querySelector('.pet-menu-label').textContent.trim()==='显示为桌宠').click()");
     await wait(600);

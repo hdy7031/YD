@@ -62,12 +62,16 @@ app.whenReady().then(async()=>{
   const sizeSteps=[];for(const [size,expected] of [['small',212],['medium',236],['large',264]]){await run(`window.dayhub.change({type:'settings',pet:{size:'${size}'}})`);await wait(150);const [,height]=orb.getSize();sizeSteps.push(height);console.log('size',size,orb.getSize());check('桌宠尺寸 '+size+' 与画布常量一致',Math.abs(height-expected)<=2);}
   check('三档尺寸单调递增且人物等比放大',sizeSteps[0]<sizeSteps[1]&&sizeSteps[1]<sizeSteps[2]);
   await run("window.dayhub.change({type:'settings',pet:{mode:'orb',size:'medium'}})");await wait(100);
-  check('双状态核心结构和D/Y字母标记',await orb.webContents.executeJavaScript("document.querySelectorAll('.presence-zone').length===2&&[...document.querySelectorAll('.identity-mark')].map(e=>e.textContent).join('')==='DY'&&document.querySelectorAll('.status-core').length===2"));
-  check('球体为96px严格正圆',await orb.webContents.executeJavaScript("(()=>{const r=document.querySelector('.presence-surface').getBoundingClientRect();return Math.abs(r.width-96)<.1&&Math.abs(r.width-r.height)<.1&&getComputedStyle(document.querySelector('.presence-surface')).aspectRatio==='1 / 1'})()"));
-  const symmetry=await orb.webContents.executeJavaScript("(()=>{const s=document.querySelector('.presence-surface').getBoundingClientRect(),m=[...document.querySelectorAll('.identity-mark')].map(e=>e.getBoundingClientRect()),d=[...document.querySelectorAll('.status-dot')].map(e=>e.getBoundingClientRect()),cx=r=>r.x+r.width/2,cy=r=>r.y+r.height/2;return {surface:{x:s.x,y:s.y,width:s.width,height:s.height},marks:m.map(r=>({cx:cx(r),cy:cy(r),width:r.width,height:r.height})),dots:d.map(r=>({cx:cx(r),cy:cy(r),width:r.width,height:r.height}))}})()");console.log('symmetry',symmetry);
-  check('D/Y与左右状态点严格对称',Math.abs((symmetry.marks[0].cx+symmetry.marks[1].cx)/2-(symmetry.surface.x+symmetry.surface.width/2))<.1&&Math.abs(symmetry.marks[0].cy-symmetry.marks[1].cy)<.1&&Math.abs((symmetry.dots[0].cx+symmetry.dots[1].cx)/2-(symmetry.surface.x+symmetry.surface.width/2))<.1&&Math.abs(symmetry.dots[0].cy-symmetry.dots[1].cy)<.1&&Math.abs(symmetry.dots[0].width-6)<.1&&Math.abs(symmetry.dots[0].width-symmetry.dots[1].width)<.1);
-  check('中央分割线和原生title均已删除',await orb.webContents.executeJavaScript("!document.querySelector('.presence-seam')&&!document.querySelector('.pet-handle').hasAttribute('title')"));
-  check('默认球体仅显示D/Y且无旧贴图',await orb.webContents.executeJavaScript("document.body.textContent.trim()==='DY'&&!/[我Ta]/.test(document.body.textContent)&&!document.querySelector('.split-orb')&&!document.querySelector('.orb-shell')"));
+  // Phase 2：'orb' 模式已经是 Dual Status Dock（圆角状态牌），不再有单球体与 D/Y 字母标记。
+  const dockLabels=await orb.webContents.executeJavaScript("[...document.querySelectorAll('.dock-row')].map(row=>row.querySelector('.dock-label')?.textContent.trim())");
+  check('状态浮标两行结构：人物 label 来自档案',await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row').length===2&&document.querySelectorAll('.status-core').length===2")&&dockLabels.join('|')==='Alex|Sam','labels='+dockLabels.join('|'));
+  const dockBox=await orb.webContents.executeJavaScript("(()=>{const s=document.querySelector('.dock-surface').getBoundingClientRect();return {width:s.width,height:s.height,radius:getComputedStyle(document.querySelector('.dock-surface')).borderRadius}})()");console.log('dock',dockBox);
+  // 检查的是可见表面（.dock-surface）；窗口本身比它大约 8px，作为阴影 / 圆角安全区。
+  check('状态浮标是固定尺寸圆角状态牌',dockBox.width>=120&&dockBox.width<=170&&dockBox.height>=52&&dockBox.height<=68&&dockBox.width>dockBox.height&&parseFloat(dockBox.radius)>0,JSON.stringify(dockBox));
+  const dockRows=await orb.webContents.executeJavaScript("(()=>{const rows=[...document.querySelectorAll('.dock-row')].map(r=>r.getBoundingClientRect()),s=document.querySelector('.dock-surface').getBoundingClientRect();return {rows:rows.map(r=>({top:r.top,left:r.left,width:r.width,height:r.height})),surface:{left:s.left,width:s.width}}})()");console.log('dock rows',dockRows);
+  check('两行都在 Dock 内且左对齐',dockRows.rows.every(r=>r.left>=dockRows.surface.left-.5&&r.left+r.width<=dockRows.surface.left+dockRows.surface.width+.5)&&dockRows.rows[0].top<dockRows.rows[1].top);
+  check('旧球体结构与原生title均已删除',await orb.webContents.executeJavaScript("!document.querySelector('.presence-orb,.presence-surface,.identity-mark,.presence-seam')&&!document.querySelector('.pet-handle').hasAttribute('title')"));
+  check('默认状态浮标不再显示旧 D/Y 字母标记',await orb.webContents.executeJavaScript("![...document.querySelectorAll('.identity-mark')].length&&!!document.querySelector('.dock-surface')&&!document.querySelector('.split-orb')&&!document.querySelector('.orb-shell')"));
   // 状态语义来自统一 StateEngine 的 CurrentState.kind（不再是 code / research 标记）：
   // me → meeting（忙碌色），partner → research（专注色）。
   const injectKinds=value=>({...value,preferences:{...value.preferences,mode:'orb'},people:value.people.map(p=>({...p,current:{...p.current,kind:p.person==='me'?'meeting':'research'}}))});
@@ -77,7 +81,7 @@ app.whenReady().then(async()=>{
   for(let i=0;i<6&&!zones;i++){
     orb.webContents.send('dayhub:live',injectKinds(next));
     await wait(60);
-    zones=await orb.webContents.executeJavaScript("!!document.querySelector('.presence-me.state-busy')&&!!document.querySelector('.presence-partner.state-focus')");
+    zones=await orb.webContents.executeJavaScript("!!document.querySelector('.dock-row.presence-me.state-busy')&&!!document.querySelector('.dock-row.presence-partner.state-focus')");
   }
   check('忙碌与专注状态映射到独立状态核心',zones);
   await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(80);check('CASE 1 进入球体显示自定义tooltip',tip.isVisible());
@@ -85,10 +89,11 @@ app.whenReady().then(async()=>{
   check('悬停提示为独立紧凑窗口',tip.isVisible()&&tip.getSize()[0]<=152&&tip.getSize()[1]<=40);
   check('提示使用D/Y短代号且不暴露关系身份',await tip.webContents.executeJavaScript("/^[DY] · (空闲|上课中|教研中|活动中|会议中|即将有安排|今日课程已结束|今天无课|课表尚未开始|本学期课程已结束|尚未录入课表)$/.test(document.body.textContent.trim())"));
   await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");await wait(40);check('CASE 2 离开球体立即收起tooltip',!tip.isVisible());
-  // Windows 会把透明无边框窗口对齐到物理像素栅格（150% 缩放下会 +1px），
-  // 因此窗口尺寸允许 2px 误差；球体本身的正圆由上面的 DOM 断言保证。
-  check('悬浮球窗口为102px正方形',Math.abs(orb.getSize()[0]-102)<=2&&Math.abs(orb.getSize()[1]-102)<=2);
-  const beforeDrag=orb.getBounds(),pointer={x:beforeDrag.x+51,y:beforeDrag.y+51};
+  // Windows 会把透明无边框窗口对齐到物理像素栅格（DPI 缩放下会 ±几 px），
+  // 因此窗口尺寸允许物理像素取整；Dock 的固定布局常量由 layout 单测锁定。
+  const beforeDrag=orb.getBounds();
+  check('状态浮标窗口为固定圆角状态牌',Math.abs(beforeDrag.width-166)<=8&&beforeDrag.height===62,JSON.stringify({width:beforeDrag.width,height:beforeDrag.height}));
+  const pointer={x:beforeDrag.x+Math.round(beforeDrag.width/2),y:beforeDrag.y+Math.round(beforeDrag.height/2)};
   await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(30);
   await orb.webContents.executeJavaScript(`window.dayhub.beginDrag(${pointer.x},${pointer.y})`);
   await wait(30);check('CASE 3 开始拖动立即隐藏tooltip',!tip.isVisible());

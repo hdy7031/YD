@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { companionGeometry, companionRail, companionSizes, companionCharacter, companionFrame, companionOrb } from '../src/companion-layout.ts';
+import { companionGeometry, companionRail, companionSizes, companionCharacter, companionFrame, companionDock } from '../src/companion-layout.ts';
 import { clampToArea, keepVisible, resolveDragStep, type DragAnchor } from '../src/geometry.ts';
 import { courseTone, courseTones } from '../src/selectors.ts';
 
@@ -18,7 +18,18 @@ test('0.2.20 桌宠画布是固定尺寸：状态与素材内容无法改变窗�
     // 角色宽度按画布比例缩放，不变形。
     const fromAspect=Math.max(companionCharacter.minWidth,Math.round(companionCharacter.height[size]*aspect)+companionFrame.padX*2);
     assert.ok(Math.abs(custom.width-fromAspect)<=1);
-    assert.deepEqual(companionGeometry('orb',size,aspect),{width:companionOrb.size[size],height:companionOrb.size[size]});
+    // Phase 2：'orb' 模式已经是 Dual Status Dock（圆角状态牌），不再是正方形悬浮球。
+    const dock=companionGeometry('orb',size,aspect);
+    assert.deepEqual(dock,{...companionDock.collapsed[size],shape:'rounded'});
+    // collapsed 尺寸按产品定义落在 120–170 × 52–68；大档只在此之上放宽一档呼吸感。
+    assert.ok(dock.width>=120&&dock.width<=190,`${size} Dock 宽度落在建议区间`);
+    assert.ok(dock.height>=52&&dock.height<=74,`${size} Dock 高度落在建议区间`);
+    if(size!=='large'){
+      assert.ok(dock.width<=170&&dock.height<=68,`${size} Dock 落在 collapsed 建议区间`);
+    }
+    assert.ok(dock.width>dock.height,'Dock 是横向状态牌，不是球体');
+    assert.equal(dock.shape,'rounded','Dock 使用圆角矩形窗口裁剪');
+    assert.notEqual(dock.width,dock.height,'不再保留单球体设计');
   }
   // 素材比例异常时退回安全比例而不是生成 0 宽窗口。
   assert.deepEqual(companionGeometry('custom','medium',0),companionGeometry('custom','medium',0.68));
@@ -40,6 +51,21 @@ test('0.2.16 渲染层状态栏高度与主进程画布常量一致',()=>{
   const matches=[...css.matchAll(/--rail-height,(\d+)px/g)].map(match=>Number(match[1]));
   assert.ok(matches.length>0,'样式表里应使用 --rail-height 变量');
   for(const value of matches)assert.equal(value,companionRail.height,'CSS 回退高度必须等于 companionRail.height');
+});
+
+test('Phase 2 Dual Status Dock：legacy 黄色单球体与 gold/amber 残留已清除',()=>{
+  const orbCss=fs.readFileSync(path.join(process.cwd(),'src','ui','presence-orb.css'),'utf8');
+  const mainCss=fs.readFileSync(path.join(process.cwd(),'src','ui','style.css'),'utf8');
+  // 旧球体结构（圆形表面 / 身份字母）不再存在：Dock 是圆角状态牌。
+  for(const css of [orbCss,mainCss]) assert.doesNotMatch(css,/^[\s,>+~]*\.presence-(orb|surface)\b/m,'旧的 presence-orb / presence-surface 选择器必须移除');
+  assert.doesNotMatch(mainCss,/^[\s,>+~]*\.identity-mark\b/m,'旧的 identity-mark 选择器必须移除');
+  // Dock 表面：mist 白底 + 圆角矩形，没有暗金色渐变。
+  assert.match(orbCss,/\.dock-surface\b/);
+  assert.match(orbCss,/border-radius:12px/);
+  assert.doesNotMatch(orbCss,/#(?:e0b234|b88a16|7e5c0c|e4c87c)/i,'Dock 路径不得保留 legacy 暗金配色');
+  assert.doesNotMatch(orbCss,/linear-gradient\([^)]*rgba\(\s*2[0-9]{2}\s*,/,'Dock 不使用暖色大色块渐变');
+  // 状态色仍来自 companion-colors 的六色语义，不在 CSS 里重新发明。
+  for(const tone of ['#D6AE6A','#DE9A63','#8FAED2','#C2726A','#A3ACB0']) assert.match(orbCss,new RegExp(tone,'i'),`缺少 ${tone}`);
 });
 
 test('0.2.16 窗口回收：拖到屏幕边缘、显示器被拔掉都不会留在屏幕外',()=>{

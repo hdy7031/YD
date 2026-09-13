@@ -37,7 +37,7 @@ export function buildCompanionMenu(context: CompanionMenuContext): CompanionMenu
     { kind: 'item', id: 'status', label: '设置当前状态' },
     { kind: 'sep' },
     { kind: 'radio', id: 'mode:custom', label: '显示为桌宠', checked: context.mode !== 'orb' },
-    { kind: 'radio', id: 'mode:orb', label: '显示为悬浮球', checked: context.mode === 'orb' },
+    { kind: 'radio', id: 'mode:orb', label: '显示为状态浮标', checked: context.mode === 'orb' },
     { kind: 'sep' },
     // 气泡这一行是“动作”而不是“开关”：勾选一个叫“暂停…”的行会让人以为是已开启，
     // 所以只有暂停中才在右侧补一行“已暂停”说明。

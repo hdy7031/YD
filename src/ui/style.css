@@ -1676,19 +1676,7 @@ input:hover, select:hover, textarea:hover { border-color: #C3CDC8; }
 .rail-dot.tone-alert { background: #C2726A; box-shadow: 0 0 0 2px rgba(194, 114, 106, .24); }
 .rail-dot.tone-neutral { background: #A3ACB0; box-shadow: 0 0 0 2px rgba(163, 172, 176, .24); }
 
-/* 悬浮球：换成 YD 的深鼠尾草玻璃质感，不再是通用青绿 */
-.pet-dock.orb-mode .presence-surface {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, .04) 0%, rgba(255, 255, 255, 0) 29%),
-    linear-gradient(154deg, rgba(224, 178, 52, .92) 0%, rgba(184, 138, 22, .94) 52%, rgba(126, 92, 12, .96) 100%);
-  border-color: rgba(255, 246, 220, .34);
-}
-.presence-orb .presence-zone.state-idle { --status: #8CBE9E; --status-rgb: 140, 190, 158; }
-.presence-orb .presence-zone.state-upcoming { --status: #D6AE6A; --status-rgb: 214, 174, 106; }
-.presence-orb .presence-zone.state-busy { --status: #DE9A63; --status-rgb: 222, 154, 99; }
-.presence-orb .presence-zone.state-focus { --status: #8FAED2; --status-rgb: 143, 174, 210; }
-.presence-orb .presence-zone.state-dnd { --status: #C2726A; --status-rgb: 194, 114, 106; }
-.presence-orb .presence-zone.state-offline { --status: #A3ACB0; --status-rgb: 163, 172, 176; }
+/* 状态浮标（Dual Status Dock）自己带完整配色，主样式表不再覆盖它的表面。 */
 .rail-chip b { color: #2A332C; }
 .companion-rail.is-night .rail-chip b { color: #4A5170; }
 

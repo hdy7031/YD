@@ -24,6 +24,7 @@
 | `npx electron verify-v030-avatar-person.cjs` | Person ↔ AvatarSelection ↔ PetInstance |
 | `npx electron verify-v030-avatar-runtime.cjs` | 热切换、版本化缓存、竞态、last-known-good |
 | `npx electron verify-v030-avatar-picker.cjs` | Picker / Preview / avatarSet / avatarReset / 重启持久化 |
+| `npx electron verify-v030-dock.cjs` | Dual Status Dock：结构 / label / hover / click / drag / 快速拖动 / 位置落盘与重启恢复（Solo 见 `runtime-audit-solo.cjs`） |
 | `node verify-v0220-packaged.cjs` | 打包版（`release/win-unpacked/YD.exe`）真实启动、Picker 热切换、冷启动持久化 |
 
 `verify-v0220-packaged.cjs` 需要先 `npm run dist -- --config.electronDist=node_modules/electron/dist`
@@ -39,6 +40,10 @@
 | `npx electron verify-v0214-reminder.cjs` | 提醒送达链路 |
 | `npx electron verify-epipe-stdio.cjs` | 子进程 stdout/stderr 断管后仍可工作 |
 | `npx electron scripts/visual-mist.cjs` | 主窗口视觉系统回归（截图对比） |
+
+`verify-v030-dock.cjs` 无参数时会依次 spawn `together` → `restart` 两个 Electron 实例
+（应用自身是单实例，无法在同一进程里重启）。Solo 工作区的 Dock 单行退化由
+`runtime-audit-solo.cjs` 的「状态浮标单人模式只有一行 / 没有第二个（幽灵）同行者行」覆盖。
 
 本仓库没有 lint script（`package.json` 未定义），不要假装运行它。
 

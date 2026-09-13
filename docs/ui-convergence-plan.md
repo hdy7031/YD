@@ -190,11 +190,22 @@ alert（冲突，真警示）/ neutral（未知）。
 | Phase 4 | 课表只读 Overview（问题 D） | `feat: add read-only weekly schedule overview` |
 | Phase 5 | 提醒 / 收件箱大窗口密度（问题 E） | `ui: raise wide-window density for inbox and reminders` |
 | Phase 6 | 设置页信息架构（问题 F） | `ui: restructure settings information architecture` |
-| Phase 7 | legacy 金色清理与 token 收敛（问题 H） | `refactor: retire legacy gold palette from main surfaces` |
-| Phase 8 | Dual Status Dock 替换黄色玻璃球（问题 I） | `feat: replace legacy orb with dual status dock` |
+| Phase 7 | legacy 金色清理与 token 收敛（问题 H，Dock 路径已在 Phase 2 清理） | `refactor: retire legacy gold palette from main surfaces` |
+| Phase 8 | Dual Status Dock 替换黄色玻璃球（问题 I） | **已于 Phase 2 完成**：`ui: replace legacy orb with dual status dock` |
+
+### Phase 1 / Phase 2 完成记录
+
+| 阶段 | commit | 范围 |
+| --- | --- | --- |
+| Phase 1 | `aaeb1e9` `ui: unify self and companion daily summaries` | Self / Companion 共用 Daily Summary + Timeline；导航统一为「我的安排 / <名称>的安排」，TA 只是 fallback |
+| Phase 2 | `ui: replace legacy orb with dual status dock` | 'orb' 模式改为 YD Dual Status Dock（圆角状态牌）；`presence-orb.css` 重写、黄色渐变与 `.presence-orb/.presence-surface/.identity-mark` 结构删除；Dock 路径不再含 gold/yellow/amber 底色 |
+
+Phase 2 遗留说明：legacy orb 的**代码路径**已移除（组件、CSS、单球体窗口形状、D/Y 字母标记），
+但 `settings.pet.mode` 仍保留历史值 `'orb'` 以兼容用户配置——它的语义已经是 Dock，
+不做数据迁移；Phase 7 收敛 token 时再统一命名。
 
 每个阶段的 commit 边界以「可独立验证、不夹带无关改动」为准；实际拆分可细化，但不得合并跨阶段范围。
-Phase 8 之前不动 `presence-orb.css` 的 legacy 球体外观（仅保持现状运行），避免与主窗口收敛互相干扰。
+Phase 2 已完成球体替换；后续阶段不要重新引入单球体结构或金色玻璃。
 
 ## 7. 验证与回滚
 

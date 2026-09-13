@@ -9,7 +9,8 @@ import type { CurrentState } from './state/types.ts';
 import type { State, PersonId, ProfileRole, Occurrence } from './types.ts';
 
 export interface PetPreferences {
-  // 0.2.20 起只有两个显示模式：专属角色桌宠（唯一默认形象）与玻璃悬浮球。
+  // 0.2.20 起只有两个显示模式：专属角色桌宠（默认形象）与状态浮标 Dual Status Dock。
+  // 持久化字段值仍写作 'orb'（历史配置兼容），语义已经是 Dock。
   // 旧配置里的 'pet'（小猫）由 migrateLive 一次性迁移到 'custom'。
   mode:'custom'|'orb';
   size:'small'|'medium'|'large';
@@ -147,7 +148,7 @@ export function migrateLive(s:State):State {
   // 都已移入版本化迁移，见 src/migration.ts 的 LEGACY_V2_RULES 与 personAwareMigrationV3。
   s.settings.pet={...petDefaults,...s.settings.pet};
   // 0.2.20 删除小猫桌宠：旧安装里选过 'pet' 的配置一次性落到默认形象，
-  // 明确选过悬浮球的用户保持不动。
+  // 明确选过状态浮标的用户保持不动。
   if(!['custom','orb'].includes(s.settings.pet.mode))s.settings.pet.mode=petDefaults.mode;
   // 0.2.16 把“轻微动态 / 降低动态”两个互相矛盾的开关合并成“标准 / 减少”。
   // 旧安装里关闭过轻微动态的用户直接迁移到“减少动态”，不会突然又开始动。

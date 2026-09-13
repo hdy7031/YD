@@ -84,13 +84,14 @@ app.whenReady().then(async () => {
     check('桌宠按本人上课状态显示', pet.slot === 'busy_class', JSON.stringify(pet));
     check('桌宠状态条只有本人一枚标记', pet.chips.length === 1 && !/Ta/.test(pet.chips.join('')), JSON.stringify(pet));
 
-    /* ---------- Floating Ball / Orb ---------- */
+    /* ---------- Dual Status Dock ---------- */
     await run("window.dayhub.change({type:'settings',pet:{mode:'orb',size:'medium'}})");
     await wait(500);
-    check('悬浮球单人模式只有一个状态区域', await orb.webContents.executeJavaScript("document.querySelectorAll('.presence-zone').length===1"));
-    check('悬浮球没有第二个（幽灵）状态区域', await orb.webContents.executeJavaScript("!document.querySelector('.presence-zone[data-person=\"partner\"]')"));
-    // Windows 在 125%/150% 缩放下会对透明窗口做物理像素对齐，允许 ±2px 误差（与既有验收一致）。
-    check('悬浮球几何仍然是正方形', (() => { const [width, height] = orb.getSize(); return Math.abs(width - height) <= 2 && Math.abs(width - 102) <= 2; })(), JSON.stringify(orb.getSize()));
+    check('状态浮标单人模式只有一行', await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row').length===1"));
+    check('状态浮标没有第二个（幽灵）同行者行', await orb.webContents.executeJavaScript("!document.querySelector('.dock-row[data-person=\"partner\"]')"));
+    check('状态浮标单人行的 label 来自本人档案', await orb.webContents.executeJavaScript("document.querySelector('.dock-row .dock-label')?.textContent.trim()==='Alex'"), await orb.webContents.executeJavaScript("document.querySelector('.dock-row .dock-label')?.textContent.trim()"));
+    // Dock 尺寸固定：单人折成一行，但窗口仍是同一个圆角状态牌尺寸。
+    check('状态浮标几何是固定圆角状态牌', (() => { const [width, height] = orb.getSize(); return width>height && width>=120&&width<=170&&height>=52&&height<=68; })(), JSON.stringify(orb.getSize()));
     await orb.webContents.executeJavaScript("window.dayhub.presence('enter','alex')");
     await wait(250);
     check('悬停提示显示本人状态', tip.isVisible() && await tip.webContents.executeJavaScript("(document.querySelector('.presence-tip')?.textContent??'').trim().length>0"));
