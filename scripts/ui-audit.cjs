@@ -1,3 +1,27 @@
+/**
+ * @deprecated
+ *
+ * Historical button walk-through for the pre-refresh main window (0.2.10–0.2.12
+ * era). It loads `dist/index.html` behind `scripts/audit-preload.cjs` and looks
+ * buttons up by their old visible copy (`我的安排`, `未处理提醒 · 1`, ...).
+ *
+ * Commit `1657d0e ui: refresh main window visual system` replaced that visual
+ * system, so the audit now renders no buttons at all (`buttonCount: 0`,
+ * `未找到按钮：我的安排`) and is intentionally excluded from current release
+ * acceptance.
+ *
+ * Do not modify current production behavior merely to make this verifier pass.
+ *
+ * Superseded by:
+ * - runtime-audit.cjs (Together workspace: navigation, windows, tray, orb, reminders)
+ * - runtime-audit-solo.cjs (same surface in the Solo workspace)
+ * - verify-v0220.cjs / verify-v0220-packaged.cjs (desk pet + settings copy)
+ *
+ * The full-page button walk-through itself has no current replacement; it is
+ * historical coverage only.
+ *
+ * Kept only for historical regression archaeology.
+ */
 const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');

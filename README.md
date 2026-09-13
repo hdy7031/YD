@@ -74,7 +74,7 @@ OCR 使用 `native/ocr.ps1` 调用 Windows.Media.Ocr，需要简体中文识别�
 - `src/core.ts`：日期、课表、临时变更、待办和提醒状态机；不依赖界面与 Electron。
 - `src/store.ts`、`src/backup.ts`：串行 SQLite 保存、失败回滚、恢复与附件校验。
 - `src/main.ts`、`src/preload.cjs`：窗口、托盘、受限进程接口、本地图片与系统通知。
-- `src/ui`：React 界面；`native`：OCR 辅助实现；`tests`：核心、数据库、显示态与窗口位置计算测试；`scripts/ui-audit.cjs`：隔离的 Electron 按钮审计。
+- `src/ui`：React 界面；`native`：OCR 辅助实现；`tests`：核心、数据库、显示态与窗口位置计算测试。验收脚本哪些是当前发布门禁、哪些只是历史脚本，见 `docs/verification-v030.md`。
 - `src/companion-display.ts`、`src/companion-frame.ts`、`src/companion-assets.ts`、`src/ui/companion-custom.ts`：桌宠显示态投影、素材契约、主进程素材解析与专属角色渲染层。
 
 测试存储使用 Node 自带的真实 SQLite 引擎适配 Store 接口，覆盖文件写入行为；这不替代发布时对 sql.js WASM 加载的测试。测试数据位于独立临时目录，不使用真实日程。

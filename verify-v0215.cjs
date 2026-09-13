@@ -1,3 +1,23 @@
+/**
+ * @deprecated
+ *
+ * Historical verification for the pre-v0.3 desk-pet asset contract (0.2.15
+ * era): seven companion states with `upcoming → relaxed`.
+ *
+ * Phase 4A re-cut that contract into ten `CompanionDisplayState` values owned by
+ * the Avatar Pack registry, so this script is intentionally excluded from
+ * current release acceptance.
+ *
+ * Do not modify current production behavior merely to make this verifier pass.
+ *
+ * Superseded by:
+ * - verify-v0220.cjs (current ten-pose companion contract and schedule states)
+ * - verify-v030-avatar-pack.cjs (Pack manifest / ten-state registry contract)
+ * - verify-v030-avatar-person.cjs (Person ↔ AvatarSelection ↔ PetInstance)
+ * - verify-v030-avatar-runtime.cjs (hot switch, cache, fallback, last-known-good)
+ *
+ * Kept only for historical regression archaeology.
+ */
 // Isolated 0.2.15 acceptance run: dedicated companion + inbox workspace.
 // Never touches the real app data (DAYHUB_TEST_DATA points at test-data/).
 const {app,BrowserWindow}=require('electron');

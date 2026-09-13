@@ -1,3 +1,23 @@
+/**
+ * @deprecated
+ *
+ * Historical verification for 0.2.15 fallback behavior: with the custom asset
+ * folder hidden the app had to fall back to the built-in *cat* companion and
+ * say why.
+ *
+ * That cat asset and its `小猫桌宠` copy were removed in Phase 4A. The current
+ * product must never reintroduce them, so this script is intentionally excluded
+ * from current release acceptance.
+ *
+ * Do not modify current production behavior merely to make this verifier pass.
+ *
+ * Superseded by:
+ * - verify-v030-avatar-pack.cjs (registry / availability contract)
+ * - verify-v030-avatar-runtime.cjs (fallback chain + last-known-good)
+ * - verify-v0220-packaged.cjs (`打包版无猫相关素材或文案`)
+ *
+ * Kept only for historical regression archaeology.
+ */
 // 0.2.15 fallback run: with the custom asset folder hidden, the app must keep
 // working with the built-in cat companion and say why.
 const {app,BrowserWindow}=require('electron');

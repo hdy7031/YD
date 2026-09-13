@@ -1,3 +1,28 @@
+/**
+ * @deprecated
+ *
+ * Historical verification for the pre-v0.3 window set and inbox UI (0.2.13
+ * era). It is intentionally excluded from current release acceptance.
+ *
+ * It fails today for two reasons that are not product regressions:
+ * - its closing assertion still expects the old five-window layout
+ *   (`BrowserWindow.getAllWindows().length===5`); the workspace now opens six
+ *   real windows (panel / orb / bubble / mini / tip / menu);
+ * - it reads the private OCR fixture `test-data/v0213-ocr.png`, which v0.3
+ *   Phase 0 removed from the committed test data.
+ *
+ * Do not modify current production behavior merely to make this verifier pass.
+ *
+ * Superseded by:
+ * - runtime-audit.cjs (inbox → 待处理提醒 → 处理 flow, window set, navigation)
+ * - runtime-audit-solo.cjs (same flow in the Solo workspace)
+ * - verify-v0220.cjs (current companion / reminder contract)
+ *
+ * The inbox hall/detail responsive walk-through itself has no current
+ * replacement; it is historical coverage only.
+ *
+ * Kept only for historical regression archaeology.
+ */
 // Real Electron + preload + SQL.js, always in an isolated database.
 const {app,BrowserWindow,clipboard,nativeImage}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');

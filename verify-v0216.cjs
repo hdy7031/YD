@@ -1,3 +1,22 @@
+/**
+ * @deprecated
+ *
+ * Historical verification for the 0.2.16 companion contract: seven states
+ * including a distinct `sleeping` frame, plus its own drag/capture flow.
+ *
+ * Phase 4A replaced that set with ten `CompanionDisplayState` values where
+ * `night_sleep` and `nap` are separate frames, so this script is intentionally
+ * excluded from current release acceptance.
+ *
+ * Do not modify current production behavior merely to make this verifier pass.
+ *
+ * Superseded by:
+ * - verify-v0220.cjs (ten-pose contract, schedule boundaries, drag stability)
+ * - verify-v030-avatar-runtime.cjs (runtime switch + resource lifecycle)
+ * - verify-v0220-packaged.cjs (same contract against the packaged build)
+ *
+ * Kept only for historical regression archaeology.
+ */
 // Isolated 0.2.16 acceptance run: companion drag stability + inbox capture.
 // Never touches the real app data (DAYHUB_TEST_DATA points at test-data/).
 const {app,BrowserWindow,screen}=require('electron');
