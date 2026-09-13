@@ -2,19 +2,16 @@ import React from 'react';
 
 const h = React.createElement;
 
-// 0.2.18 起主图标是定稿位图（金底 squircle + 近白 YD 合体字标），界面不再自己画字形，
-// 直接引用同一批素材，保证「界面 / 任务栏 / 托盘 / 安装包」四处完全一致：
-//   assets/gen/01-app-icon-transparent.png  完整徽记（底砖 + 字标）
-//   assets/gen/03-tray-mark.png             只有字标（深金、透明底）
-// 位图来自 brand/source/yd-app-icon-master.png，图标再由 scripts/brand-raster-exports.py 导出。
+// 主窗口使用用户确认的灰绿 YD 合体字标。完整渐变版用于关于页，
+// 单色版用于标题栏和小尺寸场景，避免缩小时渐变细节发灰。
 const asset = (name: string) => `assets/gen/${name}`;
 
 export const YD_COLORS = {
-  gold: '#F5C948',
-  goldDeep: '#8A6A16',
-  brand: '#C89010',
-  porcelain: '#FBFAFA',
-  rose: '#A2848C',
+  gold: '#86A8A2',
+  goldDeep: '#365653',
+  brand: '#466C6A',
+  porcelain: '#F3F6F7',
+  rose: '#B48FA5',
 };
 
 interface MarkProps {
@@ -25,9 +22,9 @@ interface MarkProps {
   hairline?: boolean;
 }
 
-/** 完整徽记：金底软方 + 近白字标（侧栏品牌区、关于页、安装向导使用）。 */
+/** 完整渐变字标：用于关于页等有足够显示面积的场景。 */
 export function BrandMark({ className = '', title = 'YD' }: MarkProps) {
-  return h('img', { className, src: asset('01-app-icon-transparent.png'), alt: title, draggable: false });
+  return h('img', { className, src: asset('yd-logo-gradient.png'), alt: title, draggable: false });
 }
 
 interface GlyphProps {
@@ -36,7 +33,7 @@ interface GlyphProps {
   color?: string;
 }
 
-/** 只要字标：用于标题栏等单色场合（当前为深金版素材）。 */
+/** 单色字标：用于标题栏和小尺寸场景。 */
 export function BrandGlyph({ className = '', title = 'YD' }: GlyphProps) {
-  return h('img', { className, src: asset('03-tray-mark.png'), alt: title, draggable: false });
+  return h('img', { className, src: asset('yd-logo-mono.png'), alt: title, draggable: false });
 }

@@ -4,6 +4,7 @@ import { blankDraft } from '../inbox-types.ts';
 import type { InboundPayload,ParsedDraft,OcrAdapter } from '../inbox-types.ts';
 import type { State,Entity,Notice } from '../types.ts';
 import { candidates,draftErrors,sourceLabels,statusLabels,typeLabels } from '../inbox.ts';
+import { EmptyState } from './views.ts';
 const h=React.createElement;
 const api=()=>window.dayhub;
 // IPC 抛出的错误会带上 “Error invoking remote method …” 前缀，界面只显示人话部分。
@@ -154,7 +155,9 @@ export function InboxHub({state,saved,selected,select,open}:Props){
     h('div',{className:'inbox-filters'},...filterLabels.map(([value,label])=>h('button',{key:value,type:'button',className:filter===value?'active':'',onClick:()=>{setFilter(value);select(null);}},'',h('span',null,label),h('small',null,String(counts[value]))))),
     h('p',{className:'muted page-intro'},'原文先保存，整理结果核对后才会加入正式事务。'),
     error?h('p',{className:'error',role:'alert'},error):null,
-    h('div',{className:'inbox-hub'+(n?' has-selection':' is-hall')},
+    !state.notices.length
+      ? h('div',{className:'page-empty-stage'},h(EmptyState,{title:'收件箱还是空的',description:'粘贴通知、截图或拖入图片，原文会先保存在本机，核对后再加入正式事务。',illustration:'assets/gen/empty-inbox.png'}))
+      : h('div',{className:'inbox-hub'+(n?' has-selection':' is-hall')},
       h('section',{className:'inbox-list','aria-label':'通知列表'},
         h('div',{className:'inbox-list-head'},h('span',null,`${list.length} 条通知`),h('span',{className:'muted'},n?'查看详情':'选择一条查看详情')),
         ...list.map(item=>h('button',{key:item.id,type:'button',className:'entry inbox-list-item kind-'+(item.detectedType||'UNKNOWN')+' status-'+displayStatus(item)+(item.id===selected?' selected':''),'aria-pressed':item.id===selected,onClick:()=>select(item.id===selected?null:item.id)},

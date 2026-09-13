@@ -66,7 +66,7 @@ export function StatusRows({live,compact=false,detailed=false,onSetStatus}:{live
   });
   return h('div',{className:compact?'status-pills':'dual-status'},...rows);
 }
-export function Titlebar(){return h('header',{className:'titlebar'},h('span',{className:'titlebar-brand'},h(BrandGlyph,{className:'yd-glyph'}),h('b',null,'YD'),h('em',null,'Your Day')),h('div',{className:'window-controls'},...([['minimize','−','最小化'],['maximize','□','最大化或还原'],['close','×','收起到托盘']] as const).map(([action,label,title])=>h('button',{key:action,title,'aria-label':title,onClick:()=>void api.window(action)},label))));}
+export function Titlebar(){return h('header',{className:'titlebar'},h('span',{className:'titlebar-brand'},h(BrandGlyph,{className:'yd-glyph',title:''}),h('b',null,'YD'),h('em',null,'· Your Day')),h('div',{className:'window-controls'},...([['minimize','−','最小化'],['maximize','□','最大化或还原'],['close','×','收起到托盘']] as const).map(([action,label,title])=>h('button',{key:action,title,'aria-label':title,onClick:()=>void api.window(action)},label))));}
 function IdentityMark({letter}:{letter:string}){return h('span',{className:'identity-mark','aria-hidden':true},letter);}
 function StatusCore({state}:{state:PresenceState}){return h('span',{className:'status-core','aria-hidden':true},h('i',{className:'status-ring'}),h('i',{className:'status-dot'}));}
 function PresenceZone({person,status,marker,onHover}:{person:PersonId;status?:PersonStatus;marker:string;onHover?:(person:PersonId)=>void}){
