@@ -1,0 +1,30 @@
+{
+  "format": "dayhub-companion",
+  "version": 1,
+  "character": "像素日常",
+  "canvas": {
+    "width": 401,
+    "height": 398
+  },
+  "baseline": 398,
+  "bodyHeight": 370,
+  "sourceGrid": {
+    "columns": 5,
+    "rows": 2,
+    "figures": 10
+  },
+  "sourceSha256": "847eba222f33c68faa6b348d77f3e64c012f1682052aa220a5ec24c56ae972ce",
+  "missing": [],
+  "states": {
+    "idle": { "file": "idle.png", "label": "安静待机", "slot": "第 1 行第 1 格" },
+    "busy_class": { "file": "busy_class.png", "label": "上课中", "slot": "第 1 行第 2 格" },
+    "busy_work": { "file": "busy_work.png", "label": "忙碌中", "slot": "第 1 行第 3 格" },
+    "upcoming": { "file": "upcoming.png", "label": "即将开始", "slot": "第 1 行第 4 格" },
+    "reminder": { "file": "reminder.png", "label": "待处理提醒", "slot": "第 1 行第 5 格" },
+    "gentle": { "file": "gentle.png", "label": "完成", "slot": "第 2 行第 1 格" },
+    "night_sleep": { "file": "night_sleep.png", "label": "夜间睡觉", "slot": "第 2 行第 2 格" },
+    "eating": { "file": "eating.png", "label": "吃饭中", "slot": "第 2 行第 3 格" },
+    "nap": { "file": "nap.png", "label": "午睡中", "slot": "第 2 行第 4 格" },
+    "wake_up": { "file": "wake_up.png", "label": "刚睡醒", "slot": "第 2 行第 5 格" }
+  }
+}

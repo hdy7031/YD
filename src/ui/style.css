@@ -2121,6 +2121,38 @@ input:hover, select:hover, textarea:hover { border-color: #C3CDC8; }
 .routine-settings .empty-state { padding: 0; }
 .routine-settings .empty-state-actions { padding-left: 0; }
 
+/* Phase 4C2 — profile-owned Avatar selection. Preview stages reuse the
+   production companion renderer; the surrounding controls only choose a
+   local candidate until the explicit action button is pressed. */
+.avatar-settings { display:grid; gap:18px; }
+.avatar-person-picker { display:grid; gap:12px; padding:14px; border:1px solid var(--line,#e6dfd5); border-radius:16px; background:rgba(255,255,255,.48); }
+.avatar-picker-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.avatar-picker-head h4 { margin:0 0 3px; font-size:15px; }
+.avatar-picker-head p { margin:0; }
+.avatar-unavailable { padding:4px 8px; border-radius:999px; color:#8b5a3c; background:#f6e3cf; font-size:12px; font-weight:700; }
+.avatar-picker-layout { display:grid; grid-template-columns:minmax(220px,.82fr) minmax(300px,1.18fr); gap:14px; align-items:stretch; }
+.avatar-pack-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.avatar-pack-card { min-height:170px; padding:10px; display:grid; grid-template-rows:124px auto; gap:8px; color:inherit; text-align:left; border:1px solid var(--line,#e6dfd5); border-radius:14px; background:rgba(255,255,255,.7); box-shadow:none; }
+.avatar-pack-card:hover { border-color:#cdbb9b; transform:translateY(-1px); }
+.avatar-pack-card.is-previewing { border-color:#b89457; box-shadow:0 0 0 2px rgba(184,148,87,.14); }
+.avatar-pack-card.is-selected .avatar-pack-card-copy small { color:#8b6b34; }
+.avatar-pack-card-art { position:relative; display:block; width:100%; height:124px; overflow:hidden; border-radius:10px; background:radial-gradient(circle at 50% 75%,rgba(223,210,188,.5),rgba(250,248,244,.2) 58%,transparent 72%); }
+.avatar-pack-card-copy { display:grid; gap:2px; }
+.avatar-pack-card-copy strong { font-size:14px; }
+.avatar-pack-card-copy small { color:var(--muted,#746f68); }
+.avatar-preview { min-width:0; display:grid; grid-template-rows:220px auto auto; gap:9px; padding:12px; border-radius:14px; background:linear-gradient(145deg,rgba(247,243,236,.92),rgba(255,255,255,.72)); }
+.avatar-preview-stage { position:relative; min-height:0; overflow:hidden; border-radius:11px; }
+.avatar-preview-meta { display:flex; justify-content:space-between; gap:12px; font-size:13px; }
+.avatar-preview-meta span { color:var(--muted,#746f68); }
+.avatar-state-picker { display:flex; flex-wrap:wrap; gap:6px; }
+.avatar-state-picker button { min-height:28px; padding:4px 9px; border-radius:999px; font-size:12px; }
+.avatar-state-picker button.active { color:#fff; border-color:#9c7a42; background:#9c7a42; }
+.avatar-picker-actions { margin-top:0; }
+@media(max-width:860px) {
+  .avatar-picker-layout { grid-template-columns:1fr; }
+  .avatar-preview { grid-template-rows:200px auto auto; }
+}
+
 /* V0.3 Phase 3C — 临时手动状态：状态行入口 + 对话框里的类型 / 时长选择 */
 .person-status-set { margin-left: auto; align-self: center; white-space: nowrap; }
 .manual-status .field { display: grid; gap: 6px; }

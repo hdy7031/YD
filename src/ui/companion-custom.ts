@@ -86,6 +86,27 @@ export function useCompanionAssets(packId?:string,commitGeometry=false):Companio
   return assets;
 }
 
+/**
+ * Settings preview path. It reuses the same versioned AvatarRuntime cache and
+ * decode pipeline, but never advances the live visual generation or commits
+ * companion-window geometry.
+ */
+export function useAvatarPreviewAssets(packId?:string):CompanionAssets|null{
+  const [assets,set]=useState<CompanionAssets|null>(null);
+  useEffect(()=>{
+    let active=true;
+    const requestedPackId=packId||DEFAULT_AVATAR_PACK_ID;
+    void avatarRuntime().loadAvatarPack(requestedPackId).then(resource=>{
+      if(active)set({...resource.value,requestedPackId,resolvedPackId:resource.resolvedPackId});
+    }).catch(()=>{
+      // A failed preview is non-consequential. The Picker keeps its persisted
+      // selection unchanged and exposes recovery through "恢复默认".
+    });
+    return()=>{active=false;};
+  },[packId]);
+  return assets;
+}
+
 export function companionImage(assets:CompanionAssets|null,display?:CompanionDisplay):ResolvedCompanionFrame|undefined{
   return display?resolveCompanionFrame(assets,display.state):undefined;
 }

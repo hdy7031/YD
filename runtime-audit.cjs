@@ -127,7 +127,7 @@ app.whenReady().then(async()=>{
   check('关闭气泡不完成待办、不确认提醒',await run("window.dayhub.get().then(s=>!s.tasks.find(t=>t.id==='runtime-due').done&&s.reminders.some(r=>r.target==='tasks:runtime-due'&&r.status==='due'))"));
   await wait(150);
   await run("[...document.querySelectorAll('.nav-item')].find(b=>b.textContent==='我的安排').click()");await wait(100);
-  check('首页与侧栏未处理提醒均为1',await run("document.querySelector('.attention-panel').textContent.includes('1 个提醒已到时间')&&[...document.querySelectorAll('.nav-item')].some(b=>b.textContent==='未处理提醒 · 1')"));
+  check('首页与侧栏未处理提醒均为1',await run("document.querySelector('.attention-panel').textContent.includes('1 个提醒已到时间')&&[...document.querySelectorAll('.nav-item')].some(b=>b.querySelector('.nav-label')?.textContent==='未处理提醒'&&b.querySelector('.nav-badge')?.textContent==='1')"));
   await run("[...document.querySelectorAll('.nav-item')].find(b=>b.textContent.startsWith('未处理提醒')).click()");await wait(100);
   check('提醒页同一集合为1',await run("document.querySelectorAll('.main .entry').length===1&&!document.body.textContent.includes('没有未处理提醒')"));
   await run("[...document.querySelectorAll('.main button')].find(b=>b.textContent==='已处理').click()");await wait(150);

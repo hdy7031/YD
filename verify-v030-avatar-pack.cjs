@@ -71,14 +71,16 @@ app.whenReady().then(async () => {
     await wait(500);
 
     const builtin = avatar.listAvatarPacks();
-    check('builtin registry 唯一且默认 Pack 存在', builtin.length === 1 && builtin[0].id === 'yd-default');
-    check('yd-default manifest version 稳定', builtin[0].version === '1.0.0');
-    check('builtin manifest validation 通过', (() => { avatar.assertAvatarPackManifest(builtin[0]); return true; })());
+    check('builtin registry 唯一且包含两个生产 Pack', builtin.length >= 2 && new Set(builtin.map(pack => pack.id)).size === builtin.length && builtin.some(pack => pack.id === 'yd-default') && builtin.some(pack => pack.id === 'yd-pixel'));
+    check('yd-default manifest version 稳定', builtin.find(pack => pack.id === 'yd-default').version === '1.0.0');
+    check('builtin manifest validation 通过', (() => { builtin.forEach(avatar.assertAvatarPackManifest); return true; })());
 
     const bundle = await run('window.dayhub.companionAssets()');
     check('运行时使用 yd-default', bundle.requestedPackId === 'yd-default' && bundle.resolvedPackId === 'yd-default');
     check('Pack canvas 进入运行时 contract', bundle.pack.canvas.width === 412 && bundle.pack.canvas.height === 411);
     check('十态资源全部从 Pack 装载', bundle.available === true && bundle.missing.length === 0 && Object.keys(bundle.images).length === 10);
+    const pixelBundle = await run("window.dayhub.companionAssets('yd-pixel')");
+    check('yd-pixel 十态生产资源全部装载', pixelBundle.requestedPackId === 'yd-pixel' && pixelBundle.resolvedPackId === 'yd-pixel' && pixelBundle.pack.canvas.width === 401 && pixelBundle.pack.canvas.height === 398 && pixelBundle.missing.length === 0 && Object.keys(pixelBundle.images).length === 10);
 
     const live = await run('window.dayhub.live()');
     orb.webContents.send('dayhub:live', { ...live, preferences: { ...live.preferences, mode: 'custom' }, display: { ...live.display, state: 'reminder', label: '1 条待处理' } });

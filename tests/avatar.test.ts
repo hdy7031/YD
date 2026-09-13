@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   DEFAULT_AVATAR_PACK_ID,
   EMBEDDED_AVATAR_ASSET,
+  PIXEL_AVATAR_PACK_ID,
   assertAvatarPackManifest,
   builtinAvatarRegistry,
   createAvatarPackRegistry,
@@ -11,9 +14,11 @@ import {
   resolveAvatarFrame,
   resolveAvatarPack,
   ydDefaultAvatarPack,
+  ydPixelAvatarPack,
   type AvatarPackManifest,
 } from '../src/avatar.ts';
 import { resolvePetState } from '../src/companion-display.ts';
+import { resolveAvatarPickerSelection } from '../src/avatar-picker.ts';
 import { stateLabel } from '../src/state/presentation.ts';
 import type { PersonStatus } from '../src/live.ts';
 
@@ -129,4 +134,33 @@ test('4A regression: reminder selects an Avatar visual without changing class Cu
   assert.equal(avatar.asset, 'reminder');
   assert.equal(current.kind, 'class');
   assert.equal(stateLabel(current), '上课中');
+});
+
+test('4C2 production registry includes an independent transparent yd-pixel pack', () => {
+  assert.equal(PIXEL_AVATAR_PACK_ID, 'yd-pixel');
+  assert.deepEqual(listAvatarPacks().map(pack => pack.id), ['yd-default', 'yd-pixel']);
+  assert.deepEqual(getAvatarPack(PIXEL_AVATAR_PACK_ID), ydPixelAvatarPack);
+  assert.deepEqual(ydPixelAvatarPack.canvas, { width: 401, height: 398 });
+  assert.notEqual(ydPixelAvatarPack.assetRoot, ydDefaultAvatarPack.assetRoot);
+  assert.notDeepEqual(ydPixelAvatarPack.frames.reminder?.geometry, ydDefaultAvatarPack.frames.reminder?.geometry);
+  for (const [state, frame] of Object.entries(ydPixelAvatarPack.frames)) {
+    assert.ok(frame, `${state} frame missing`);
+    const file = path.join(process.cwd(), 'src', 'ui', 'assets', ...ydPixelAvatarPack.assetRoot.split('/'), `${frame.asset}.png`);
+    const bytes = fs.readFileSync(file);
+    assert.ok(bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), `${state} is not PNG`);
+    assert.equal(bytes.readUInt32BE(16), 401, `${state} width`);
+    assert.equal(bytes.readUInt32BE(20), 398, `${state} height`);
+    assert.equal(bytes[25], 6, `${state} must be RGBA`);
+  }
+});
+
+test('4C2 removed-pack Picker stays safe without rewriting the persisted selection', () => {
+  const profile = { avatar: { packId: 'removed-pack', source: 'user' as const } };
+  const before = structuredClone(profile);
+  assert.deepEqual(resolveAvatarPickerSelection(profile), {
+    persistedPackId: 'removed-pack',
+    previewPackId: DEFAULT_AVATAR_PACK_ID,
+    unavailable: true,
+  });
+  assert.deepEqual(profile, before);
 });

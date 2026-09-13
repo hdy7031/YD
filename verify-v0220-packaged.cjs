@@ -18,6 +18,13 @@ const port = 9336;
 fs.mkdirSync(output, { recursive: true });
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const waitFor = async (session, expression, expected, tries = 60) => {
+  for (let i = 0; i < tries; i += 1) {
+    try { if (await session.eval(expression) === expected) return true; } catch { /* 页面还没就绪 */ }
+    await wait(300);
+  }
+  return false;
+};
 const report = [], notes = [];
 const check = (name, ok) => {
   if (!ok) throw new Error('packaged check failed: ' + name);
@@ -70,7 +77,7 @@ class Session {
   const version = require(path.join(root, 'package.json')).version;
   check('打包版按 0.2.20 构建', version === '0.2.20');
   const logFile = path.join(output, 'dayhub.log');
-  const child = spawn(exe, [`--remote-debugging-port=${port}`], {
+  let child = spawn(exe, [`--remote-debugging-port=${port}`], {
     env: { ...process.env, DAYHUB_TEST_DATA: output },
     detached: false,
     stdio: 'ignore',
@@ -101,6 +108,9 @@ class Session {
     check('打包版十态素材名单完整（已有 + 缺失 = 10）', bundle.frames.length + bundle.missing.length === 10);
     check('打包版无猫相关素材或文案', !bundle.frames.some((k) => /cat|kitty/i.test(k)) && !/小猫/.test(bundle.reason));
     check('打包版夜间睡觉素材随包发布且可解码', await panel.eval("window.dayhub.companionAssets().then(a=>typeof a.images.night_sleep==='string'&&a.images.night_sleep.startsWith('data:image/png;base64,')&&a.images.night_sleep.length>10000)") === true);
+    const pixelBundle = await panel.eval("window.dayhub.companionAssets('yd-pixel').then(a=>({available:a.available,count:Object.keys(a.images).length,source:a.source,packId:a.pack?.id,canvas:a.pack?.canvas,missing:a.missing}))");
+    check('打包版包含 yd-pixel 十态生产资源', pixelBundle.available === true && pixelBundle.count === 10 && pixelBundle.packId === 'yd-pixel' && pixelBundle.missing.length === 0);
+    check('打包版 yd-pixel 路径与 canvas 独立', /assets[\\/]companion[\\/]pixel/.test(pixelBundle.source) && pixelBundle.canvas.width === 401 && pixelBundle.canvas.height === 398);
     notes.push(`打包版素材：已有 ${bundle.frames.length}，缺失 ${bundle.missing.join('/') || '无'}`);
 
     const selfCheck = await (async () => {
@@ -138,6 +148,16 @@ class Session {
     check('打包版动态效果只有标准 / 减少', await panel.eval("(()=>{const g=document.querySelector('[aria-label=\"桌宠动态效果\"]');return !!g&&g.querySelectorAll('button').length===2})()") === true);
     check('打包版作息时间表为 23:30–07:30 / 11:30 / 12:30', /23:30–07:30/.test(settingsText) && settingsText.includes('07:30–07:50') && settingsText.includes('11:30–12:00') && settingsText.includes('12:30–14:00'));
     check('打包版夜间开关可关闭并持久化', await panel.eval("window.dayhub.change({type:'settings',pet:{nightRest:false}}).then(s=>s.settings.pet.nightRest===false)") === true);
+    check('打包版 self/companion Picker 均显示两个 Pack', await panel.eval("document.querySelectorAll('.avatar-person-picker').length===2&&[...document.querySelectorAll('.avatar-person-picker')].every(p=>p.querySelectorAll('[data-avatar-pack-option]').length===2)") === true);
+    const companionId = state.profiles.find(profile => profile.role === 'companion').id;
+    const picker = `.avatar-person-picker[data-avatar-person="${companionId}"]`;
+    const beforePreviewAvatar = await panel.eval(`window.dayhub.get().then(s=>s.profiles.find(p=>p.id===${JSON.stringify(companionId)}).avatar)`);
+    check('打包版 yd-pixel 卡片可本地预览', await panel.eval(`(()=>{document.querySelector(${JSON.stringify(picker + ' [data-avatar-pack-option="yd-pixel"]')}).click();return true})()`) === true);
+    await wait(250);
+    check('打包版预览不写 Profile.avatar', JSON.stringify(await panel.eval(`window.dayhub.get().then(s=>s.profiles.find(p=>p.id===${JSON.stringify(companionId)}).avatar)`)) === JSON.stringify(beforePreviewAvatar));
+    check('打包版正式选择走 avatarSet', await panel.eval(`(()=>{document.querySelector(${JSON.stringify(picker + ' [data-avatar-apply="yd-pixel"]')}).click();return true})()`) === true);
+    await wait(1400);
+    check('打包版 yd-pixel 无需重启热切并落盘', await panel.eval(`window.dayhub.get().then(s=>s.profiles.find(p=>p.id===${JSON.stringify(companionId)}).avatar.packId==='yd-pixel'&&s.profiles.find(p=>p.id===${JSON.stringify(companionId)}).avatar.source==='user')`) === true && await orb.eval("document.querySelector('.companion-figure')?.dataset.avatarPack==='yd-pixel'") === true);
 
     // ---- 拖动：真实指针序列 + 主进程窗口移动 ------------------------------
     const dragBefore = await orb.eval('({x:window.screenX,y:window.screenY,w:innerWidth,h:innerHeight})');
@@ -161,6 +181,45 @@ class Session {
     check('打包版使用隔离数据目录', log.includes(output));
     const asar = path.join(root, 'release', 'win-unpacked', 'resources', 'app.asar');
     notes.push(`app.asar 大小：${fs.statSync(asar).size} 字节`);
+
+    // ---- 冷启动持久化：真实结束进程后重启仍保持 Avatar 选择 --------------
+    const persisted = await panel.eval(`window.dayhub.get().then(s=>s.profiles.find(p=>p.id===${JSON.stringify(companionId)}).avatar)`);
+    check('打包版退出前已把 yd-pixel/user 落盘', persisted.packId === 'yd-pixel' && persisted.source === 'user');
+    const relaunch = async () => {
+      for (const session of sessions) session.close();
+      sessions.length = 0;
+      try { child.kill(); } catch { /* ignore */ }
+      await wait(1200);
+      try { require('node:child_process').execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* 已退出 */ }
+      await wait(1800);
+      child = spawn(exe, [`--remote-debugging-port=${port}`], {
+        env: { ...process.env, DAYHUB_TEST_DATA: output },
+        detached: false,
+        stdio: 'ignore',
+      });
+      const relaunched = await cdpTargets();
+      const nextPanel = new Session(relaunched.find((t) => !t.url.includes('#') && t.url.includes('index.html')).webSocketDebuggerUrl);
+      const nextOrb = new Session(relaunched.find((t) => t.url.endsWith('#orb')).webSocketDebuggerUrl);
+      sessions.push(nextPanel, nextOrb);
+      await nextPanel.ready; await nextOrb.ready;
+      check('打包版重启进程重新暴露主窗口与桌宠窗口', await waitFor(nextPanel, "typeof window.dayhub!=='undefined'", true));
+      return { panel: nextPanel, orb: nextOrb };
+    };
+    const second = await relaunch();
+    check('打包版冷启动后 Profile.avatar 仍是 yd-pixel/user', await waitFor(second.panel, `window.dayhub.get().then(s=>s.profiles.find(p=>p.id===${JSON.stringify(companionId)}).avatar.packId==='yd-pixel'&&s.profiles.find(p=>p.id===${JSON.stringify(companionId)}).avatar.source==='user')`, true));
+    check('打包版冷启动后桌宠直接使用持久化 Pack', await waitFor(second.orb, "document.querySelector('.companion-figure')?.dataset.avatarPack==='yd-pixel'", true));
+    await second.panel.eval("window.dayhub.window('settings')");
+    await wait(800);
+    check('打包版冷启动后 Picker 仍由 Registry 驱动两个 Pack', await second.panel.eval("document.querySelectorAll('.avatar-person-picker').length===2&&[...document.querySelectorAll('.avatar-person-picker')].every(p=>p.querySelectorAll('[data-avatar-pack-option]').length===2)") === true);
+
+    await second.panel.eval(`window.dayhub.change({type:'avatarReset',personId:${JSON.stringify(companionId)}})`);
+    await wait(1200);
+    check('打包版 avatarReset 落盘为 default', await second.panel.eval(`window.dayhub.get().then(s=>s.profiles.find(p=>p.id===${JSON.stringify(companionId)}).avatar.packId==='yd-default'&&s.profiles.find(p=>p.id===${JSON.stringify(companionId)}).avatar.source==='default')`) === true);
+    const third = await relaunch();
+    check('打包版 reset 后冷启动仍为 default', await waitFor(third.panel, `window.dayhub.get().then(s=>s.profiles.find(p=>p.id===${JSON.stringify(companionId)}).avatar.packId==='yd-default'&&s.profiles.find(p=>p.id===${JSON.stringify(companionId)}).avatar.source==='default')`, true));
+    check('打包版 reset 后冷启动桌宠回到 yd-default', await waitFor(third.orb, "document.querySelector('.companion-figure')?.dataset.avatarPack==='yd-default'", true));
+    check('打包版隔离数据目录内存在真实数据库', fs.existsSync(path.join(output, 'dayhub.sqlite')));
+
     fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ version, passed: report, notes, exe }, null, 2));
     console.log(JSON.stringify({ output, passed: report.length, notes }, null, 2));
   } finally {

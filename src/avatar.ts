@@ -51,8 +51,13 @@ export type AvatarPackRegistry = ReadonlyMap<AvatarPackId, AvatarPackManifest>;
 
 const unitGeometry = (): AvatarFrameGeometry => ({ scale: 1, offsetX: 0, offsetY: 0 });
 const frame = (asset: string): AvatarFrameSpec => ({ asset, geometry: unitGeometry() });
+const tunedFrame = (asset: string, scale: number, offsetX = 0, offsetY = 0): AvatarFrameSpec => ({
+  asset,
+  geometry: { scale, offsetX, offsetY },
+});
 
 export const DEFAULT_AVATAR_PACK_ID = 'yd-default';
+export const PIXEL_AVATAR_PACK_ID = 'yd-pixel';
 export const EMBEDDED_AVATAR_ASSET = 'companion-fallback-idle';
 
 // The existing ten-pose character, with the exact canvas and geometry used
@@ -77,6 +82,32 @@ export const ydDefaultAvatarPack: AvatarPackManifest = {
     eating: frame('eating'),
     nap: frame('nap'),
     wake_up: frame('wake_up'),
+  },
+};
+
+// Production pixel-art pack imported from the approved 5x2 source sheet.
+// Every frame keeps a common 401x398 transparent canvas; small, pack-owned
+// tuning values keep props and reclining poses comfortably inside the stage.
+export const ydPixelAvatarPack: AvatarPackManifest = {
+  id: PIXEL_AVATAR_PACK_ID,
+  version: '1.0.0',
+  name: '像素日常',
+  source: 'builtin',
+  assetRoot: 'companion/pixel',
+  canvas: { width: 401, height: 398 },
+  previewState: 'idle',
+  fallbackState: 'idle',
+  frames: {
+    idle: tunedFrame('idle', 1),
+    upcoming: tunedFrame('upcoming', 0.98, 0, 1),
+    busy_class: tunedFrame('busy_class', 0.98, 0, 1),
+    busy_work: tunedFrame('busy_work', 0.98, 0, 1),
+    reminder: tunedFrame('reminder', 0.94, -2, 3),
+    gentle: tunedFrame('gentle', 0.98, 0, 1),
+    night_sleep: tunedFrame('night_sleep', 0.96, 0, 2),
+    eating: tunedFrame('eating', 0.98, 0, 1),
+    nap: tunedFrame('nap', 0.96, 0, 2),
+    wake_up: tunedFrame('wake_up', 0.97, -1, 2),
   },
 };
 
@@ -138,7 +169,7 @@ export function createAvatarPackRegistry(manifests: readonly AvatarPackManifest[
   return registry;
 }
 
-export const builtinAvatarRegistry = createAvatarPackRegistry([ydDefaultAvatarPack]);
+export const builtinAvatarRegistry = createAvatarPackRegistry([ydDefaultAvatarPack, ydPixelAvatarPack]);
 
 export function listAvatarPacks(registry: AvatarPackRegistry = builtinAvatarRegistry): readonly AvatarPackManifest[] {
   return Object.freeze([...registry.values()]);

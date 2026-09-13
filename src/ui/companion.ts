@@ -2,10 +2,14 @@ import React,{useState,useEffect,useRef} from 'react';
 import type { LiveSnapshot,PersonStatus,PetPreferences,PresenceState } from '../live.ts';
 import type { PersonId, Profile, State } from '../types.ts';
 import {clockText,petDefaults,presenceStateFor,statusLabel} from '../live.ts';
+import {DEFAULT_AVATAR_PACK_ID,getAvatarPack,listAvatarPacks,type AvatarPackManifest} from '../avatar.ts';
+import {resolveAvatarPickerSelection} from '../avatar-picker.ts';
+import {companionDisplayLabels} from '../companion-display.ts';
+import {companionVisualStates,type CompanionDisplayState} from '../companion-visual.ts';
 import {stateSourceLabel} from '../state/presentation.ts';
 import {companionTone} from '../companion-colors.ts';
 import {companionFrame,companionRail} from '../companion-layout.ts';
-import {petRoutineSummary} from '../companion-display.ts';
+import {petRoutineSummary,type CompanionDisplay} from '../companion-display.ts';
 import {createDefaultRoutine,routineKindPriority,type RoutineRule} from '../routine.ts';
 import {EmptyState} from './views.ts';
 import {getProfileById,resolvePetSubject} from '../people.ts';
@@ -16,7 +20,7 @@ import {
   routineRuleFromDraft,routineRulesToggled,routineRulesWith,routineRulesWithout,routineWeekdayLabels,
   routineWindowText,type RoutineRuleDraft,
 } from './routine-settings.ts';
-import {CompanionRail,CustomCompanionArt,useCompanionAssets} from './companion-custom.ts';
+import {CompanionRail,CustomCompanionArt,useAvatarPreviewAssets,useCompanionAssets} from './companion-custom.ts';
 import type {CompanionMenuItem} from '../companion-menu.ts';
 import {BrandGlyph} from './brand.ts';
 const h=React.createElement,api=window.dayhub;
@@ -311,6 +315,50 @@ function RoutineSettings({state,busy,onError}:{state:State;busy:boolean;onError:
     editor);
 }
 
+const avatarPreviewDisplay=(state:CompanionDisplayState):CompanionDisplay=>({
+  state,base:state,label:companionDisplayLabels[state],pending:0,nightly:state==='night_sleep',
+  nudgeId:0,reminderSince:0,holdingReminder:false,
+  scheduled:state==='night_sleep'||state==='wake_up'||state==='eating'||state==='nap'?state:null,
+});
+
+function AvatarPackCard({pack,active,selected,busy,onPreview}:{pack:AvatarPackManifest;active:boolean;selected:boolean;busy:boolean;onPreview:()=>void}){
+  const assets=useAvatarPreviewAssets(pack.id);
+  return h('button',{type:'button',className:`avatar-pack-card${active?' is-previewing':''}${selected?' is-selected':''}`,'data-avatar-pack-option':pack.id,'aria-pressed':active,disabled:busy,onClick:onPreview},
+    h('span',{className:'avatar-pack-card-art'},h(CustomCompanionArt,{assets,display:avatarPreviewDisplay(pack.previewState),animate:false,reduceMotion:true})),
+    h('span',{className:'avatar-pack-card-copy'},h('strong',null,pack.name),h('small',null,selected?'当前使用':'点击预览')));
+}
+
+function AvatarPersonPicker({profile,busy,run}:{profile:Profile;busy:boolean;run:(fn:()=>Promise<unknown>)=>Promise<unknown>}){
+  const selection=resolveAvatarPickerSelection(profile);
+  const persistedId=selection.persistedPackId;
+  const persistedPack=getAvatarPack(persistedId);
+  const [candidate,setCandidate]=useState(selection.previewPackId);
+  const pack=getAvatarPack(candidate)??getAvatarPack(DEFAULT_AVATAR_PACK_ID)!;
+  const [previewState,setPreviewState]=useState<CompanionDisplayState>(pack.previewState);
+  const assets=useAvatarPreviewAssets(pack.id);
+  useEffect(()=>{const current=getAvatarPack(persistedId);setCandidate(current?.id??DEFAULT_AVATAR_PACK_ID);},[profile.id,persistedId]);
+  useEffect(()=>setPreviewState(pack.previewState),[pack.id]);
+  const selectedAvailable=!!persistedPack;
+  const title=profile.role==='self'?'我的桌宠形象':`${profile.name}的桌宠形象`;
+  return h('section',{className:'avatar-person-picker','data-avatar-person':profile.id},
+    h('div',{className:'avatar-picker-head'},h('div',null,h('h4',null,title),h('p',{className:'muted'},profile.role==='self'?'Solo 模式下代表我':'Together 模式下代表同行者')),
+      !selectedAvailable?h('span',{className:'avatar-unavailable','data-avatar-unavailable':'true'},'当前选择不可用'):null),
+    h('div',{className:'avatar-picker-layout'},
+      h('div',{className:'avatar-pack-grid'},...listAvatarPacks().map(option=>h(AvatarPackCard,{key:option.id,pack:option,active:option.id===pack.id,selected:selectedAvailable&&option.id===persistedId,busy,onPreview:()=>setCandidate(option.id)}))),
+      h('div',{className:'avatar-preview','data-avatar-preview-pack':pack.id,'data-avatar-preview-state':previewState},
+        h('div',{className:'avatar-preview-stage'},h(CustomCompanionArt,{assets,display:avatarPreviewDisplay(previewState),animate:false,reduceMotion:true})),
+        h('div',{className:'avatar-preview-meta'},h('strong',null,pack.name),h('span',null,companionDisplayLabels[previewState])),
+        h('div',{className:'avatar-state-picker',role:'group','aria-label':`${title}预览状态`},...companionVisualStates.map(state=>h('button',{key:state,type:'button',className:state===previewState?'active':'','data-avatar-preview-state-option':state,disabled:busy,onClick:()=>setPreviewState(state)},companionDisplayLabels[state]))))),
+    !selectedAvailable?h('p',{className:'muted setting-note'},`此前选择 ${persistedId} 已不可用；设置未被自动修改，桌宠会安全显示默认形象。`):null,
+    h('div',{className:'actions avatar-picker-actions'},
+      h('button',{type:'button',className:'primary','data-avatar-apply':pack.id,disabled:busy||(persistedId===pack.id&&profile.avatar?.source==='user'),onClick:()=>void run(()=>api.change({type:'avatarSet',personId:profile.id,packId:pack.id}))},'使用此形象'),
+      h('button',{type:'button',className:'ghost','data-avatar-reset':'true',disabled:busy||(persistedId===DEFAULT_AVATAR_PACK_ID&&profile.avatar?.source==='default'),onClick:()=>void run(()=>api.change({type:'avatarReset',personId:profile.id}))},'恢复默认')));
+}
+
+function AvatarSettings({state,busy,run}:{state:State;busy:boolean;run:(fn:()=>Promise<unknown>)=>Promise<unknown>}){
+  return h('div',{className:'avatar-settings'},...state.profiles.map(profile=>h(AvatarPersonPicker,{key:profile.id,profile,busy,run})));
+}
+
 export function PetSettings({live,settings,state}:{live:LiveSnapshot|null;settings?:{launch:boolean;trayResident?:boolean};state?:State}){
   const [error,setError]=useState('');const [busy,setBusy]=useState(false);
   const assets=useCompanionAssets(live?.petInstance.avatarPackId);
@@ -326,6 +374,7 @@ export function PetSettings({live,settings,state}:{live:LiveSnapshot|null;settin
   const schedule=petRoutineSummary(state?resolvePetSubject(state).routine:undefined);
   const sizeChoices=h('div',{className:'segmented setting-segmented'},...(['small','medium','large'] as const).map((value,index)=>h('button',{key:value,type:'button',className:p.size===value?'active':'',disabled:busy,onClick:()=>save({size:value})},['小','中','大'][index])));
   return h('section',{className:'pet-settings'},h('h2',null,'桌面陪伴'),
+    state?block('桌宠形象',h(AvatarSettings,{state,busy,run})):null,
     block('外观',h(React.Fragment,null,
       h('div',{className:'mode-choices',role:'radiogroup','aria-label':'桌宠显示模式'},...modeOptions.map(([value,label,note])=>{
         return h('button',{key:value,type:'button',role:'radio','aria-checked':p.mode===value,className:p.mode===value?'mode-choice active':'mode-choice',disabled:busy,onClick:()=>save({mode:value})},
