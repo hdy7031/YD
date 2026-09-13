@@ -3,13 +3,14 @@ import { snapshot, profileAlias, statusLabel, clockText } from '../live.ts';
 import type { PersonStatus } from '../live.ts';
 import type { ManualStateKind } from '../state/manual.ts';
 import { manualDurationOptions, manualKindOptions, manualLabelFor, manualStatusProblem } from './manual-status.ts';
-import { pendingReminders as selectPendingReminders, attentionSummary } from '../selectors.ts';
+import { pendingReminders as selectPendingReminders, attentionSummary, courseTone } from '../selectors.ts';
 import { useLive, Titlebar, DesktopPet, Bubble, Mini, PresenceTip, PetMenu, StatusRows, PetSettings } from './companion.ts';
 import { BrandMark } from './brand.ts';
 import { ScheduleGrid, ManagementOverview, EmptyState } from './views.ts';
+import { DailySummary, DailyAgendaList, DailyEmptyState } from './daily-summary.ts';
+import { dailyItemState, dailyPlanFrom, type DailyAgendaItem } from './daily-plan.ts';
 import { getCompanionProfile, requireSelfProfile, resolvePetSubject } from '../people.ts';
-import { personOptions, profileLabelFor, shellTabs, tabShortcuts, tabWidthPolicy } from './shell.ts';
-import type { ShellTab } from './shell.ts';
+import { personOptions, profileLabelFor, shellTabs, tabShortcuts, tabWidthPolicy, companionDisplayName, type ShellTab } from './shell.ts';
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BellRing, CalendarClock, CalendarDays, Clock3, Inbox, ListTodo, Settings, Table2 } from 'lucide-react';
@@ -263,44 +264,39 @@ function App(){
   tabsRef.current=tabs;
   function cardSource(sourceId?:string){return sourceId?b('查看来源',()=>{const n=s.notices.find(n=>n.id===sourceId);if(n)open('notices',n);},'text-button'):null;}
   function checklist(entity:Entity,item:any){return item.checklist?.length?h('div',{className:'checklist'},...item.checklist.map((c:ChecklistItem)=>h('div',{key:c.id,className:'check-row'},h('label',null,h('input',{type:'checkbox',checked:c.done,disabled:pending,onChange:()=>change({type:'save',entity,value:{...item,checklist:item.checklist.map((x:ChecklistItem)=>x.id===c.id?{...x,done:!x.done}:x)}})}),h('span',{className:c.done?'done':''},c.text)),b('单独提醒',()=>open('tasks',{...newValue('tasks',activePerson,selfId),title:c.text,notes:`准备事项，来自：${item.title}`,sourceId:item.sourceId}),'text-button')))):null;}
-  function occurrenceCard(o:Occurrence){const item=o.kind==='course'?s.courses.find(c=>c.id===o.courseId)!:s.events.find(e=>`events:${e.id}`===o.target)!;const entity=o.kind==='course'?'courses':'events';return h('article',{key:o.id,className:'entry compact-entry'+(o.start<=now&&o.end>now?' current':'')},h('div',{className:'entry-top'},h('span',{className:'time'},`${fmt(o.start)} — ${o.endUnknown?'结束时间未填写':fmt(o.end)}`),h('div',{className:'entry-flags'},conflictIds.has(o.id)?h('span',{className:'warning'},'时间冲突'):null,h('details',{className:'action-menu'},h('summary',{'aria-label':`${o.title}的更多操作`},'⋯'),h('div',{className:'action-menu-pop'},b('编辑',()=>open(entity,item),'ghost'),o.kind==='course'?b('本次调课 / 停课',()=>open('exceptions',s.exceptions.find(e=>e.courseId===o.courseId&&e.date===o.date)||{id:id(),courseId:o.courseId,date:o.date,cancelled:false,start:localStamp(o.start),end:localStamp(o.end),place:o.place,updatedAt:now}),'ghost'):b('删除会议',()=>setDeletion({entity:'events',id:item.id}),'text-button'),cardSource(o.sourceInboxItemId||o.sourceId))))),h('h3',null,o.title),h('p',{className:'muted'},o.place||'未填地点'),o.notes?h('p',{className:'note'},o.notes):null,checklist(entity,item));}
-  // 课程条配色：与课表网格里的五种课块色一致，用 id 稳定映射，刷新不会变色。
-  const COURSE_TONES=['sea','blue','violet','rose','amber'];
-  function courseTone(key:string){let n=0;for(let i=0;i<key.length;i++)n=(n*31+key.charCodeAt(i))>>>0;return COURSE_TONES[n%COURSE_TONES.length];}
-  function partnerRow(o:Occurrence,index?:number){
-    const item=s.courses.find(c=>c.id===o.courseId)!;
-    const isCurrent=!o.cancelled&&selectedIsToday&&o.start<=now&&now<o.end;
-    const isPast=!o.cancelled&&selectedIsToday&&o.end<=now;
-    const exception=s.exceptions.find(e=>e.courseId===o.courseId&&e.date===o.date);
-    const state=o.cancelled?'已停课':o.rescheduled?'已调课':isCurrent?'上课中':isPast?'已结束':null;
-    // 一节课一张卡：左侧时间轴 + 课程色条，标题是行内主角，低频操作收进 ⋯。
-    // 当天概览跟着第一张卡一起进列表，保证在宽屏下也贴近内容而不是浮在顶部。
-    return h(React.Fragment,{key:o.id},index===0?partnerDayRail(companionRows):null,
-      h('article',{className:`partner-row tone-${courseTone(o.courseId??o.id)}${isCurrent?' current':''}${isPast?' past':''}${o.cancelled?' cancelled':''}`},
-      h('div',{className:'partner-row-time'},h('strong',null,fmt(o.start)),h('span',{className:'partner-row-bar','aria-hidden':true}),h('small',null,o.endUnknown?'—':fmt(o.end))),
-      h('div',{className:'partner-row-main'},h('h3',null,o.title),
-        h('div',{className:'partner-row-meta'},h('span',{className:'partner-row-place'},o.place||'地点未填写'),item?.activity?h('span',{className:'partner-row-kind'},item.activity==='research'?'教研':'授课'):null)),
-      h('div',{className:'partner-row-actions'},state?h('span',{className:'partner-row-state'},state):null,
-        h('details',{className:'action-menu'},h('summary',{'aria-label':`${o.title}的更多操作`},'⋯'),
-          h('div',{className:'action-menu-pop'},b('编辑课程',()=>open('courses',item),'ghost'),b('本次调课 / 停课',()=>open('exceptions',exception||{id:id(),courseId:o.courseId,date:o.date,cancelled:false,start:localStamp(o.start),end:localStamp(o.end),place:o.place,updatedAt:now}),'ghost'))))));
+  // 一天安排的查找辅助：Self / Companion 共用，只读取已存在的实体。
+  const courseFor=(item:DailyAgendaItem)=>item.kind==='course'?s.courses.find(c=>c.id===item.id):undefined;
+  const eventFor=(item:DailyAgendaItem)=>item.kind==='event'?s.events.find(e=>item.id===`events:${e.id}`):undefined;
+  // 统一安排行：Self 与 Companion 用同一套结构（左侧时间 + 标题 + 地点/类型 + 状态 + ⋯）。
+  // 状态文案来自 dailyItemState（只描述事项时间关系），人物状态仍只来自 CurrentState。
+  function agendaRow(item:DailyAgendaItem,options:{checklistOwner?:any}={}){
+    const course=courseFor(item),event=eventFor(item);
+    const state=dailyItemState(item,now);
+    const entity:Entity=item.kind==='course'?'courses':'events';
+    const isCurrent=state==='上课中'||state==='进行中';
+    const isPast=state==='已结束';
+    const menu=course
+      ?h(React.Fragment,null,b('编辑课程',()=>open('courses',course),'ghost'),b('本次调课 / 停课',()=>open('exceptions',s.exceptions.find(x=>x.courseId===course.id&&x.date===dateOf(item.start))||{id:id(),courseId:course.id,date:dateOf(item.start),cancelled:false,start:localStamp(item.start),end:localStamp(item.end),place:item.place,updatedAt:now}),'ghost'))
+      :event?h(React.Fragment,null,b('编辑',()=>open('events',event),'ghost'),b('删除会议',()=>setDeletion({entity:'events',id:event.id}),'text-button')):null;
+    return h('article',{key:item.id,className:`daily-agenda-row tone-${item.tone}${isCurrent?' current':''}${isPast?' past':''}${item.cancelled?' cancelled':''}`},
+      h('div',{className:'daily-agenda-time'},h('strong',null,fmt(item.start)),h('span',{className:'daily-agenda-bar','aria-hidden':true}),h('small',null,item.endUnknown?'—':fmt(item.end))),
+      h('div',{className:'daily-agenda-main'},h('h3',null,item.title),
+        h('div',{className:'daily-agenda-meta'},h('span',{className:'daily-agenda-place'},item.place||'地点未填写'),course?h('span',{className:'daily-agenda-kind'},course.activity==='research'?'教研':'授课'):h('span',{className:'daily-agenda-kind'},'会议 / 活动'),conflictIds.has(item.id)?h('span',{className:'warning'},'时间冲突'):null,item.notes?h('span',{className:'daily-agenda-note'},item.notes):null),
+        options.checklistOwner?checklist(entity,options.checklistOwner):null),
+      h('div',{className:'daily-agenda-actions'},state?h('span',{className:'daily-agenda-state'},state):null,
+        menu?h('details',{className:'action-menu'},h('summary',{'aria-label':`${item.title}的更多操作`},'⋯'),h('div',{className:'action-menu-pop'},menu,cardSource(course?.sourceId||event?.sourceId))):null));
   }
   function taskCard(t:Task){return h('article',{key:t.id,className:'entry'},h('div',{className:'entry-top'},h('h3',{className:t.done?'done':''},t.title),h('div',{className:'entry-flags'},t.done?h('span',{className:'tag'},'已完成'):t.due&&epoch(t.due)<now?h('span',{className:'warning'},'已逾期'):null,h('details',{className:'action-menu'},h('summary',{'aria-label':`${t.title}的更多操作`},'⋯'),h('div',{className:'action-menu-pop'},b('编辑',()=>open('tasks',t),'ghost'),cardSource(t.sourceId),b('删除',()=>setDeletion({entity:'tasks',id:t.id}),'text-button'))))),h('p',{className:'muted'},t.due?`${t.due.replace('T',' ')} 截止`:'未设置截止时间'),t.notes?h('p',{className:'note'},t.notes):null,checklist('tasks',t),h('div',{className:'actions'},b(t.done?'恢复待处理':'标记完成',()=>change({type:'save',entity:'tasks',value:{...t,done:!t.done}}),'secondary',pending)));} 
-  // 当天概览：一句"今天几节课" + 一条按真实时段排布的时间轨，宽屏下补上横向节奏感。
-  function partnerDayRail(rows:Occurrence[]){
-    const active=rows.filter(r=>!r.cancelled);
-    const basis=active.length?active:rows;
-    const from=Math.min(...basis.map(r=>r.start));
-    const to=Math.max(...rows.map(r=>r.end));
-    const span=Math.max(1,to-from);
-    return h('div',{className:'partner-day-summary'},
-      h('span',{className:'partner-day-count'},`${selectedIsToday?'今天':'这天'} ${active.length} 节课`),
-      h('div',{className:'day-rail','aria-hidden':true},...rows.map(o=>h('span',{key:o.id,className:`day-rail-seg tone-${courseTone(o.courseId??o.id)}${o.cancelled?' cancelled':''}`,style:{left:`${((o.start-from)/span*100).toFixed(2)}%`,width:`${Math.max(1.2,(o.end-o.start)/span*100).toFixed(2)}%`}}))),
-      h('span',{className:'partner-day-span'},`${fmt(from)} — ${fmt(to)}`));
-  }
   // 本人状态投影：当前状态来自统一 StateEngine（page/焦点条/状态行共用），next 仍是独立的日程信息。
   const active=s.courses.filter(c=>c.person===activePerson),selfStatus=live?.people.find(p=>p.person===selfId),current=selfStatus?.current,next=selfStatus?.next,attention=attentionSummary(s,now);
   const visibleTasks=s.tasks.filter(t=>(t.title+' '+t.notes).toLowerCase().includes(query.toLowerCase())).filter(t=>filter==='all'||filter==='done'&&t.done||filter==='overdue'&&!t.done&&!!t.due&&epoch(t.due)<now||filter==='today'&&!t.done&&!!t.due&&t.due.startsWith(dateOf(now))||filter==='week'&&!t.done&&!!t.due&&epoch(t.due)>=epoch(dateOf(now))&&epoch(t.due)<epoch(addDays(dateOf(now),7))).sort((a,b)=>Number(a.done)-Number(b.done)||(a.due?epoch(a.due):Infinity)-(b.due?epoch(b.due):Infinity));
   const myDay=all.filter(o=>o.person===selfId);
+  // Self / Companion 的「一天安排」都走同一个 DailyPlan 投影；0 项也是合法的 DailyPlan。
+  const dayStart=epoch(selectedDate);
+  const selfPlan=dailyPlanFrom({dayStart,occurrences:all.filter(o=>o.person===selfId),courses:s.courses,now});
+  const companionPlan=companion?dailyPlanFrom({dayStart,occurrences:companionRows,courses:s.courses,now}):null;
+  // 首页/TA 页面共用同一行渲染：本人行的清单仍可勾选，同行者行只读。
+  const selfItemOwner=(item:DailyAgendaItem)=>item.kind==='course'?s.courses.find(c=>c.id===item.id):s.events.find(e=>item.id===`events:${e.id}`);
   const activeIds=new Set(active.map(c=>c.id));
   const exceptionList=s.exceptions.filter(e=>activeIds.has(e.courseId)).sort((a,b)=>b.date.localeCompare(a.date)||b.updatedAt-a.updatedAt);
   const focusSchedule=()=>{const el=document.querySelector('.schedule-scroll');if(!el)return;el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.add('schedule-highlight');window.setTimeout(()=>el.classList.remove('schedule-highlight'),1600);};
@@ -337,10 +333,21 @@ function App(){
         h('div',{className:'home-grid'},
           h('div',{className:'home-primary'},
             h('section',{className:'focus-strip'},h('div',{className:'focus-copy'},h('div',{className:'eyebrow icon-eyebrow'},uiIcon(Clock3),'接下来'),h('h2',null,next?.title||'今天没有后续安排'),h('p',null,next?`${fmt(next.start,true)} · ${next.place||'地点未填写'}`:'当前没有即将发生的课程或会议')),h('div',{className:'focus-detail'},next?h('span',null,until(now,next.start)):h('span',null,'可以安心安排其他事情'),current&&current.kind!=='idle'?h('small',null,`正在进行：${current.label}${current.endAt?` · ${fmt(current.endAt)} 结束`:''}`):null)),
-            h('section',{className:'panel'},
-              h('div',{className:'section-head'},h('div',{className:'section-heading'},uiIcon(CalendarDays,'section-icon'),h('div',null,h('h2',null,selectedIsToday?'今日日程':'当日日程'),h('small',{className:'section-subtitle'},selectedDateText))),h('input',{'aria-label':'查看日期',type:'date',value:selectedDate,onChange:(e:any)=>{if(e.target.value)setDate(e.target.value);}})),
-              myDay.length?h('div',{className:'entry-list'},...myDay.map(occurrenceCard)):h(EmptyState,{title:selectedIsToday?'今天没有安排':'这一天没有安排',description:'课程、会议与活动会显示在这里。',illustration:'assets/gen/empty-schedule.png',actions:h(React.Fragment,null,selectedIsToday?b('新建会议',()=>open('events'),'secondary'):null,b('管理课表',()=>setTab('courses'),'ghost'))}))))):null,
-      kind==='person'&&companion&&companionStatus?h(React.Fragment,null,h(PartnerStatusCard,{status:companionStatus,updatedAt:companion.updatedAt,now}),h('div',{className:'partner-reading'},h('div',{className:'section-head partner-schedule-head'},h('div',null,h('h2',null,`${companion.name} 的日程`),h('small',{className:'section-subtitle'},selectedDateText)),h('input',{'aria-label':`查看 ${companion.name} 的日期`,type:'date',value:selectedDate,onChange:(e:any)=>{if(e.target.value)setDate(e.target.value);}})),companionRows.length?h('div',{className:'partner-list'},...companionRows.map(partnerRow)):h('div',{className:'empty-stage'},h(EmptyState,{title:companionEmptyText,description:!hasCompanionSchedule?`导入或录入 ${companion.name} 的课表后，这里会显示每天的课程安排。`:selectedIsToday?'今天没有已录入的课程，单次调课与停课会同步更新。':'这一天没有课程安排，可以切换日期查看。',actions:!hasCompanionSchedule?b('前往课表管理',()=>setTab('courses'),'secondary'):null})))):null,
+            h('section',{className:'panel daily-panel'},
+              h(DailySummary,{plan:selfPlan,heading:selectedIsToday?'今日日程':'当日日程',unit:'项安排',countPrefix:selectedIsToday?'今天':'这天',rangeLabel:'时间范围',emptyRangeText:'当天没有需要占用的时间段',icon:uiIcon(CalendarDays,'section-icon'),
+                actions:h('input',{'aria-label':'查看日期',type:'date',value:selectedDate,onChange:(e:any)=>{if(e.target.value)setDate(e.target.value);}})}),
+              selfPlan.items.length
+                ?h(DailyAgendaList,{plan:selfPlan,renderItem:(item:DailyAgendaItem)=>agendaRow(item,{checklistOwner:selfItemOwner(item)})})
+                :h(DailyEmptyState,{title:selectedIsToday?'今天没有安排':'这一天没有安排',description:'课程、会议与活动会显示在这里；每天的摘要结构保持不变。',illustration:'assets/gen/empty-schedule.png',actions:h(React.Fragment,null,selectedIsToday?b('新建会议',()=>open('events'),'secondary'):null,b('管理课表',()=>setTab('courses'),'ghost'))}))))):null,
+      kind==='person'&&companion&&companionStatus&&companionPlan?h(React.Fragment,null,
+        h('div',{className:'daily-plan'},
+          h(PartnerStatusCard,{status:companionStatus,updatedAt:companion.updatedAt,now}),
+          h('section',{className:'panel daily-panel'},
+            h(DailySummary,{plan:companionPlan,heading:'今日安排',unit:'节课',countPrefix:selectedIsToday?'今天':'这天',rangeLabel:'第一项 · 最后一项',emptyRangeText:hasCompanionSchedule?'今天没有课程占用时间段':'还没有录入课表',icon:uiIcon(CalendarClock,'section-icon'),
+              actions:h('input',{'aria-label':`查看 ${companionDisplayName(companion)} 的日期`,type:'date',value:selectedDate,onChange:(e:any)=>{if(e.target.value)setDate(e.target.value);}})}),
+            companionPlan.items.length
+              ?h(DailyAgendaList,{plan:companionPlan,renderItem:(item:DailyAgendaItem)=>agendaRow(item)})
+              :h(DailyEmptyState,{title:companionEmptyText,description:!hasCompanionSchedule?`导入或录入 ${companionDisplayName(companion)} 的安排后，这里会显示每天的课程与会议。`:selectedIsToday?'今天没有已录入的课程，单次调课与停课会同步更新。':'这一天没有课程安排，可以切换日期查看。',actions:!hasCompanionSchedule?b('前往课表管理',()=>setTab('courses'),'secondary'):null})))):null,
       kind==='tasks'?h(ManagementOverview,{tasks:[...s.tasks].sort((a,b)=>Number(a.done)-Number(b.done)||(a.due?epoch(a.due):Infinity)-(b.due?epoch(b.due):Infinity)),events:s.events,now,query,setQuery:search,taskCard,editEvent:(event:Event)=>open('events',event),deleteEvent:(event:Event)=>setDeletion({entity:'events',id:event.id}),createTask:()=>open('tasks'),createEvent:()=>open('events')}):null,
       kind==='courses'?h(React.Fragment,null,
         // 课表管理页：先选课表，再加课程；学校作息是配置，降级为一行文字入口。

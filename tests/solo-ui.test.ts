@@ -8,7 +8,7 @@ import { apply, epoch } from '../src/core.ts';
 import { resolvePetState } from '../src/companion-display.ts';
 import { personStatus, snapshot } from '../src/live.ts';
 import { getCompanionProfile, getSelfProfile, resolvePetSubject } from '../src/people.ts';
-import { personOptions, profileLabelFor, shellTabs, tabShortcuts } from '../src/ui/shell.ts';
+import { companionDisplayName, personOptions, profileLabelFor, shellTabs, tabShortcuts } from '../src/ui/shell.ts';
 import { syntheticState } from './fixtures/synthetic.ts';
 import { soloClassTime, soloPersonId, v3SoloSynthetic } from './fixtures/v3-solo-synthetic.ts';
 
@@ -28,18 +28,37 @@ test('Together 导航保持旧结构，同行者页用档案名称', () => {
   const state = together(), tabs = shellTabs(state);
   assert.deepEqual(tabs.map(tab => tab.key), ['today', 'partner', 'courses', 'tasks', 'inbox', 'reminders', 'settings']);
   assert.deepEqual(tabs.map(tab => tab.kind), ['today', 'person', 'courses', 'tasks', 'inbox', 'reminders', 'settings']);
-  assert.equal(tabs[1].label, `${getCompanionProfile(state)!.name}的课表`);
+  assert.equal(tabs[1].label, `${getCompanionProfile(state)!.name}的安排`);
+  assert.equal(tabs[1].label, 'Sam的安排');
   assert.equal(tabs[1].personId, 'partner');
+  // 导航里不再保留旧的「某人课表」文案（「课表管理」是独立的管理页，保留）。
+  assert.equal(tabs.some(tab => tab.label.includes('的课表')), false);
+  assert.equal(tabs.some(tab => tab.label.includes('的日程')), false);
   assert.deepEqual(tabShortcuts(tabs), { '1': 'today', '2': 'partner', '3': 'courses', '4': 'tasks', '5': 'inbox' });
 });
 
-test('课表归属选项与文案全部来自实际档案', () => {
-  assert.deepEqual(personOptions(solo()), [{ value: soloPersonId, label: '我的课表' }]);
-  assert.deepEqual(personOptions(together()).map(option => option.label), ['我的课表', 'Sam的课表']);
-  assert.equal(profileLabelFor(together(), 'partner'), 'Sam的课表');
-  assert.equal(profileLabelFor(together(), 'me'), '我的课表');
-  assert.equal(profileLabelFor(solo(), soloPersonId), '我的课表');
+test('安排归属选项与文案全部来自实际档案', () => {
+  assert.deepEqual(personOptions(solo()), [{ value: soloPersonId, label: '我的安排' }]);
+  assert.deepEqual(personOptions(together()).map(option => option.label), ['我的安排', 'Sam的安排']);
+  assert.equal(profileLabelFor(together(), 'partner'), 'Sam的安排');
+  assert.equal(profileLabelFor(together(), 'me'), '我的安排');
+  assert.equal(profileLabelFor(solo(), soloPersonId), '我的安排');
   assert.equal(profileLabelFor(together(), undefined), '未选择');
+});
+
+test('同行者称呼：用户名称优先，「Ta」只是默认 fallback', () => {
+  // 用户可自定义显示名称：丹 / 室友 / 喻老师 都按档案名称展示。
+  const named = (name: string) => shellTabs({ profiles: [{ id: 'me', role: 'self', name: '我' }, { id: 'c', role: 'companion', name }] } as any)[1].label;
+  assert.equal(named('丹'), '丹的安排');
+  assert.equal(named('室友'), '室友的安排');
+  assert.equal(named('喻老师'), '喻老师的安排');
+  // 没有用户名称（空名或历史默认 Ta）时回退到统一的「TA」。
+  assert.equal(named('Ta'), 'TA的安排');
+  assert.equal(named('TA'), 'TA的安排');
+  assert.equal(named('   '), 'TA的安排');
+  assert.equal(companionDisplayName({ name: '丹' }), '丹');
+  assert.equal(companionDisplayName({ name: 'Ta' }), 'TA');
+  assert.equal(companionDisplayName(undefined), 'TA');
 });
 
 test('Solo 快照与状态投影：1 条状态、无幽灵同行者、代号非空', () => {

@@ -2397,3 +2397,186 @@ body.main-body .about-brand-line { color: var(--yd-brand-deep); font-size: 12px;
   body.main-body .about-brand { grid-template-columns: minmax(0, 1fr); }
   body.main-body .about-brand-visual { min-height: 112px; }
 }
+
+/* ============================================================
+   Phase 1 · Daily Summary 组件系统（Self / Companion 共用）。
+
+   首页「今日日程」与「TA 的安排」共享同一套：
+   摘要头部 / 24 小时时间带 / 事项列表 / 受 max-width 约束的空状态。
+   颜色只来自低饱和 palette：muted sage、mist lavender、soft rose、
+   warm oat、soft blue-grey。这里也不使用状态色——状态由 CurrentState 决定。
+   ============================================================ */
+body.main-body {
+  --yd-tone-sage: #8FA79B;
+  --yd-tone-lavender: #A9A2BC;
+  --yd-tone-rose: #C2A2A3;
+  --yd-tone-oat: #C2AE87;
+  --yd-tone-blue: #94A7B6;
+}
+
+/* 摘要容器：与 Self 页的 .panel 一致；单独使用时也保持同一视觉语言。 */
+.daily-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1040px;
+  padding: 20px 22px 22px;
+  border-radius: 16px;
+}
+.daily-plan { display: grid; gap: 16px; width: 100%; max-width: 1240px; }
+
+.daily-summary { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.daily-summary-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; min-width: 0; }
+.daily-summary-heading { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.daily-summary-copy { min-width: 0; }
+.daily-summary-copy h2 { color: var(--yd-ink); font-size: 18px; line-height: 1.4; font-weight: 600; }
+.daily-summary-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 5px;
+  color: var(--yd-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.daily-summary-date { color: var(--yd-muted); font-size: 12.5px; }
+.daily-summary-dot { color: var(--yd-line-2); }
+.daily-summary-count { color: var(--yd-ink-2); font-weight: 600; }
+.daily-summary-actions { display: flex; flex: none; align-items: center; gap: 8px; }
+
+.daily-summary-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  color: var(--yd-faint);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.daily-summary-range { color: var(--yd-faint); }
+.daily-summary-next { color: var(--yd-muted); }
+
+/* —— Daily Timeline：00:00—24:00 的稳定横向时间带 —— */
+.daily-timeline { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+.daily-timeline-rail {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--yd-surface-2);
+  box-shadow: inset 0 0 0 1px rgba(36, 50, 59, .06);
+  overflow: hidden;
+}
+.daily-timeline-seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 3px;
+  border-radius: 999px;
+  background: var(--yd-tone-sage);
+}
+.daily-timeline-seg.tone-sea { background: var(--yd-tone-sage); }
+.daily-timeline-seg.tone-blue { background: var(--yd-tone-blue); }
+.daily-timeline-seg.tone-violet { background: var(--yd-tone-lavender); }
+.daily-timeline-seg.tone-rose { background: var(--yd-tone-rose); }
+.daily-timeline-seg.tone-amber { background: var(--yd-tone-oat); }
+.daily-timeline-seg.is-cancelled { background: repeating-linear-gradient(135deg, var(--yd-line-2) 0 4px, transparent 4px 8px); opacity: .8; }
+.daily-timeline-ticks { position: relative; height: 16px; margin-top: 5px; }
+.daily-timeline-tick { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.daily-timeline-tick:first-child { transform: none; align-items: flex-start; }
+.daily-timeline-tick:last-child { transform: translateX(-100%); align-items: flex-end; }
+.daily-timeline-tick i { width: 1px; height: 3px; background: var(--yd-line-2); }
+.daily-timeline-tick small { color: var(--yd-faint); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+/* —— Agenda 列表：Self 与 Companion 共用的行结构 —— */
+.daily-agenda { display: grid; gap: 10px; min-width: 0; }
+.daily-agenda-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  min-height: 78px;
+  padding: 15px 20px 15px 24px;
+  border: 1px solid var(--yd-line);
+  border-radius: 14px;
+  background: var(--yd-surface);
+  box-shadow: 0 1px 2px rgba(36, 50, 59, .025);
+}
+.daily-agenda-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 16px;
+  bottom: 16px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--yd-tone-sage);
+}
+.daily-agenda-row.tone-sea::before { background: var(--yd-tone-sage); }
+.daily-agenda-row.tone-blue::before { background: var(--yd-tone-blue); }
+.daily-agenda-row.tone-violet::before { background: var(--yd-tone-lavender); }
+.daily-agenda-row.tone-rose::before { background: var(--yd-tone-rose); }
+.daily-agenda-row.tone-amber::before { background: var(--yd-tone-oat); }
+.daily-agenda-row:hover { border-color: var(--yd-line-2); background: #FCFDFD; }
+.daily-agenda-row.current { border-color: var(--yd-brand-line); background: linear-gradient(90deg, rgba(70, 108, 106, .07), rgba(70, 108, 106, .012)); }
+.daily-agenda-row.current .daily-agenda-state { color: var(--yd-brand-deep); background: var(--yd-brand-soft); }
+.daily-agenda-row.past { opacity: .68; }
+.daily-agenda-row.cancelled { opacity: .7; }
+.daily-agenda-row.cancelled .daily-agenda-main h3 { text-decoration: line-through; }
+.daily-agenda-row.cancelled .daily-agenda-time strong { text-decoration: line-through; }
+.daily-agenda-time { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.daily-agenda-time strong { color: var(--yd-ink); font-size: 16px; font-weight: 620; letter-spacing: .01em; font-variant-numeric: tabular-nums; }
+.daily-agenda-time small { color: var(--yd-faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.daily-agenda-time .daily-agenda-bar { flex: none; width: 1px; min-width: 0; height: 9px; margin: 1px 0 1px 5px; background: var(--yd-line-2); }
+.daily-agenda-main { min-width: 0; }
+.daily-agenda-main h3 { color: var(--yd-ink); font-size: 16px; font-weight: 620; letter-spacing: -.005em; white-space: normal; }
+.daily-agenda-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
+.daily-agenda-place { display: inline-flex; align-items: center; color: var(--yd-muted); font-size: 12px; }
+.daily-agenda-place::before { content: ""; width: 4px; height: 4px; margin-right: 7px; border-radius: 50%; background: var(--yd-brand); opacity: .75; }
+.daily-agenda-kind { padding: 2px 8px; border-radius: 999px; background: var(--yd-surface-2); color: var(--yd-muted); font-size: 11px; }
+.daily-agenda-note { color: var(--yd-faint); font-size: 12px; }
+.daily-agenda-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.daily-agenda-actions button { min-height: 28px; padding: 4px 7px; font-size: 11.5px; }
+.daily-agenda-state { padding: 3px 10px; border-radius: 999px; background: var(--yd-surface-2); color: var(--yd-muted); font-size: 11px; }
+
+/* —— Daily Empty State：上对齐、受 max-width 控制，不再垂直居中漂浮 —— */
+.daily-empty { flex: none; width: 100%; padding: 0; }
+.daily-empty-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  max-width: 720px;
+  padding: 20px 22px;
+  border: 1px dashed var(--yd-line-2);
+  border-radius: 14px;
+  background: var(--yd-surface-2);
+}
+.daily-empty-icon { flex: none; display: grid; place-items: center; width: 42px; height: 42px; color: var(--yd-brand); background: var(--yd-brand-soft); border-radius: 13px; }
+.daily-empty-icon svg { width: 20px; height: 20px; }
+.daily-empty-art { flex: none; width: 118px; height: 104px; object-fit: contain; opacity: .92; }
+.daily-empty-copy { flex: 1; min-width: 0; }
+.daily-empty-copy strong { display: block; color: var(--yd-ink); font-size: 14px; font-weight: 620; }
+.daily-empty-copy p { margin-top: 5px; color: var(--yd-muted); font-size: 12.5px; line-height: 1.65; }
+.daily-empty-actions { display: flex; flex: none; align-items: center; flex-wrap: wrap; gap: 8px; }
+
+@media (max-width: 980px) {
+  .daily-agenda-row { grid-template-columns: 92px minmax(0, 1fr); gap: 14px; padding: 14px 16px 14px 20px; }
+  .daily-agenda-actions { grid-column: 2; justify-content: flex-start; }
+  .daily-agenda-time { flex-direction: row; align-items: center; gap: 7px; }
+  .daily-agenda-time .daily-agenda-bar { width: 14px; height: 1px; margin: 0; }
+}
+@media (max-width: 720px) {
+  .daily-empty-card { flex-direction: column; align-items: flex-start; }
+  .daily-empty-art { order: 0; width: 112px; height: 98px; }
+}
+@media (min-width: 1680px) {
+  .daily-panel { padding: 22px 26px 26px; }
+  .daily-agenda-row { grid-template-columns: 118px minmax(0, 1fr) auto; min-height: 88px; padding: 18px 24px 18px 28px; }
+  .daily-agenda-time strong { font-size: 17px; }
+  .daily-agenda-main h3 { font-size: 17px; }
+  .daily-timeline-rail { height: 9px; }
+}

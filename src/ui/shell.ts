@@ -15,9 +15,22 @@ export const tabWidthPolicy: Record<TabKind, string> = {
   inbox: 'width-adaptive', reminders: 'width-constrained', settings: 'width-constrained',
 };
 
-/** 课表归属文案：本人永远是「我的课表」，同行者用档案名称。 */
+/**
+ * 同行者的默认 UI 称呼。领域层（role / id）永远是身份真相；
+ * 「TA」只是没有用户自定义名称时的展示 fallback。
+ * 0.2.x 的默认档案名就是「Ta」，迁移会把旧称呼统一成它，因此它不算用户设置。
+ */
+export const COMPANION_FALLBACK_LABEL = 'TA';
+
+/** 同行者展示名：用户设置的档案名称优先，空名 / 历史默认「Ta」回退到 TA。 */
+export function companionDisplayName(profile: Pick<Profile, 'name'> | undefined): string {
+  const name = profile?.name?.trim() ?? '';
+  return !name || name === 'Ta' || name === 'TA' ? COMPANION_FALLBACK_LABEL : name;
+}
+
+/** 安排归属文案：本人永远是「我的安排」，同行者用档案名称（默认 TA）。 */
 export function courseTableLabel(profile: Pick<Profile, 'id' | 'role' | 'name'>, index = 0): string {
-  return effectiveRole(profile, index) === 'self' ? '我的课表' : `${profile.name}的课表`;
+  return effectiveRole(profile, index) === 'self' ? '我的安排' : `${companionDisplayName(profile)}的安排`;
 }
 
 export function profileLabelFor(state: Pick<State, 'profiles'>, personId?: PersonId): string {
@@ -34,7 +47,7 @@ export function personOptions(state: Pick<State, 'profiles'>): { value: PersonId
 export function shellTabs(state: Pick<State, 'profiles'>): ShellTab[] {
   const tabs: ShellTab[] = [{ key: 'today', kind: 'today', label: '我的安排' }];
   const companion = getCompanionProfile(state);
-  if (companion) tabs.push({ key: companion.id, kind: 'person', label: `${companion.name}的课表`, personId: companion.id });
+  if (companion) tabs.push({ key: companion.id, kind: 'person', label: `${companionDisplayName(companion)}的安排`, personId: companion.id });
   tabs.push(
     { key: 'courses', kind: 'courses', label: '课表管理' },
     { key: 'tasks', kind: 'tasks', label: '事项与会议' },

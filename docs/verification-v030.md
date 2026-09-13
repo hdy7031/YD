@@ -62,6 +62,31 @@ fallback、视觉系统刷新前的按钮文案与窗口数量）。这些失败
 不要为了让这些脚本变绿而恢复旧素材、旧 UI 或旧契约；每个脚本顶部都有
 `@deprecated` 说明与它被谁取代。
 
+### 3.1 旧 audit-preload 外壳 harness（环境受阻，非 Phase 1 回归）
+
+```text
+scripts/verify-v0210-ui.cjs
+scripts/verify-v0211-ui.cjs
+scripts/verify-v0212-ui.cjs
+```
+
+这三个脚本用 `scripts/audit-preload.cjs` 直接加载 `dist/index.html`。该 mock 的
+`dayhub.live()` 仍返回 Phase 3A 之前的形状（没有 `display` / `petInstance`），
+当前 UI bundle 在挂载主界面之前就会抛错，因此脚本在第一次 `executeJavaScript`
+就失败（`#root` 子节点为 0、`.nav-item` 不存在），根本走不到任何断言。
+
+**这在 Phase 1 之前的基线 `9a9dbc9` 上同样可复现**，与 Self / Companion
+Daily Summary 的改动无关。它们的覆盖已被当前门禁取代：
+
+| 旧脚本覆盖 | 当前替代 |
+| --- | --- |
+| 响应式宽度、无横向滚动 | `scripts/visual-mist.cjs` + `runtime-audit*.cjs` |
+| 同行者页当前状态卡 | `runtime-audit.cjs` |
+| 空状态不居中 / 文档流布局 | `runtime-audit-solo.cjs`、`scripts/visual-mist.cjs` |
+
+不要为了修这三个脚本去复活旧 mock 契约；若要恢复，应先让 `audit-preload.cjs`
+对齐 `LiveSnapshot` 现形（单独任务，不属于 Phase 1）。
+
 ## 4. 统一入口
 
 ```bash
