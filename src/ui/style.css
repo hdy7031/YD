@@ -1,35 +1,45 @@
 :root {
-  /* YD 品牌 token —— 冷雾白基底 + 深鼠尾草绿 + 低饱和玫瑰灰。
-     0.2.18：基底从"暖雾白"改成中性冷白，卡片回到纯白玻璃面，
-     避免整屏泛黄（像 PPT）；品牌色只做点缀与主按钮，不铺大色块。
-     界面里的颜色一律从这里取，不再出现零散色值。 */
-  --yd-ink: #1B201E;          /* 文本主色：中性深石墨，不用纯黑 */
-  --yd-ink-2: #3A3A33;
-  --yd-muted: #6E6A5E;
-  --yd-faint: #9C9689;
-  --yd-canvas: #F0F3F2;       /* 画布：冷雾白（中性，不泛黄） */
-  --yd-surface: #FFFFFF;      /* 卡片：纯白玻璃面 */
-  --yd-surface-2: #F5F8F7;
-  --yd-line: #E4E6E2;         /* 极浅冷灰线 */
-  --yd-line-2: #D2D5CE;
-  --yd-brand: #B08E4A;        /* 主色：黄铜金（描边 / 状态点 / 品牌竖线） */
-  --yd-brand-deep: #7A6230;   /* 深黄铜：需要文字对比度的场合 */
-  --yd-brand-soft: #F6EFDC;   /* 浅香槟底 */
-  --yd-brand-line: #E3D4B0;   /* 香槟细线 */
-  --yd-gold: #E4C87C;         /* 香槟金：仅用于填充（按钮、徽记） */
-  --yd-sage: #B08E4A;         /* 历史变量名，现指品牌金 */
+  /* YD Visual Family — Mist & Sage. 这些是所有 renderer 的安全默认值；
+     主窗口可以在 body.main-body 下细调，但任何独立 Electron surface
+     都不会再回落到 legacy 暗金主题。 */
+  --yd-ink: #24323B;
+  --yd-ink-2: #35464F;
+  --yd-muted: #687782;
+  --yd-faint: #87959D;
+  --yd-canvas: #F3F6F7;
+  --yd-surface: #FFFFFF;
+  --yd-surface-2: #F7FAFA;
+  --yd-line: #DDE5E7;
+  --yd-line-2: #C9D5D7;
+  --yd-brand: #466C6A;
+  --yd-brand-deep: #365653;
+  --yd-brand-soft: #E4EEEE;
+  --yd-brand-line: #C9DAD9;
+  --yd-gold: #466C6A;         /* legacy alias only; new UI must use --yd-brand */
+  --yd-sage: #466C6A;
   --yd-accent: #A2848C;       /* 强调色：低饱和玫瑰灰（仅用于 Ta / 状态点缀） */
   --yd-accent-soft: #F2EBED;
   --yd-danger: #8A4A42;
   --yd-danger-soft: #F7EAE8;
-  --yd-amber: #9A7A45;
-  --yd-amber-soft: #F6F1E7;
-  --yd-sidebar: rgba(255, 255, 255, .74);   /* 侧栏：白色玻璃，与标题栏同一体系 */
-  --yd-sidebar-2: rgba(246, 247, 244, .88);
-  --yd-sidebar-ink: #4C4A41;  /* 侧栏正文：中性石墨的中度档 */
-  --yd-sidebar-strong: #1B201E;
-  --yd-sidebar-hover: rgba(200, 144, 16, .06);
-  --yd-sidebar-active: rgba(200, 144, 16, .10);
+  --yd-amber: #927D54;        /* semantic warm accent: warnings/course palette only */
+  --yd-amber-soft: #F3EFE6;
+  --yd-sidebar: rgba(247, 250, 250, .88);
+  --yd-sidebar-2: rgba(240, 245, 245, .94);
+  --yd-sidebar-ink: #53636C;
+  --yd-sidebar-strong: #24323B;
+  --yd-sidebar-hover: rgba(70, 108, 106, .07);
+  --yd-sidebar-active: #E4EEEE;
+  --yd-space-1: 4px;
+  --yd-space-2: 8px;
+  --yd-space-3: 12px;
+  --yd-space-4: 16px;
+  --yd-space-5: 20px;
+  --yd-space-6: 24px;
+  --yd-radius-sm: 9px;
+  --yd-radius-md: 12px;
+  --yd-radius-lg: 16px;
+  --yd-radius-xl: 18px;
+  --yd-shadow-soft: 0 1px 2px rgba(36, 50, 59, .025), 0 10px 28px rgba(36, 50, 59, .035);
   color: var(--yd-ink);
   background: var(--yd-canvas);
   font: 14px/1.55 "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
@@ -56,14 +66,14 @@ button {
   padding: 7px 12px;
   border: 1px solid var(--line-strong);
   border-radius: 5px;
-  color: #30352f;
-  background: #fbfaf7;
+  color: var(--yd-ink-2);
+  background: var(--yd-surface);
   cursor: pointer;
   font-weight: 560;
   white-space: nowrap;
   transition: background-color .12s ease, border-color .12s ease, color .12s ease, transform .12s ease;
 }
-button:hover { background: #efeee9; border-color: #aeb2a8; }
+button:hover { background: var(--yd-surface-2); border-color: var(--yd-line-2); }
 button:active { transform: translateY(1px); }
 button:disabled { cursor: default; opacity: .48; transform: none; }
 button:focus:not(:focus-visible), input:focus:not(:focus-visible), select:focus:not(:focus-visible), textarea:focus:not(:focus-visible) { outline: none; }

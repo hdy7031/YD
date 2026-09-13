@@ -14,7 +14,7 @@ export const emptyScheduleText=(total:number)=>total?'当前教学周没有课�
 
 // Course colour carries course identity, so it must never depend on list order,
 // the visible week or a reschedule: the same course is always the same colour
-// everywhere it appears (weekly grid, today, Ta 的日程).
+// everywhere it appears (weekly grid, today, TA 的安排).
 export const courseTones=['sea','blue','violet','rose','amber'] as const;
 export function courseTone(course:{id?:string;title?:string;person?:string}){
   const key=course.id||`${course.person??''}:${course.title??''}`;
