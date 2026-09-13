@@ -33,26 +33,35 @@ export function EmptyState({title,description,actions,compact=false,illustration
 interface ScheduleGridProps {
   state:State; profile:Profile; courses:Course[]; now:number;
   edit:(course:Course)=>void; create:(value:Partial<Course>)=>void;
+  mode:'overview'|'edit'; onModeChange:(mode:'overview'|'edit')=>void;
 }
-export function ScheduleGrid({state,profile,courses,now,edit,create}:ScheduleGridProps){
+export function ScheduleGrid({state,profile,courses,now,edit,create,mode,onModeChange}:ScheduleGridProps){
   const [week,setWeek]=useState(()=>weekNow(profile,now));
   useEffect(()=>setWeek(weekNow(profile,now)),[profile.id,profile.startDate,profile.weeks]);
   const monday=addDays(profile.startDate,(week-1)*7),active=scheduleDays(state,monday,profile.id);
   return h(React.Fragment,null,
     h('div',{className:'schedule-toolbar'},
       h('div',null,h('strong',null,`${profile.name}的第 ${week} 教学周`),h('small',null,`${shortDate(monday)}—${shortDate(addDays(monday,6))}`)),
-      h('div',{className:'week-switch'},h('button',{disabled:week<=1,onClick:()=>setWeek(w=>w-1),'aria-label':'上一教学周'},'‹'),h('select',{'aria-label':'查看教学周',value:week,onChange:(e:React.ChangeEvent<HTMLSelectElement>)=>setWeek(Number(e.target.value))},...Array.from({length:profile.weeks},(_,i)=>h('option',{value:i+1,key:i+1},`第 ${i+1} 周`))),h('button',{disabled:week>=profile.weeks,onClick:()=>setWeek(w=>w+1),'aria-label':'下一教学周'},'›'))),
-    h('div',{className:'schedule-scroll'},h('div',{className:'schedule-grid',style:{'--period-count':profile.periods.length} as React.CSSProperties},
+      h('div',{className:'schedule-view-actions'},
+        h('div',{className:'segmented schedule-mode',role:'group','aria-label':'课表模式'},
+          h('button',{type:'button',className:mode==='overview'?'active':'','aria-pressed':mode==='overview',onClick:()=>onModeChange('overview')},'一览'),
+          h('button',{type:'button',className:mode==='edit'?'active':'','aria-pressed':mode==='edit',onClick:()=>onModeChange('edit')},'编辑')),
+        h('div',{className:'week-switch'},h('button',{disabled:week<=1,onClick:()=>setWeek(w=>w-1),'aria-label':'上一教学周'},'‹'),h('select',{'aria-label':'查看教学周',value:week,onChange:(e:React.ChangeEvent<HTMLSelectElement>)=>setWeek(Number(e.target.value))},...Array.from({length:profile.weeks},(_,i)=>h('option',{value:i+1,key:i+1},`第 ${i+1} 周`))),h('button',{disabled:week>=profile.weeks,onClick:()=>setWeek(w=>w+1),'aria-label':'下一教学周'},'›')))),
+    h('div',{className:`schedule-scroll schedule-${mode}`,'data-schedule-mode':mode},h('div',{className:`schedule-grid schedule-grid-${mode}`,style:{'--period-count':profile.periods.length} as React.CSSProperties},
       h('div',{className:'schedule-corner'},'节次'),
       ...Array.from({length:7},(_,d)=>h('div',{className:'schedule-day',key:'d'+d},h('strong',null,'周'+'一二三四五六日'[d]),h('small',null,shortDate(addDays(monday,d))))),
       ...profile.periods.map((p,i)=>h('div',{className:'period-label',key:'p'+i,style:{gridColumn:1,gridRow:i+2}},h('strong',null,i+1),h('small',null,`${p.start}\n${p.end}`))),
-      ...Array.from({length:profile.periods.length*7},(_,i)=>{const period=Math.floor(i/7)+1,day=i%7+1;return h('button',{className:'schedule-cell',key:`${period}-${day}`,style:{gridColumn:day+1,gridRow:period+1},title:`周${'一二三四五六日'[day-1]}第 ${period} 节添加课程`,onClick:()=>create({weekday:day,first:period,last:period,weeks:[week]})},'＋');}),
+      ...Array.from({length:profile.periods.length*7},(_,i)=>{const period=Math.floor(i/7)+1,day=i%7+1;return mode==='edit'
+        ?h('button',{className:'schedule-cell',key:`${period}-${day}`,style:{gridColumn:day+1,gridRow:period+1},title:`周${'一二三四五六日'[day-1]}第 ${period} 节添加课程`,onClick:()=>create({weekday:day,first:period,last:period,weeks:[week]})},'＋')
+        :h('span',{className:'schedule-cell schedule-cell-readonly','aria-hidden':true,key:`${period}-${day}`,style:{gridColumn:day+1,gridRow:period+1}});}),
       ...active.map(o=>{const c=courses.find(c=>c.id===o.courseId)!;
         const day=o.day,start=o.startClock,end=o.endClock;
         const index=profile.periods.findIndex(p=>p.end>start),first=index<0?profile.periods.length-1:index,last=profile.periods.findLastIndex(p=>p.start<end);
-        return h('button',{className:`course-block ${courseTone(c)}`,'data-course-id':c.id,key:o.segmentId,style:{gridColumn:weekday(day)+1,gridRow:`${first+2} / ${Math.max(first,last)+3}`},onClick:()=>edit(c),title:`编辑课程模板 ${c.title}`},h('strong',null,o.title),h('small',null,`${start}—${end} · ${o.place||'未填地点'}`),state.exceptions.some(e=>e.courseId===o.courseId&&e.date===o.date)?h('em',null,'本次已调课'):null);}),
+        const content=h(React.Fragment,null,h('strong',null,o.title),h('small',null,mode==='overview'?(o.place||'地点未填'):`${start}—${end} · ${o.place||'未填地点'}`),state.exceptions.some(e=>e.courseId===o.courseId&&e.date===o.date)?h('em',null,'本次已调课'):null);
+        const props={className:`course-block ${courseTone(c)}`,'data-course-id':c.id,key:o.segmentId,style:{gridColumn:weekday(day)+1,gridRow:`${first+2} / ${Math.max(first,last)+3}`},title:mode==='edit'?`编辑课程模板 ${c.title}`:`${o.title} · ${start}—${end} · ${o.place||'地点未填'}`};
+        return mode==='edit'?h('button',{...props,onClick:()=>edit(c)},content):h('div',props,content);}),
       !active.length?h('div',{className:'schedule-empty'},h('strong',null,emptyScheduleText(courses.length)),h('small',null,'点击空白格可按星期与节次添加课程，也可以导入课表文件。')):null)),
-    h('p',{className:'schedule-hint'},'点击课程编辑；点击空白格可按该星期、节次和当前周新增课程。'));
+    h('p',{className:'schedule-hint'},mode==='overview'?'一览模式用于完整查看本周；切换到编辑模式可新增或修改课程。':'点击课程编辑；点击空白格可按该星期、节次和当前周新增课程。'));
 }
 
 interface OverviewProps {

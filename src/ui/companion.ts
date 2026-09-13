@@ -215,7 +215,7 @@ export function Mini(){
       h('button',{className:'ghost',onClick:()=>void api.window('settings')},'桌宠设置')));
 }
 const modeOptions:[PetPreferences['mode'],string,string][]=[
-  ['custom','专属角色桌宠','默认形象，随时段与双方状态切换动作'],
+  ['custom','角色陪伴','使用当前角色素材，并随状态切换动作'],
   ['orb','状态浮标','常驻的轻量状态 Dock：每行一个人，显示当前状态与结束时间'],
 ];
 
@@ -350,9 +350,9 @@ function AvatarPersonPicker({profile,busy,run}:{profile:Profile;busy:boolean;run
   useEffect(()=>{const current=getAvatarPack(persistedId);setCandidate(current?.id??DEFAULT_AVATAR_PACK_ID);},[profile.id,persistedId]);
   useEffect(()=>setPreviewState(pack.previewState),[pack.id]);
   const selectedAvailable=!!persistedPack;
-  const title=profile.role==='self'?'我的桌宠形象':`${profile.name}的桌宠形象`;
+  const title=profile.role==='self'?'当前角色':`${profile.name}的角色`;
   return h('section',{className:'avatar-person-picker','data-avatar-person':profile.id},
-    h('div',{className:'avatar-picker-head'},h('div',null,h('h4',null,title),h('p',{className:'muted'},profile.role==='self'?'Solo 模式下代表我':'Together 模式下代表同行者')),
+    h('div',{className:'avatar-picker-head'},h('div',null,h('h4',null,title),h('p',{className:'muted'},profile.role==='self'?'单人或双人模式下的本人角色':'添加陪伴对象后显示的同行者角色')),
       !selectedAvailable?h('span',{className:'avatar-unavailable','data-avatar-unavailable':'true'},'当前选择不可用'):null),
     h('div',{className:'avatar-picker-layout'},
       h('div',{className:'avatar-pack-grid'},...listAvatarPacks().map(option=>h(AvatarPackCard,{key:option.id,pack:option,active:option.id===pack.id,selected:selectedAvailable&&option.id===persistedId,busy,onPreview:()=>setCandidate(option.id)}))),
@@ -370,7 +370,8 @@ function AvatarSettings({state,busy,run}:{state:State;busy:boolean;run:(fn:()=>P
   return h('div',{className:'avatar-settings'},...state.profiles.map(profile=>h(AvatarPersonPicker,{key:profile.id,profile,busy,run})));
 }
 
-export function PetSettings({live,settings,state}:{live:LiveSnapshot|null;settings?:{launch:boolean;trayResident?:boolean};state?:State}){
+export type PetSettingsSection='companionship'|'rhythm'|'runtime';
+export function PetSettings({live,settings,state,section='companionship'}:{live:LiveSnapshot|null;settings?:{launch:boolean;trayResident?:boolean};state?:State;section?:PetSettingsSection}){
   const [error,setError]=useState('');const [busy,setBusy]=useState(false);
   const assets=useCompanionAssets(live?.petInstance.avatarPackId);
   const p=live?.preferences??petDefaults;
@@ -384,23 +385,24 @@ export function PetSettings({live,settings,state}:{live:LiveSnapshot|null;settin
   // 这里说的是"桌宠主体"的作息：Together 是同行者，Solo 是本人。
   const schedule=petRoutineSummary(state?resolvePetSubject(state).routine:undefined);
   const sizeChoices=h('div',{className:'segmented setting-segmented'},...(['small','medium','large'] as const).map((value,index)=>h('button',{key:value,type:'button',className:p.size===value?'active':'',disabled:busy,onClick:()=>save({size:value})},['小','中','大'][index])));
-  return h('section',{className:'pet-settings'},h('h2',null,'桌面陪伴'),
-    state?block('桌宠形象',h(AvatarSettings,{state,busy,run})):null,
-    block('外观',h(React.Fragment,null,
+  const together=(state?.profiles.length??1)>1;
+  return h('section',{className:'pet-settings'},h('h2',null,section==='companionship'?'桌面陪伴':section==='rhythm'?'节奏与状态':'运行与提醒'),
+    section==='companionship'&&state?block('角色',h(AvatarSettings,{state,busy,run})):null,
+    section==='companionship'?block('呈现方式',h(React.Fragment,null,
       h('div',{className:'mode-choices',role:'radiogroup','aria-label':'桌宠显示模式'},...modeOptions.map(([value,label,note])=>{
         return h('button',{key:value,type:'button',role:'radio','aria-checked':p.mode===value,className:p.mode===value?'mode-choice active':'mode-choice',disabled:busy,onClick:()=>save({mode:value})},
           h('strong',null,label),h('small',null,note));
       })),
       p.mode==='custom'?h('div',{className:'setting-row'},h('span',null,'大小'),sizeChoices):null,
       h('p',{className:'muted setting-note'},assets?assets.reason:'正在读取专属角色素材……'),
-      paused?h('p',{className:'muted setting-note'},`气泡已暂停，${clockText(p.pausedUntil)} 自动恢复。`):null)),
-    p.mode!=='custom'?block('大小',sizeChoices):null,
-    block('动态效果',h('div',{className:'mode-choices',role:'radiogroup','aria-label':'桌宠动态效果'},...motionOptions.map(([value,label,note])=>h('button',{key:value,type:'button',role:'radio','aria-checked':motionMode===value,className:motionMode===value?'mode-choice active':'mode-choice',disabled:busy,onClick:()=>save({animate:true,reduceMotion:value==='reduced'})},h('strong',null,label),h('small',null,note))))),
-    block('气泡提醒',h(React.Fragment,null,
+      paused?h('p',{className:'muted setting-note'},`气泡已暂停，${clockText(p.pausedUntil)} 自动恢复。`):null)):null,
+    section==='companionship'&&p.mode!=='custom'?block('大小',sizeChoices):null,
+    section==='rhythm'?block('动态效果',h('div',{className:'mode-choices',role:'radiogroup','aria-label':'桌宠动态效果'},...motionOptions.map(([value,label,note])=>h('button',{key:value,type:'button',role:'radio','aria-checked':motionMode===value,className:motionMode===value?'mode-choice active':'mode-choice',disabled:busy,onClick:()=>save({animate:true,reduceMotion:value==='reduced'})},h('strong',null,label),h('small',null,note))))):null,
+    section==='rhythm'?block('气泡提醒',h(React.Fragment,null,
       check('到时间时用气泡提醒我',p.bubbles,value=>save({bubbles:value}),paused),
       h('label',{className:'setting-row'},h('span',null,'气泡停留时长'),h('span',{className:'setting-inline'},h('input',{type:'number',min:3,max:30,value:p.duration,disabled:busy||paused,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>{const n=Number(e.target.value);if(n>=3&&n<=30)save({duration:n});}}),'秒')),
-      h('div',{className:'actions'},paused?h('button',{type:'button',className:'secondary',disabled:busy,onClick:()=>save({pausedUntil:0})},'恢复气泡提醒'):h('button',{type:'button',className:'secondary',disabled:busy,onClick:()=>save({pausedUntil:Date.now()+3600000})},'暂停气泡 1 小时')))),
-    block('作息状态',h(React.Fragment,null,
+      h('div',{className:'actions'},paused?h('button',{type:'button',className:'secondary',disabled:busy,onClick:()=>save({pausedUntil:0})},'恢复气泡提醒'):h('button',{type:'button',className:'secondary',disabled:busy,onClick:()=>save({pausedUntil:Date.now()+3600000})},'暂停气泡 1 小时')))):null,
+    section==='rhythm'?block('作息状态',h(React.Fragment,null,
       // 时间状态与这段说明都来自桌宠主体自己的作息（profile.routine），不是写死的时间表。
       check(`夜间自动睡觉${schedule.sleep?`（${schedule.sleep}）`:''}`,p.nightRest,value=>save({nightRest:value})),
       h('p',{className:'muted setting-note'},!schedule.sleep
@@ -408,13 +410,13 @@ export function PetSettings({live,settings,state}:{live:LiveSnapshot|null;settin
         :p.nightRest
           ?`${schedule.sleep} 之间，只要没有进行中的安排、也没有到时间的提醒，桌宠就会安静地睡觉${schedule.states?`；${schedule.states}`:''}。`
           :'已关闭夜间自动睡觉：夜间也按平时的状态显示，其它时间状态仍按作息生效。'),
-      h('p',{className:'muted setting-note'},'时间状态按作息规则与北京时间判断，不需要联网校准。'))),
-    state?block('日常节奏',h(RoutineSettings,{state,busy,onError:setError})):null,
-    block('窗口行为',h(React.Fragment,null,
-      check('单击桌宠显示双方状态',p.miniPanel,value=>save({miniPanel:value})),
+      h('p',{className:'muted setting-note'},'时间状态按作息规则与北京时间判断，不需要联网校准。'))):null,
+    section==='rhythm'&&state?block('日常节奏',h(RoutineSettings,{state,busy,onError:setError})):null,
+    section==='runtime'?block('窗口行为',h(React.Fragment,null,
+      check(together?'单击桌面陪伴显示双方状态':'单击桌面陪伴显示当前状态',p.miniPanel,value=>save({miniPanel:value})),
       check('记住桌宠位置',p.rememberPosition,value=>save({rememberPosition:value})),
       check('关闭主窗口后驻留托盘（提醒继续）',settings?.trayResident!==false,value=>saveSetting({trayResident:value})),
       settings?.trayResident===false?h('p',{className:'muted setting-note'},'关闭主窗口将退出 YD，退出后不会触发提醒。'):null,
-      check('登录 Windows 后启动 YD',!!settings?.launch,value=>saveSetting({launch:value})))),
+      check('登录 Windows 后启动 YD',!!settings?.launch,value=>saveSetting({launch:value})))):null,
     error?h('p',{className:'error',role:'alert'},error):null);
 }

@@ -15,7 +15,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BellRing, CalendarClock, CalendarDays, Clock3, Inbox, ListTodo, Settings, Table2 } from 'lucide-react';
 import { initial, id, occurrences, conflicts, epoch, dateOf, addDays, weekday, DAY } from '../core.ts';
-import type { DesktopAPI, State, Entity, Command, Course, Exception, Task, Event, Notice, Occurrence, ChecklistItem, PersonId, SchedulePackage } from '../types.ts';
+import type { DesktopAPI, State, Entity, Command, Course, Exception, Task, Event, Notice, Occurrence, Reminder, ChecklistItem, PersonId, SchedulePackage } from '../types.ts';
 declare global { interface Window { dayhub: DesktopAPI } }
 const api=window.dayhub;
 const h=(type:any,props:any,...children:any[]):React.ReactElement=>React.createElement(type,props,...children);
@@ -81,6 +81,32 @@ function PartnerStatusCard({status,updatedAt,now}:{status:PersonStatus;updatedAt
       !active&&summary[status.code]?h('p',{className:'partner-status-summary'},summary[status.code]):null,
       next?h('p',{className:'partner-next-course'},h('span',null,status.code==='TERM_NOT_STARTED'?'首节 · ':'下一节 · '),nextCourseText(next,now)):null),
     h('small',{className:'partner-status-meta'},`课表更新 · ${fmt(updatedAt,true)}`));
+}
+function ReminderWorkbench({items,now,render}:{items:Reminder[];now:number;render:(item:Reminder)=>React.ReactNode}){
+  const today=dateOf(now);
+  const groups=[
+    {key:'overdue',label:'已逾期',items:items.filter(item=>dateOf(item.due)<today)},
+    {key:'today',label:'今天',items:items.filter(item=>dateOf(item.due)===today)},
+    {key:'later',label:'之后',items:items.filter(item=>dateOf(item.due)>today)},
+  ].filter(group=>group.items.length);
+  return h('div',{className:'reminder-workbench'},
+    h('section',{className:'reminder-summary','aria-label':'未处理提醒摘要'},h('div',null,h('span',null,'未处理提醒'),h('strong',null,items.length)),h('p',null,'只显示已到提醒时间、尚未处理的项目。')),
+    items.length
+      ?h('div',{className:'reminder-groups'},...groups.map(group=>h('section',{className:'reminder-group',key:group.key},h('div',{className:'section-head'},h('h2',null,group.label),h('small',null,`${group.items.length} 项`)),...group.items.map(render))))
+      :h('section',{className:'reminder-empty'},h(EmptyState,{title:'没有未处理提醒',description:'新的到时提醒会按时间出现在这里；确认提醒不会自动完成待办。',illustration:'assets/gen/empty-reminders.png'})));
+}
+function AboutPanel(){
+  return h('section',{className:'entry about-brand'},
+    h('img',{className:'about-brand-whisper',src:'assets/gen/about-brand-whisper.png',alt:'','aria-hidden':true,draggable:false}),
+    h('div',{className:'about-brand-visual'},h(BrandMark,{className:'about-brand-logo'})),
+    h('div',{className:'about-brand-copy'},
+      h('p',{className:'about-brand-kicker'},'Personal Hub'),h('h2',null,'YD'),h('p',{className:'about-brand-line'},'Your Day'),
+      h('p',{className:'about-brand-slogan'},'your day, quietly organized.'),
+      h('dl',{className:'about-meta'},
+        h('div',null,h('dt',null,'版本'),h('dd',null,'0.2.20')),
+        h('div',null,h('dt',null,'数据'),h('dd',null,'本地优先 · 离线可用')),
+        h('div',null,h('dt',null,'时间'),h('dd',null,'Asia/Shanghai'))),
+      h('p',{className:'muted'},'所有记录都保存在本机；只有你明确触发的导入、备份或系统能力才会处理对应数据。')));
 }
 // Phase 3C：设置当前状态（临时手动状态）。
 //
@@ -206,7 +232,7 @@ function Editor({entity,value,state,close,saved,convert,duplicate,remove,sourceO
 }
 function App(){
   const clock=useLive();
- const {state,set,error,err}=useData(),now=clock?.now??Date.now(),[tab,setTab]=useState('today'),[editor,edit]=useState<any>(null),[message,say]=useState(''),[query,search]=useState(''),[filter,setFilter]=useState('all'),[selectedDate,setDate]=useState(dateOf(Date.now())),[person,setPerson]=useState<PersonId|null>(null),[selectedNotice,setSelectedNotice]=useState<string|null>(null),[pending,setPending]=useState(false),[importing,setImporting]=useState(false),[schedule,setSchedule]=useState<SchedulePackage|null>(null),[deletion,setDeletion]=useState<{entity:Entity;id:string}|null>(null);
+ const {state,set,error,err}=useData(),now=clock?.now??Date.now(),[tab,setTab]=useState('today'),[editor,edit]=useState<any>(null),[message,say]=useState(''),[query,search]=useState(''),[filter,setFilter]=useState('all'),[selectedDate,setDate]=useState(dateOf(Date.now())),[person,setPerson]=useState<PersonId|null>(null),[scheduleMode,setScheduleMode]=useState<'overview'|'edit'>('overview'),[settingsSection,setSettingsSection]=useState<'companionship'|'rhythm'|'school'|'runtime'|'data'|'about'>('companionship'),[selectedNotice,setSelectedNotice]=useState<string|null>(null),[pending,setPending]=useState(false),[importing,setImporting]=useState(false),[schedule,setSchedule]=useState<SchedulePackage|null>(null),[deletion,setDeletion]=useState<{entity:Entity;id:string}|null>(null);
   // Phase 3C：临时手动状态的对话框（首页状态行与桌宠菜单都能打开它）。
   const [manualOpen,setManualOpen]=useState(false);
   useEffect(()=>{document.body.classList.add('main-body');return()=>document.body.classList.remove('main-body');},[]);
@@ -245,6 +271,11 @@ function App(){
   useEffect(()=>api.onStatus(()=>{setTab('today');setManualOpen(true);}),[]);
   async function change(cmd:Command){setPending(true);err('');try{const s=await api.change(cmd);set(s);return s;}catch(e){err(msg(e));return null;}finally{setPending(false);}}
   function open(entity:Entity,value?:any,convert?:string){if(entity==='notices'){setTab('inbox');setSelectedNotice(value?.id||null);return;}edit({entity,value:value||newValue(entity,activePerson,selfId),convert});err('');}
+  function addCompanion(){
+    const self=requireSelfProfile(s),template=getCompanionProfile(initial(now));
+    if(!template||companion)return;
+    open('profiles',{...template,id:id(),name:'TA',shortAlias:'D',startDate:self.startDate,weeks:self.weeks,periods:structuredClone(self.periods),updatedAt:now});
+  }
   async function importImage(paste=false){setImporting(true);err('');try{const result=await(paste?api.pasteImage():api.importImage());if(result){const noticeId=id();set(await api.change({type:'inbound',id:noticeId,payload:{image:result.image,sourceType:paste?'SCREENSHOT':'IMAGE_IMPORT'}}));setTab('inbox');setSelectedNotice(noticeId);try{const text=await api.ocr(result.image);if(text.trim())set(await api.parseNotice(noticeId,text,true));}catch(e){err(msg(e));}}else if(paste)say('剪贴板中没有图片，可使用粘贴文字。');}catch(e){err(msg(e));}finally{setImporting(false);}}
   async function chooseSchedule(){setImporting(true);err('');try{const value=await api.chooseSchedule();if(value)setSchedule(value);}catch(e){err(msg(e));}finally{setImporting(false);}}
   if(!state)return h('main',{className:'loading'},h('h1',null,'YD'),h('p',null,error||'正在打开本地记录…'));
@@ -326,7 +357,7 @@ function App(){
       h('header',{className:'page-head'},h('div',null,h('div',{className:'eyebrow'},h('span',null,`${dateOf(now)} · ${fmt(now)}`),h('em',{className:'eyebrow-zone'},'北京时间')),h('h1',null,labels[tabSpec.key]),kind==='today'?h('p',{className:'page-tagline'},'让每一天，更从容。'):null),kind==='today'?h('div',{className:'actions'},b('新建待办',()=>open('tasks'),'primary'),b('新建会议',()=>open('events'),'secondary')):null),
       error?h('div',{className:'error banner',role:'alert'},error,b('关闭',()=>err(''),'ghost')):null,
       message?h('div',{className:'banner',role:'status'},message,b('知道了',()=>say(''),'ghost')):null,
-      !s.settings.setup?h('section',{className:'setup-banner'},h('h2',null,'先核对双方的学校作息'),h('p',null,'请核对双方第一教学周和节次时间；已有记录会保留。'),h('div',{className:'actions'},...s.profiles.map(p=>b(`设置${p.name}的作息`,()=>open('profiles',p),'secondary')),b('已核对，开始使用',()=>change({type:'settings',setup:true}),'primary',pending))):null,
+       !s.settings.setup?h('section',{className:'setup-banner'},h('h2',null,s.profiles.length>1?'先核对每个人的学校作息':'先核对学校作息'),h('p',null,'请核对第一教学周和节次时间；已有记录会保留。'),h('div',{className:'actions'},...s.profiles.map(p=>b(`设置${p.name}的作息`,()=>open('profiles',p),'secondary')),b('已核对，开始使用',()=>change({type:'settings',setup:true}),'primary',pending))):null,
       kind==='today'?h(React.Fragment,null,
         h(StatusRows,{live,onSetStatus:()=>setManualOpen(true)}),
         attention.total?h('section',{className:'attention-panel'},h('div',{className:'attention-title'},h('div',null,h('div',{className:'eyebrow'},'需要处理'),h('h2',null,`需要处理 ${attention.total}`))),h('div',{className:'attention-items'},attention.notices?b(`${attention.notices} 条通知待核对`,()=>setTab('inbox'),'attention-link'):null,attention.reminders?b(`${attention.reminders} 个提醒已到时间`,()=>setTab('reminders'),'attention-link'):null,attention.overdue?b(`${attention.overdue} 个待办已逾期`,()=>setTab('tasks'),'attention-link'):null)):null,
@@ -338,7 +369,7 @@ function App(){
                 actions:h('input',{'aria-label':'查看日期',type:'date',value:selectedDate,onChange:(e:any)=>{if(e.target.value)setDate(e.target.value);}})}),
               selfPlan.items.length
                 ?h(DailyAgendaList,{plan:selfPlan,renderItem:(item:DailyAgendaItem)=>agendaRow(item,{checklistOwner:selfItemOwner(item)})})
-                :h(DailyEmptyState,{title:selectedIsToday?'今天没有安排':'这一天没有安排',description:'课程、会议与活动会显示在这里；每天的摘要结构保持不变。',illustration:'assets/gen/empty-schedule.png',actions:h(React.Fragment,null,selectedIsToday?b('新建会议',()=>open('events'),'secondary'):null,b('管理课表',()=>setTab('courses'),'ghost'))}))))):null,
+                :h(DailyEmptyState,{title:selectedIsToday?'今天没有安排':'这一天没有安排',description:'课程、会议与活动会显示在这里。',illustration:'assets/gen/empty-home-day.png',actions:h(React.Fragment,null,selectedIsToday?b('新建会议',()=>open('events'),'secondary'):null,b('管理课表',()=>setTab('courses'),'ghost'))}))))):null,
       kind==='person'&&companion&&companionStatus&&companionPlan?h(React.Fragment,null,
         h('div',{className:'daily-plan'},
           h(PartnerStatusCard,{status:companionStatus,updatedAt:companion.updatedAt,now}),
@@ -347,32 +378,35 @@ function App(){
               actions:h('input',{'aria-label':`查看 ${companionDisplayName(companion)} 的日期`,type:'date',value:selectedDate,onChange:(e:any)=>{if(e.target.value)setDate(e.target.value);}})}),
             companionPlan.items.length
               ?h(DailyAgendaList,{plan:companionPlan,renderItem:(item:DailyAgendaItem)=>agendaRow(item)})
-              :h(DailyEmptyState,{title:companionEmptyText,description:!hasCompanionSchedule?`导入或录入 ${companionDisplayName(companion)} 的安排后，这里会显示每天的课程与会议。`:selectedIsToday?'今天没有已录入的课程，单次调课与停课会同步更新。':'这一天没有课程安排，可以切换日期查看。',actions:!hasCompanionSchedule?b('前往课表管理',()=>setTab('courses'),'secondary'):null})))):null,
+              :h(DailyEmptyState,{title:companionEmptyText,description:!hasCompanionSchedule?`导入或录入 ${companionDisplayName(companion)} 的安排后，这里会显示每天的课程与会议。`:selectedIsToday?'今天没有已录入的课程。':'这一天没有课程安排，可以切换日期查看。',illustration:'assets/gen/empty-companion-day.png',actions:!hasCompanionSchedule?b('前往课表管理',()=>setTab('courses'),'secondary'):null})))):null,
       kind==='tasks'?h(ManagementOverview,{tasks:[...s.tasks].sort((a,b)=>Number(a.done)-Number(b.done)||(a.due?epoch(a.due):Infinity)-(b.due?epoch(b.due):Infinity)),events:s.events,now,query,setQuery:search,taskCard,editEvent:(event:Event)=>open('events',event),deleteEvent:(event:Event)=>setDeletion({entity:'events',id:event.id}),createTask:()=>open('tasks'),createEvent:()=>open('events')}):null,
       kind==='courses'?h(React.Fragment,null,
         // 课表管理页：先选课表，再加课程；学校作息是配置，降级为一行文字入口。
         h('div',{className:'course-toolbar'},
           h('div',{className:'course-toolbar-main'},
             h('select',{'aria-label':'课表所属人',value:activePerson,onChange:(e:any)=>setPerson(e.target.value)},...personOptions(s).map(o=>h('option',{key:o.value,value:o.value},o.label))),
-            b('添加课程',()=>open('courses'),'primary')),
+             scheduleMode==='edit'?b('添加课程',()=>open('courses'),'primary'):h('span',{className:'course-overview-note'},'一览模式 · 完整查看本周')),
           h('div',{className:'course-toolbar-meta'},
             h('span',null,`${profile.startDate} 起 · 共 ${profile.weeks} 周 · 每日 ${profile.periods.length} 节`),
             h('span',{className:'course-toolbar-dot'},'·'),
             h('span',null,`课表更新 ${fmt(profile.updatedAt,true)}`),
             b('学校作息',()=>open('profiles',profile),'text-button'),
             b(importing?'正在读取…':'导入课表',chooseSchedule,'ghost',importing||pending))),
-        h(ScheduleGrid,{state:s,profile,courses:active,now,edit:(course:Course)=>open('courses',course),create:(value:Partial<Course>)=>open('courses',{...newValue('courses',activePerson,selfId),...value})}),
+        h(ScheduleGrid,{state:s,profile,courses:active,now,mode:scheduleMode,onModeChange:setScheduleMode,edit:(course:Course)=>open('courses',course),create:(value:Partial<Course>)=>open('courses',{...newValue('courses',activePerson,selfId),...value})}),
         h('section',{className:'panel exceptions-panel'},
           h('div',{className:'section-head'},h('div',null,h('h2',null,'单次调课与停课'),h('small',{className:'section-subtitle'},exceptionList.length?`${exceptionList.length} 条记录`:'暂无记录'))),
           exceptionList.length?h('div',{className:'exception-list'},...exceptionList.map(exceptionCard)):h(EmptyState,{title:'还没有单次调课或停课',description:'你可以在上方课程项中点击“本次调课 / 停课”，仅修改某一天的这一次课程。添加后，记录会显示在这里，并影响当日课表与状态展示。',actions:b('查看可修改课程',focusSchedule,'secondary')}))):null,
       kind==='inbox'?h(InboxHub,{state:s,saved:set,selected:selectedNotice,select:setSelectedNotice,open}):null,
-      kind==='reminders'?h(React.Fragment,null,h('p',{className:'muted page-intro'},'这里只计入已到提醒时间、尚未处理的提醒；未来预约提醒不计入。处理提醒不会将待办自动标记完成。'),...pendingReminders.map(r=>h('article',{className:'entry',key:r.id},h('h3',null,r.title),h('p',{className:'muted'},`${fmt(r.due,true)} 到提醒时间 · 未处理`),h('div',{className:'actions'},b('已处理',()=>change({type:'ack',id:r.id}),'primary',pending),...([10,30,60] as const).map(minutes=>b(minutes===60?'1 小时后':`${minutes} 分钟后`,()=>change({type:'snooze',id:r.id,minutes}),'secondary',pending)),b('打开事项',()=>{const [entity,i]=r.target.split(':');const item=(s[entity as Entity] as any[]).find(v=>v.id===i);if(item)open(entity as Entity,item);},'ghost')))),!pendingReminders.length?h('div',{className:'page-empty-stage'},h(EmptyState,{title:'没有未处理提醒',description:'已到提醒时间且尚未处理的提醒会显示在这里。未来预约提醒不计入，确认提醒也不会自动完成待办。',illustration:'assets/gen/empty-reminders.png'})):null):null,
-      kind==='settings'?h('div',{className:'settings-stack'},
-        h(PetSettings,{live,settings:s.settings,state:s}),
-        h('section',{className:'entry'},h('h2',null,'学校作息'),h('div',{className:'actions'},...s.profiles.map(p=>b(`${p.name}的学期与节次`,()=>open('profiles',p),'secondary')))),
-        h('section',{className:'entry'},h('h2',null,'运行与提醒'),h('p',{className:'muted'},'退出应用、关机或休眠时暂停提醒，恢复后汇总遗漏事项。系统通知是否可见受 Windows 通知设置影响。'),b('发送测试通知',async()=>{try{say(await api.testNotification());}catch(e){err(msg(e));}},'secondary')),
-        h('section',{className:'entry'},h('h2',null,'本地备份'),h('p',{className:'muted'},'备份包含双方课表、日程、待办、原始通知图片和提醒状态。请妥善保存备份文件。'),h('div',{className:'actions'},b('导出完整备份',async()=>{try{const file=await api.backup();if(file)say('备份已导出：'+file);}catch(e){err(msg(e));}},'primary'),b('从备份恢复',async()=>{try{const result=await api.restore();if(result){set(result);say('备份已恢复。恢复前的数据已自动备份在应用数据目录。');}}catch(e){err(msg(e));}},'secondary'))),
-        h('section',{className:'entry about-brand'},h('div',{className:'about-brand-visual'},h(BrandMark,{className:'about-brand-logo'})),h('div',{className:'about-brand-copy'},h('h2',null,'YD'),h('p',{className:'about-brand-line'},'Your Day · 个人事务中枢'),h('p',{className:'muted'},'所有记录都保存在本机，不联网也能使用；北京时间 · 离线可用。')))):null
+      kind==='reminders'?h(ReminderWorkbench,{items:pendingReminders,now,render:(r:Reminder)=>h('article',{className:'entry reminder-item',key:r.id},h('div',{className:'reminder-item-copy'},h('h3',null,r.title),h('p',{className:'muted'},`${fmt(r.due,true)} 到提醒时间 · 未处理`)),h('div',{className:'actions'},b('已处理',()=>change({type:'ack',id:r.id}),'primary',pending),...([10,30,60] as const).map(minutes=>b(minutes===60?'1 小时后':`${minutes} 分钟后`,()=>change({type:'snooze',id:r.id,minutes}),'secondary',pending)),b('打开事项',()=>{const [entity,i]=r.target.split(':');const item=(s[entity as Entity] as any[]).find(v=>v.id===i);if(item)open(entity as Entity,item);},'ghost')))}):null,
+      kind==='settings'?h('div',{className:'settings-layout'},
+        h('nav',{className:'settings-nav','aria-label':'设置分区'},...([['companionship','角色与陪伴'],['rhythm','节奏与状态'],['school','课表与学校'],['runtime','运行与提醒'],['data','数据与备份'],['about','关于 YD']] as const).map(([key,label])=>h('button',{key,type:'button',className:settingsSection===key?'active':'','aria-current':settingsSection===key?'page':undefined,onClick:()=>setSettingsSection(key)},label))),
+        h('div',{className:'settings-content'},
+          settingsSection==='companionship'?h('div',{className:'settings-stack'},h(PetSettings,{live,settings:s.settings,state:s,section:'companionship'}),!companion?h('section',{className:'entry solo-companion-invite'},h('h2',null,'添加陪伴对象'),h('p',{className:'muted'},'添加后可查看对方安排与状态，并为其选择独立角色。单人模式中的现有数据不会改变。'),b('添加陪伴对象',addCompanion,'secondary')):null):null,
+          settingsSection==='rhythm'?h(PetSettings,{live,settings:s.settings,state:s,section:'rhythm'}):null,
+          settingsSection==='school'?h('section',{className:'entry settings-section'},h('h2',null,'课表与学校'),h('p',{className:'muted'},'分别维护每个档案的学期范围与节次时间，不会自动生成或覆盖课程。'),h('div',{className:'actions'},...s.profiles.map(p=>b(`${p.name}的学期与节次`,()=>open('profiles',p),'secondary')))):null,
+          settingsSection==='runtime'?h('div',{className:'settings-stack'},h(PetSettings,{live,settings:s.settings,state:s,section:'runtime'}),h('section',{className:'entry settings-section'},h('h2',null,'系统通知'),h('p',{className:'muted'},'退出应用、关机或休眠时暂停提醒，恢复后汇总遗漏事项。系统通知是否可见受 Windows 通知设置影响。'),b('发送测试通知',async()=>{try{say(await api.testNotification());}catch(e){err(msg(e));}},'secondary'))):null,
+          settingsSection==='data'?h('section',{className:'entry settings-section'},h('h2',null,'数据与备份'),h('p',{className:'muted'},`备份包含${s.profiles.length>1?'所有档案的':'当前'}课表、日程、待办、原始通知图片和提醒状态。请妥善保存备份文件。`),h('div',{className:'actions'},b('导出完整备份',async()=>{try{const file=await api.backup();if(file)say('备份已导出：'+file);}catch(e){err(msg(e));}},'primary'),b('从备份恢复',async()=>{try{const result=await api.restore();if(result){set(result);say('备份已恢复。恢复前的数据已自动备份在应用数据目录。');}}catch(e){err(msg(e));}},'secondary'))):null,
+          settingsSection==='about'?h(AboutPanel,null):null)):null
       )
     ),
     editor?h(Editor,{key:editor.entity+editor.value.id,entity:editor.entity,value:editor.value,convert:editor.convert,state:s,close:()=>edit(null),sourceOpen:(id:string)=>{edit(null);setTab('inbox');setSelectedNotice(id);},saved:(next:State)=>{set(next);say('已保存到本机。');},remove:(entity:Entity,id:string)=>{edit(null);setDeletion({entity,id});},duplicate:(course:Course)=>edit({entity:'courses',value:{...course,id:id(),title:course.title+'（副本）',checklist:course.checklist.map(x=>({...x,id:id(),done:false}))}})}):null,

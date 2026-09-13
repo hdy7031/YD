@@ -61,7 +61,7 @@ app.whenReady().then(async () => {
     check('首页只显示一个状态行', await run("document.querySelectorAll('.dual-status .person-status').length===1"));
     check('首页显示本人课程', await run("document.body.textContent.includes('Machine Learning')||document.body.textContent.includes('Computer Vision')"));
     check('安排归属下拉只有本人一个选项', await run("(async()=>{[...document.querySelectorAll('.nav-item')].find(b=>b.textContent.trim()==='课表管理').click();await new Promise(r=>setTimeout(r,150));const s=document.querySelector('[aria-label=\"课表所属人\"]');return !!s&&s.options.length===1&&s.options[0].textContent==='我的安排'})()"));
-    check('设置页只列出本人作息', await run("(async()=>{[...document.querySelectorAll('.nav-item')].find(b=>b.textContent.trim()==='设置与备份').click();await new Promise(r=>setTimeout(r,150));const t=document.body.textContent;return t.includes('Alex的学期与节次')&&!t.includes('Ta的学期')})()"));
+    check('设置页只列出本人作息', await run("(async()=>{[...document.querySelectorAll('.nav-item')].find(b=>b.textContent.trim()==='设置与备份').click();await new Promise(r=>setTimeout(r,100));[...document.querySelectorAll('.settings-nav button')].find(b=>b.textContent.trim()==='课表与学校').click();await new Promise(r=>setTimeout(r,100));const t=document.body.textContent;return t.includes('Alex的学期与节次')&&!t.includes('Ta的学期')})()"));
     // 逐页点击：每一页都要有内容，且不出现 undefined / 幻影同行者。
     const pages = await run("document.querySelectorAll('.nav-item').length");
     for (let index = 0; index < pages; index++) {

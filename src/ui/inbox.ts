@@ -167,7 +167,7 @@ export function InboxHub({state,saved,selected,select,open}:Props){
         !list.length?h('div',{className:'inbox-empty muted'},filter==='all'?'暂无通知。':'这个筛选下没有通知。'):null),
       h('section',{className:'inbox-detail-pane','aria-label':'通知详情'},
         n?h(InboxDetail,{key:n.id,notice:n,state,saved,open,back:()=>select(null),narrow})
-          :h('div',{className:'inbox-placeholder'},h('strong',null,'选择一条通知查看详情'),h('p',{className:'muted'},'列表和筛选会一直留在左侧；右侧显示原始通知、提取文字与整理结果。')))));
+          :h('div',{className:'inbox-placeholder'},h('img',{src:'assets/gen/empty-inbox-selection.png',alt:'','aria-hidden':true,draggable:false}),h('div',null,h('strong',null,'选择一条通知查看详情'),h('p',{className:'muted'},'列表和筛选保留在左侧；右侧显示原始通知、提取文字与整理结果。'))))));
 }
 function InboxDetail({notice:n,state,saved,open,back,narrow}:{notice:Notice;state:State;saved:(s:State)=>void;open:Props['open'];back:()=>void;narrow:boolean}){
   const [draft,setDraft]=useState<ParsedDraft>(n.parsedData||blankDraft()),[text,setText]=useState(n.text),[error,err]=useState(''),[busy,setBusy]=useState(false),[allow,setAllow]=useState(false),[updateId,setUpdate]=useState(''),[deleting,setDeleting]=useState(false);
