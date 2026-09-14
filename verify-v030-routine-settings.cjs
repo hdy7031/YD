@@ -61,9 +61,16 @@ app.whenReady().then(async () => {
     const routineOf = id => run(`window.dayhub.get().then(s=>s.profiles.find(p=>p.id===${JSON.stringify(id)}).routine)`);
     const rowIds = () => run("[...document.querySelectorAll('.routine-row[data-rule-id]')].map(row=>row.dataset.ruleId)");
 
-    // 打开设置页（桌面陪伴 / 日常节奏都在这一页）。
+    // 打开设置页并切到「节奏与状态」分区：VS2 设置页按分区挂载，日常节奏不在默认的
+    // 「角色与陪伴」分区里（角色与陪伴 / 节奏与状态仍是同一页的两个分区）。
     await run("window.dayhub.window('settings')");
-    await wait(600);
+    await wait(400);
+    await run(`(async()=>{
+      const tab=[...document.querySelectorAll('.settings-nav button')].find(b=>b.textContent.trim()==='节奏与状态');
+      tab?.click();
+      await new Promise(r=>setTimeout(r,400));
+    })()`);
+    await wait(400);
     check('设置页出现「日常节奏」区域', await run("!!document.querySelector('.routine-settings')"));
 
     /* ---------- 1. 初始状态：默认作息 + 低调提示 + 跨午夜文案 ---------- */
