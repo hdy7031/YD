@@ -79,27 +79,32 @@ function dockStatusLabel(status:PersonStatus){
   const idle:Partial<Record<PersonStatus['code'],string>>={TERM_NOT_STARTED:'未开课',DAY_FINISHED:'今日结束',NO_SCHEDULE:'无课表',NO_CLASS_TODAY:'今天无课',TERM_ENDED:'学期结束',UPCOMING:'即将开始',UNKNOWN:'暂不可用'};
   return idle[status.code]??'空闲';
 }
+function dockExtra(status:PersonStatus,now:number){
+  const end=status.current.endAt;
+  if(status.current.kind!=='idle'&&end&&end>now){const minutes=Math.max(1,Math.ceil((end-now)/60000));return minutes<60?`还有 ${minutes} 分钟`:`还有 ${Math.ceil(minutes/60)} 小时`;}
+  if(status.next)return `${clockText(status.next.start)} 开始`;
+  return status.code==='DAY_FINISHED'?'今天已结束':'随时可聊';
+}
 /**
  * Dual Status Dock 的一行：人物 label（来自档案，不硬编码）+ 状态点 + 状态。
  * 文字过长时由 CSS 省略号接管；状态永远来自 CurrentState（见 live.statusLabel）。
  */
-function DockRow({status,hovered,onHover}:{status:PersonStatus;hovered:boolean;onHover?:(person:PersonId)=>void}){
+function DockRow({status,now,hovered,onHover}:{status:PersonStatus;now:number;hovered:boolean;onHover?:(person:PersonId)=>void}){
   const person=status.person;
   const state=presenceStateFor(status);
   const current=status.current;
-  const extra=current.kind!=='idle'&&current.endAt!==undefined?`${clockText(current.endAt)} 结束`:status.next?`下一项 ${clockText(status.next.start)}`:status.code==='DAY_FINISHED'?'今日已结束':current.kind==='idle'?'暂时可聊':'';
   return h('div',{className:`dock-row presence-${person} state-${state} kind-${current.kind} source-${current.source}${hovered?' is-hovered':''}`,'data-person':person,'data-state-kind':current.kind,onPointerEnter:()=>onHover?.(person)},
     h('span',{className:'dock-alias'},status.alias),
     h(StatusCore,{state}),
     h('span',{className:'dock-status'},dockStatusLabel(status)),
-    extra?h('span',{className:'dock-extra'},extra):null);
+    h('span',{className:'dock-extra'},dockExtra(status,now)));
 }
 // Dock 按实际档案渲染平级 person item：2 人双项，1 人重排为独立 Solo，不保留空槽。
-function CompanionDock({animate,people,hovered,onHover}:{animate:boolean;people:PersonStatus[];hovered?:PersonId;onHover?:(person:PersonId)=>void}){
+function CompanionDock({animate,people,now,hovered,onHover}:{animate:boolean;people:PersonStatus[];now:number;hovered?:PersonId;onHover?:(person:PersonId)=>void}){
   // 无障碍文案与 Mini / Tip / Tray 同源（statusLabel），不再有第二套粗粒度状态词。
   const labels=people.map(status=>`${status.name} ${statusLabel(status)}`).join('、');
   return h('div',{className:`dock-surface${people.length<2?' solo':''}${hovered?' is-expanded':''}${animate?' motion':''}`,'role':'status','aria-label':people.length>1?`当前状态：${labels}`:`当前状态：${labels}`},
-    ...people.map(status=>h(DockRow,{key:status.person,status,hovered:hovered===status.person,onHover})));
+    ...people.map(status=>h(DockRow,{key:status.person,status,now,hovered:hovered===status.person,onHover})));
 }
 function useSurface(name:string){
   useEffect(()=>{
@@ -115,7 +120,7 @@ function useSurface(name:string){
   },[name]);
 }
 export function DesktopPet(){
-  const live=useLive(),assets=useCompanionAssets(live?.petInstance.avatarPackId,true),drag=useRef<{x:number;y:number;pointerId:number;target:HTMLButtonElement}|null>(null),moved=useRef(false),draggingRef=useRef(false),hoverArmed=useRef(true),[dragging,setDragging]=useState(false);useSurface('pet-body');
+  const live=useLive(),assets=useCompanionAssets(live?.petInstance.avatarPackId,true),drag=useRef<{x:number;y:number;pointerId:number;target:HTMLButtonElement}|null>(null),moved=useRef(false),draggingRef=useRef(false),hoverArmed=useRef(true),clickTimer=useRef<ReturnType<typeof setTimeout>|null>(null),[dragging,setDragging]=useState(false);useSurface('pet-body');
   const p=live?.preferences??petDefaults;
   // 专属角色桌宠是唯一默认形象：素材即使读不到也只用“同一形象的待机帧”，
   // 不会再切换到其它角色。
@@ -125,12 +130,12 @@ export function DesktopPet(){
   const people=live?.people??[];
   const hidePresence=()=>void api.presence('leave');
   const finishDrag=(target?:HTMLButtonElement,pointerId?:number)=>{
-    const active=drag.current;drag.current=null;draggingRef.current=false;setDragging(false);hidePresence();
+    const active=drag.current,wasDragging=draggingRef.current;drag.current=null;draggingRef.current=false;setDragging(false);if(wasDragging)hidePresence();
     const element=target??active?.target,id=pointerId??active?.pointerId;
     if(element&&id!==undefined&&element.hasPointerCapture(id))element.releasePointerCapture(id);
     if(active)void api.endDrag();
   };
-  useEffect(()=>{const clear=()=>{hoverArmed.current=false;finishDrag();};window.addEventListener('blur',clear);return()=>window.removeEventListener('blur',clear);},[]);
+  useEffect(()=>{const clear=()=>{hoverArmed.current=false;finishDrag();if(clickTimer.current)clearTimeout(clickTimer.current);};window.addEventListener('blur',clear);return()=>{window.removeEventListener('blur',clear);if(clickTimer.current)clearTimeout(clickTimer.current);};},[]);
   // 兜底：即使指针捕获失败或松手发生在窗口之外，也要结束拖动，避免桌宠
   // 一直停在“拖动中”而看起来像卡住。
   useEffect(()=>{
@@ -143,33 +148,33 @@ export function DesktopPet(){
   const hover=(person:PersonId)=>{if(!draggingRef.current&&hoverArmed.current)void api.presence('enter',person);};
   const leave=()=>{hidePresence();if(!draggingRef.current)hoverArmed.current=true;};
   const label=p.mode==='orb'?'拖动状态浮标，单击查看状态':people.length>1?'拖动桌宠，单击查看双方状态':'拖动桌宠，单击查看当前状态';
-  // 手势：pointerdown 立刻进入 is-dragging 并让主进程接管窗口位置，pointermove
-  // 只转发坐标，pointerup / cancel / 失去捕获都会收尾。拖动期间不产生任何 CSS
-  // 动画、transform 或滤镜，桌面看到的位移只来自窗口本身。
+  // 手势状态机：pointerdown 只是 potential click；移动达到 5px 才进入 dragging。
+  // dragging 后只转发 screen 坐标，本次序列不会再触发 click / double click。
   const dragHandlers={
     onPointerLeave:leave,
     onContextMenu:(e:React.MouseEvent)=>{e.preventDefault();hoverArmed.current=false;hidePresence();void api.window('menu');},
     onPointerDown:(e:React.PointerEvent<HTMLButtonElement>)=>{
       if(e.button!==0)return;
-      hoverArmed.current=false;draggingRef.current=true;hidePresence();moved.current=false;setDragging(true);
+      moved.current=false;
       drag.current={x:e.screenX,y:e.screenY,pointerId:e.pointerId,target:e.currentTarget};
       void api.beginDrag(e.screenX,e.screenY);
       try{e.currentTarget.setPointerCapture(e.pointerId);}catch{/* 指针不可捕获时仍然可以继续拖动 */}},
     onPointerMove:(e:React.PointerEvent)=>{
-      if(!drag.current)return;hidePresence();
+      if(!drag.current)return;
       const dx=e.screenX-drag.current.x,dy=e.screenY-drag.current.y;
-      if(Math.abs(dx)+Math.abs(dy)>3||moved.current){moved.current=true;void api.drag(e.screenX,e.screenY);}},
+      if(Math.hypot(dx,dy)>=5||moved.current){if(!moved.current){moved.current=true;draggingRef.current=true;hoverArmed.current=false;hidePresence();setDragging(true);}void api.drag(e.screenX,e.screenY);}},
     onPointerUp:(e:React.PointerEvent<HTMLButtonElement>)=>finishDrag(e.currentTarget,e.pointerId),
     onPointerCancel:(e:React.PointerEvent<HTMLButtonElement>)=>{hoverArmed.current=false;finishDrag(e.currentTarget,e.pointerId);},
     onLostPointerCapture:()=>{hoverArmed.current=false;finishDrag();},
-    onClick:()=>{if(!moved.current)void api.window('mini');},
+    onClick:()=>{if(moved.current)return;if(clickTimer.current)clearTimeout(clickTimer.current);clickTimer.current=setTimeout(()=>{clickTimer.current=null;void api.window('mini');},220);},
+    onDoubleClick:(e:React.MouseEvent)=>{e.preventDefault();if(clickTimer.current){clearTimeout(clickTimer.current);clickTimer.current=null;}},
   };
   const handle=h('button',{'data-interactive':true,className:`pet-handle${p.mode==='orb'?' dock-handle':''}`,'aria-label':label,...dragHandlers},
     custom
       // 固定画布：stage 只负责角色本体与动作，rail 是它的兄弟节点，
       // 两者的 transform / 动画永远不会互相影响，拖动时也不会被裁掉。
       ?h('div',{className:'sprite-stage'},h('div',{className:'sprite-inner'},h('span',{className:'sprite-shadow','aria-hidden':true}),h(CustomCompanionArt,{assets,display:live?.display,frozen:dragging,...motion})))
-      :h(CompanionDock,{animate:motion.animate,people,hovered:live?.hoverTip?.person,onHover:hover}));
+      :h(CompanionDock,{animate:motion.animate,people,now:live?.now??Date.now(),hovered:live?.hoverTip?.person,onHover:hover}));
   const side=custom
     ?h('div',{className:'status-rail'},h('button',{'data-interactive':true,className:'companion-rail-button',title:people.length>1?'查看双方状态':'查看当前状态',onClick:()=>void api.window('mini')},h(CompanionRail,{live})))
     :null;
@@ -213,27 +218,26 @@ export function Mini(){
   const solo=(live?.people.length??1)<=1;
   const card=(status:PersonStatus)=>{
     const current=status.current;
-    const source=stateSourceLabel(current);
-    const timing=current.kind!=='idle'&&current.endAt?`${clockText(current.endAt)} 结束`:current.kind!=='idle'?(source||'进行中'):'当前没有进行中的安排';
-    const next=status.next?`${clockText(status.next.start)} · ${status.next.title}`:status.code==='DAY_FINISHED'?'今天的安排已经结束':'暂无下一项安排';
+    const timing=current.kind!=='idle'&&current.endAt?`至 ${clockText(current.endAt)}`:current.kind!=='idle'?'进行中':'当前没有进行中的安排';
+    const next=status.next;
     return h('article',{className:`mini-status-card state-${presenceStateFor(status)}`,key:status.person,'data-person':status.person},
       h('div',{className:'mini-current'},
         h(StatusCore,{state:presenceStateFor(status)}),
-        h('div',null,h('span',{className:'mini-person'},status.alias),h('strong',null,statusLabel(status)),h('small',null,timing))),
-      h('div',{className:'mini-next'},h('span',null,'下一项安排'),h('strong',null,next)));
+        h('div',null,h('span',{className:'mini-person'},`${status.alias} · ${status.name}`),h('strong',null,statusLabel(status)),h('small',null,timing))),
+      h('div',{className:'mini-next'},h('span',null,'下一项'),h('strong',null,next?`${clockText(next.start)} · ${next.title}`:status.code==='DAY_FINISHED'?'今天的安排已经结束':'暂无下一项安排'),next?.place?h('small',null,next.place):null));
   };
   return h('section',{className:`mini-panel${solo?' solo':''}`},
-    h('div',{className:'section-head'},h('h2',null,solo?'我的 · 此刻':'此刻'),h('span',{className:'mini-brand'},'YD'),h('span',{className:'muted'},live?clockText(live.now):'…')),
+    h('div',{className:'section-head'},h('h2',null,'此刻'),h('span',{className:'mini-brand'},`YD · ${live?clockText(live.now):'…'}`)),
     h('div',{className:'mini-status-grid'},...(live?.people??[]).map(card)),
-    live?.pending?h('p',{className:'mini-note'},`${live.pending} 条提醒已到时间，等待处理。`):null,
+    live?.pending?h('p',{className:'mini-note'},`${live.pending} 条提醒待处理`):null,
     live?.display.nightly?h('p',{className:'mini-note mini-night'},'夜间休息中 · 状态仍按已录入的安排显示。'):null,
     h('div',{className:'mini-actions'},
-      h('button',{className:'primary',onClick:()=>void api.window('open')},live?.pending?`打开 YD · 处理 ${live.pending} 条提醒`:'打开 YD'),
+      h('button',{className:'primary',onClick:()=>void api.window('open')},live?.pending?`打开 YD · ${live.pending} 条待处理`:'打开 YD'),
       h('button',{className:'ghost',onClick:()=>void api.window('settings')},'设置')));
 }
 const modeOptions:[PetPreferences['mode'],string,string][]=[
   ['custom','角色陪伴','使用当前角色素材，并随状态切换动作'],
-  ['orb','状态浮标','常驻的轻量状态 Dock：每行一个人，显示当前状态与结束时间'],
+  ['orb','状态 Dock','轻量显示当前状态，适合随时扫一眼'],
 ];
 
 const motionOptions:['standard'|'reduced',string,string][]=[
@@ -329,9 +333,9 @@ function RoutineSettings({state,busy,onError}:{state:State;busy:boolean;onError:
       h('button',{type:'button',className:'primary','data-routine-action':'save-rule',disabled:locked,onClick:saveDraft},'保存'))));
 
   return h('div',{className:'routine-settings'},
-    options.length>1?h('div',{className:'segmented setting-segmented routine-people',role:'radiogroup','aria-label':'选择要编辑的人'},
+    options.length>1?h('nav',{className:'text-tabs routine-people',role:'radiogroup','aria-label':'选择要编辑的人'},
       ...options.map(option=>h('button',{key:option.id,type:'button',role:'radio','aria-checked':person===option.id,className:person===option.id?'active':'','data-routine-person':option.id,disabled:locked,onClick:()=>setSelected(option.id)},option.label))):null,
-    routineNeedsConfirmation(routine)?h('p',{className:'muted setting-note routine-legacy-note'},'这是根据旧版本桌宠时间保留的默认作息，可按你的实际情况调整。'):null,
+    routineNeedsConfirmation(routine)?h('p',{className:'muted setting-note routine-legacy-note'},'用于补充课程之外的日常状态，可随时调整。'):null,
     routineIsEmpty(routine)
       ? h(React.Fragment,null,
           h(EmptyState,{compact:true,title:'还没有设置日常节奏',description:'设置后，YD 可以让桌宠的吃饭、午休和睡眠状态与你的实际作息一致。',actions:[
@@ -396,7 +400,8 @@ export function PetSettings({live,settings,state,section='companionship'}:{live:
   const save=(pet:Partial<PetPreferences>)=>run(()=>api.change({type:'settings',pet}));
   const saveSetting=(value:{launch?:boolean;trayResident?:boolean})=>run(()=>api.change({type:'settings',...value}));
   const paused=p.pausedUntil>(live?.now??Date.now());
-  const check=(label:string,checked:boolean,onChange:(value:boolean)=>void,disabled=false)=>h('label',{className:'check-row'},h('input',{type:'checkbox',checked,disabled:disabled||busy,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>onChange(e.target.checked)}),label);
+  const settingRow=(label:string,description:string,control:React.ReactNode)=>h('div',{className:'setting-row'},h('div',{className:'setting-row-copy'},h('strong',null,label),h('small',null,description)),h('div',{className:'setting-row-control'},control));
+  const check=(label:string,description:string,checked:boolean,onChange:(value:boolean)=>void,disabled=false)=>settingRow(label,description,h('label',{className:'setting-switch'},h('input',{type:'checkbox',checked,disabled:disabled||busy,'aria-label':label,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>onChange(e.target.checked)}),h('span',{'aria-hidden':true})));
   const block=(title:string,children:React.ReactNode)=>h('div',{className:'setting-block'},h('h3',null,title),children);
   const motionMode=p.reduceMotion?'reduced':'standard';
   // 这里说的是"桌宠主体"的作息：Together 是同行者，Solo 是本人。
@@ -410,18 +415,17 @@ export function PetSettings({live,settings,state,section='companionship'}:{live:
         return h('button',{key:value,type:'button',role:'radio','aria-checked':p.mode===value,className:p.mode===value?'mode-choice active':'mode-choice',disabled:busy,onClick:()=>save({mode:value})},
           h('strong',null,label),h('small',null,note));
       })),
-      p.mode==='custom'?h('div',{className:'setting-row'},h('span',null,'大小'),sizeChoices):null,
+      settingRow(p.mode==='custom'?'角色大小':'Dock 大小',p.mode==='custom'?'调整桌面角色的显示尺寸':'调整状态 Dock 的显示尺寸',sizeChoices),
       h('p',{className:'muted setting-note'},assets?assets.reason:'正在读取专属角色素材……'),
       paused?h('p',{className:'muted setting-note'},`气泡已暂停，${clockText(p.pausedUntil)} 自动恢复。`):null)):null,
-    section==='companionship'&&p.mode!=='custom'?block('大小',sizeChoices):null,
     section==='rhythm'?block('动态效果',h('div',{className:'mode-choices',role:'radiogroup','aria-label':'桌宠动态效果'},...motionOptions.map(([value,label,note])=>h('button',{key:value,type:'button',role:'radio','aria-checked':motionMode===value,className:motionMode===value?'mode-choice active':'mode-choice',disabled:busy,onClick:()=>save({animate:true,reduceMotion:value==='reduced'})},h('strong',null,label),h('small',null,note))))):null,
     section==='rhythm'?block('气泡提醒',h(React.Fragment,null,
-      check('到时间时用气泡提醒我',p.bubbles,value=>save({bubbles:value}),paused),
-      h('label',{className:'setting-row'},h('span',null,'气泡停留时长'),h('span',{className:'setting-inline'},h('input',{type:'number',min:3,max:30,value:p.duration,disabled:busy||paused,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>{const n=Number(e.target.value);if(n>=3&&n<=30)save({duration:n});}}),'秒')),
+      check('气泡提醒','到时间时在桌面陪伴旁显示提醒',p.bubbles,value=>save({bubbles:value}),paused),
+      settingRow('停留时长','控制提醒气泡在桌面停留的时间',h('span',{className:'setting-inline'},h('input',{type:'number',min:3,max:30,value:p.duration,disabled:busy||paused,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>{const n=Number(e.target.value);if(n>=3&&n<=30)save({duration:n});}}),'秒')),
       h('div',{className:'actions'},paused?h('button',{type:'button',className:'secondary',disabled:busy,onClick:()=>save({pausedUntil:0})},'恢复气泡提醒'):h('button',{type:'button',className:'secondary',disabled:busy,onClick:()=>save({pausedUntil:Date.now()+3600000})},'暂停气泡 1 小时')))):null,
     section==='rhythm'?block('作息状态',h(React.Fragment,null,
       // 时间状态与这段说明都来自桌宠主体自己的作息（profile.routine），不是写死的时间表。
-      check(`夜间自动睡觉${schedule.sleep?`（${schedule.sleep}）`:''}`,p.nightRest,value=>save({nightRest:value})),
+      check('夜间睡眠',schedule.sleep||'根据日常节奏补充夜间状态',p.nightRest,value=>save({nightRest:value})),
       h('p',{className:'muted setting-note'},!schedule.sleep
         ?'当前作息里没有睡觉时段，桌宠不会自动进入睡眠姿态；其它时间状态仍按作息生效。'
         :p.nightRest
@@ -430,10 +434,10 @@ export function PetSettings({live,settings,state,section='companionship'}:{live:
       h('p',{className:'muted setting-note'},'时间状态按作息规则与北京时间判断，不需要联网校准。'))):null,
     section==='rhythm'&&state?block('日常节奏',h(RoutineSettings,{state,busy,onError:setError})):null,
     section==='runtime'?block('窗口行为',h(React.Fragment,null,
-      check(together?'单击桌面陪伴显示双方状态':'单击桌面陪伴显示当前状态',p.miniPanel,value=>save({miniPanel:value})),
-      check('记住桌宠位置',p.rememberPosition,value=>save({rememberPosition:value})),
-      check('关闭主窗口后驻留托盘（提醒继续）',settings?.trayResident!==false,value=>saveSetting({trayResident:value})),
+      check('单击查看状态',together?'显示双方当前状态与下一项安排':'显示当前状态与下一项安排',p.miniPanel,value=>save({miniPanel:value})),
+      check('记住桌面位置','下次启动时恢复桌面陪伴的位置',p.rememberPosition,value=>save({rememberPosition:value})),
+      check('关闭后驻留托盘','主窗口关闭后继续处理提醒',settings?.trayResident!==false,value=>saveSetting({trayResident:value})),
       settings?.trayResident===false?h('p',{className:'muted setting-note'},'关闭主窗口将退出 YD，退出后不会触发提醒。'):null,
-      check('登录 Windows 后启动 YD',!!settings?.launch,value=>saveSetting({launch:value})))):null,
+      check('登录 Windows 后启动','进入桌面后自动运行 YD',!!settings?.launch,value=>saveSetting({launch:value})))):null,
     error?h('p',{className:'error',role:'alert'},error):null);
 }

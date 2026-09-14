@@ -42,28 +42,28 @@ export const companionCharacter = {
  * 字号固定，窗口按 1–2 行状态取尺寸；单人工作区把两行折成一行，
  * 但窗口尺寸不随状态或行数变化（拖动与热区必须稳定）。
  * 具体像素按实际字体与 DPI 取整，落在产品定义的建议区间内：
- * collapsed 宽 120–170 / 高 52–68（小/中档），大档只放大一档呼吸感。
+ * 默认与 hover 共用同一外框；hover 只在固定画布内显露第二行信息。
  */
 export const companionDock = {
   collapsed: {
-    small: { width: 180, height: 48 },
-    medium: { width: 196, height: 50 },
-    large: { width: 212, height: 54 },
+    small: { width: 248, height: 54 },
+    medium: { width: 276, height: 58 },
+    large: { width: 304, height: 62 },
   } as Record<CompanionSize, CompanionGeometry>,
   solo: {
-    small: { width: 122, height: 46 },
-    medium: { width: 136, height: 48 },
-    large: { width: 150, height: 52 },
+    small: { width: 148, height: 54 },
+    medium: { width: 164, height: 58 },
+    large: { width: 180, height: 62 },
   } as Record<CompanionSize, CompanionGeometry>,
   expanded: {
-    small: { width: 214, height: 58 },
-    medium: { width: 230, height: 62 },
-    large: { width: 246, height: 66 },
+    small: { width: 248, height: 54 },
+    medium: { width: 276, height: 58 },
+    large: { width: 304, height: 62 },
   } as Record<CompanionSize, CompanionGeometry>,
   soloExpanded: {
-    small: { width: 170, height: 56 },
-    medium: { width: 188, height: 60 },
-    large: { width: 204, height: 64 },
+    small: { width: 148, height: 54 },
+    medium: { width: 164, height: 58 },
+    large: { width: 180, height: 62 },
   } as Record<CompanionSize, CompanionGeometry>,
 };
 

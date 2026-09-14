@@ -11,24 +11,6 @@ import { logError } from './logging.ts';
 import type { Store } from './store.ts';
 import type { PersonId } from './types.ts';
 
-/**
- * Dual Status Dock 的窗口形状：圆角矩形（10–12px 视觉圆角）。
- * Electron 的 setShape 只接受整数像素矩形列表，因此用逐行扫描生成同样的轮廓；
- * 它与 CSS 的 border-radius 取同一组数字，窗口裁剪和渲染不会出现两套圆角。
- */
-function roundedShape(width:number,height:number,radius:number){
-  const r=Math.max(0,Math.min(radius,Math.floor(Math.min(width,height)/2)));
-  if(r===0)return [{x:0,y:0,width,height}] as Electron.Rectangle[];
-  const rects:Electron.Rectangle[]=[];
-  for(let y=0;y<height;y++){
-    const edge=y<r?y:y>=height-r?height-1-y:r;
-    const inset=edge<r?Math.round(r-Math.sqrt(Math.max(0,r*r-(r-edge-1)*(r-edge-1)))):0;
-    const rowWidth=width-inset*2;
-    if(rowWidth>0)rects.push({x:inset,y,width:rowWidth,height:1});
-  }
-  return rects;
-}
-
 export class Companion {
   private closing=false; private last=Date.now(); private monotonic=performance.now(); private pulseTimer?:ReturnType<typeof setInterval>; private busy=false;
   private active?:{id:string;text:string};private queue:{id:string;text:string}[]=[];private expires=0;private remaining=0;private held=false;
@@ -95,14 +77,13 @@ export class Companion {
     const mode=p.mode==='orb'?'orb':'custom';
     const pack=resolveAvatarPack(this.activeAvatar.resolvedPackId);
     const people=this.store.state.profiles.length;
-    const expanded=mode==='orb'&&!!this.hoverTip;
-    const {width,height,shape}=companionGeometry(mode,p.size,pack.canvas.width/pack.canvas.height,people,expanded);
-    // Dual Status Dock：圆角矩形窗口裁剪；桌宠画布保持方角，避免裁掉角色动作。
-    return {width,height,shape:shape==='rounded'?roundedShape(width,height,12):undefined};
+    // Hover/pointer state must never participate in outer-window geometry.
+    const {width,height}=companionGeometry(mode,p.size,pack.canvas.width/pack.canvas.height,people,false);
+    return {width,height};
   }
   private resizeMini(){
     const solo=this.store.state.profiles.length<=1;
-    const [width,height]=solo?[288,216]:[300,236];
+    const [width,height]=solo?[340,292]:[424,278];
     if(this.mini.getSize()[0]!==width||this.mini.getSize()[1]!==height){
       this.mini.setResizable(true);
       this.mini.setSize(width,height,false);
@@ -115,10 +96,10 @@ export class Companion {
     // under the cursor. The deferred resize runs when the drag ends.
     if(this.dragging){this.pendingResize=true;return;}
     const p={...petDefaults,...this.store.state.settings.pet},before=this.orb.getBounds();
-    const {width,height,shape}=this.geometry(p);
-    // 尺寸与形状没变时不再重复 setBounds：Windows 每次都会把透明窗口重新对齐到
+    const {width,height}=this.geometry(p);
+    // 尺寸没变时不再重复 setBounds：Windows 每次都会把透明窗口重新对齐到
     // 物理像素栅格，重复调用会带来 1px 抖动与多余的透明合成。
-    const key=`${width}x${height}:${shape?'circle':'rect'}`;
+    const key=`${width}x${height}`;
     if(key===this.applied){this.position();return;}
     // Keep the character's feet on the same spot: the bottom edge stays put and
     // the window is re-centred horizontally, so switching size or mode never
@@ -128,9 +109,11 @@ export class Companion {
     x=Math.max(display.x,Math.min(x,display.x+display.width-width));
     y=Math.max(display.y,Math.min(y,display.y+display.height-height));
     // 不切换 resizable：Windows 会因此改动窗口样式位并让透明窗口重新对齐，
-    // 是 Dock 窗口在切换模式时慢慢"长大"1–3px 的来源。这里只改 bounds 与形状。
+    // 是 Dock 窗口在切换模式时慢慢"长大"1–3px 的来源。这里只改 bounds。
+    // Dock 的圆角由 renderer CSS 绘制。Windows 在 fractional DPI 下会在每次
+    // setPosition 后重新量化 setShape 的原生 region，造成窗口宽度持续增长，
+    // 因此这里不能再对透明 Dock 使用 BrowserWindow.setShape()。
     this.orb.setBounds({x,y,width,height},false);
-    this.orb.setShape(shape??[{x:0,y:0,width,height}]);
     this.applied=key;
     this.position();this.broadcast();
   }
@@ -216,21 +199,18 @@ export class Companion {
     const side=people.length<2?.5:index===0?.29:.71;
     this.hoverTip={person:status.person,text:`${status.alias} · ${statusLabel(status)}`,state:presenceStateFor(status),side};
     const dock=(this.store.state.settings.pet?.mode??petDefaults.mode)==='orb';
-    if(dock){this.tip.hide();this.resize();return;}
+    if(dock){this.tip.hide();this.broadcast();return;}
     this.position();this.broadcast();if(this.orb.isVisible())this.tip.showInactive();
   }
   dragStart(){this.dragging=true;this.mini.hide();this.hideMenu();this.clearPresence();}
   dragEnd(){
     this.dragging=false;
     this.clearPresence();
-    // Windows + fractional DPI can report a shaped transparent window 1–3px wider
-    // after setPosition. Re-apply the canonical geometry once (never in the move
-    // loop) so repeated drags cannot accumulate that physical-pixel rounding.
-    this.pendingResize=false;
-    this.applied='';
-    this.resize();
+    // A normal drag never writes width/height back. Only a real settings change
+    // deferred during the drag may apply a new canonical geometry afterwards.
+    if(this.pendingResize){this.pendingResize=false;this.applied='';this.resize();}
   }
-  private clearPresence(){const changed=!!this.hoverTip||this.tip.isVisible();this.hoverTip=undefined;this.tip.hide();if(changed){this.resize();this.broadcast();}}
+  private clearPresence(){const changed=!!this.hoverTip||this.tip.isVisible();this.hoverTip=undefined;this.tip.hide();if(changed)this.broadcast();}
   private next(){if(this.active||!this.queue.length)return;this.active=this.queue.shift();this.expires=Date.now()+(this.store.state.settings.pet?.duration??8)*1000;this.position();if(this.orb.isVisible())this.bubble.showInactive();}
   reset(){
     this.queue=[];this.active=undefined;this.hoverTip=undefined;this.held=false;this.bubble.hide();this.mini.hide();this.tip.hide();this.hideMenu();this.last=Date.now();this.monotonic=performance.now();

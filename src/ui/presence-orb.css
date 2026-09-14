@@ -79,7 +79,9 @@
   animation:none !important;
   transition:none !important;
   filter:none !important;
+  transform:none !important;
 }
+.pet-dock.is-dragging,.pet-dock.is-dragging .pet-handle,.pet-dock.is-dragging .dock-surface { transform:none !important; translate:none !important; scale:1 !important; }
 
 .dock-row {
   --status:#7C9E99;
@@ -96,7 +98,9 @@
 }
 .dock-row + .dock-row::before { content:""; position:absolute; left:-1px; top:12px; bottom:12px; width:1px; background:rgba(79,119,115,.14); }
 .dock-row:hover { background:rgba(79,119,115,.045); }
-.dock-row.is-hovered { padding-bottom:14px; background:rgba(79,119,115,.055); }
+.dock-row.is-hovered { background:rgba(79,119,115,.055); }
+.dock-row > .dock-alias,.dock-row > .status-core,.dock-row > .dock-status { transition:transform 140ms ease; }
+.dock-row.is-hovered > .dock-alias,.dock-row.is-hovered > .status-core,.dock-row.is-hovered > .dock-status { transform:translateY(-7px); }
 .dock-surface.solo { justify-content:center; padding:0 12px; }
 .dock-surface.solo .dock-row { flex:0 1 auto; width:100%; padding-left:6px; padding-right:6px; }
 .dock-surface.solo .dock-row::before { display:none; }
@@ -129,8 +133,9 @@
   text-overflow:ellipsis;
 }
 
-.dock-extra { position:absolute; left:36px; right:5px; bottom:7px; overflow:hidden; color:#899795; font:450 9.5px/1.1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-align:left; text-overflow:ellipsis; white-space:nowrap; opacity:0; transform:translateY(-1px); transition:opacity 140ms ease,transform 140ms ease; }
+.dock-extra { position:absolute; left:40px; right:6px; bottom:6px; overflow:hidden; color:#899795; font:450 9.5px/1.1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-align:left; text-overflow:ellipsis; white-space:nowrap; opacity:0; transform:translateY(2px); transition:opacity 140ms ease,transform 140ms ease; }
 .dock-row.is-hovered .dock-extra { opacity:1; transform:none; }
+.pet-dock.is-dragging .dock-row > * { transform:none !important; transition:none !important; }
 
 .status-core {
   position:relative;

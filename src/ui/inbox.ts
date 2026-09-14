@@ -152,7 +152,7 @@ export function InboxHub({state,saved,selected,select,open}:Props){
             h('button',{className:'ghost',onClick:()=>{setMenu(false);void image(false);}},'导入图片'),
             h('button',{className:'ghost',onClick:()=>{setMenu(false);setText('');setSource('MANUAL');}},'清空输入'))),
         button(busy?'整理中…':'整理通知',submitText,'primary',busy||!text.trim()))),
-    h('div',{className:'inbox-filters'},...filterLabels.map(([value,label])=>h('button',{key:value,type:'button',className:filter===value?'active':'',onClick:()=>{setFilter(value);select(null);}},'',h('span',null,label),h('small',null,String(counts[value]))))),
+    h('nav',{className:'inbox-filters text-tabs','aria-label':'通知筛选'},...filterLabels.map(([value,label])=>h('button',{key:value,type:'button',className:filter===value?'active':'','aria-current':filter===value?'page':undefined,onClick:()=>{setFilter(value);select(null);}},h('span',null,label),h('small',null,String(counts[value]))))),
     h('p',{className:'muted page-intro'},'原文先保存，整理结果核对后才会加入正式事务。'),
     error?h('p',{className:'error',role:'alert'},error):null,
     !state.notices.length
@@ -186,7 +186,7 @@ function InboxDetail({notice:n,state,saved,open,back,narrow}:{notice:Notice;stat
   return h('article',{className:'inbox-detail','aria-label':'通知详情'},
     // 宽窗列表还在旁边，因此头部只写标题、状态与元信息，不出现页级返回。
     h('header',{className:'inbox-detail-head'},
-      narrow?h('button',{type:'button',className:'crumb-back',title:'返回通知收件箱','aria-label':'返回通知收件箱',onClick:back},'←'):null,
+      narrow?h('button',{type:'button',className:'crumb-back',title:'返回通知收件箱','aria-label':'返回通知收件箱',onClick:back},'‹ 通知收件箱'):null,
       h('div',{className:'inbox-head-main'},
         h('strong',{className:'inbox-head-title'},noticeTitle(n)),
         h('small',{className:'muted'},`${sourceLabels[n.sourceType||'MANUAL']} · ${stamp(n.createdAt??n.updatedAt)}`)),

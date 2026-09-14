@@ -96,6 +96,8 @@ function ReminderWorkbench({items,now,render}:{items:Reminder[];now:number;rende
       :h('section',{className:'reminder-empty'},h(EmptyState,{title:'没有未处理提醒',description:'新的到时提醒会按时间出现在这里；确认提醒不会自动完成待办。',illustration:'assets/gen/empty-reminders.png'})));
 }
 function AboutPanel(){
+  const [version,setVersion]=useState('…');
+  useEffect(()=>{let active=true;void api.version().then(value=>{if(active)setVersion(value);}).catch(()=>{if(active)setVersion('未知');});return()=>{active=false;};},[]);
   return h('section',{className:'entry about-brand'},
     h('img',{className:'about-brand-whisper',src:'assets/gen/about-brand-whisper.png',alt:'','aria-hidden':true,draggable:false}),
     h('div',{className:'about-brand-visual'},h(BrandMark,{className:'about-brand-logo'})),
@@ -103,7 +105,7 @@ function AboutPanel(){
       h('p',{className:'about-brand-kicker'},'Personal Hub'),h('h2',null,'YD'),h('p',{className:'about-brand-line'},'Your Day'),
       h('p',{className:'about-brand-slogan'},'your day, quietly organized.'),
       h('dl',{className:'about-meta'},
-        h('div',null,h('dt',null,'版本'),h('dd',null,'0.2.20')),
+        h('div',null,h('dt',null,'版本'),h('dd',null,version)),
         h('div',null,h('dt',null,'数据'),h('dd',null,'本地优先 · 离线可用')),
         h('div',null,h('dt',null,'时间'),h('dd',null,'Asia/Shanghai'))),
       h('p',{className:'muted'},'所有记录都保存在本机；只有你明确触发的导入、备份或系统能力才会处理对应数据。')));
@@ -381,21 +383,20 @@ function App(){
               :h(DailyEmptyState,{title:companionEmptyText,description:!hasCompanionSchedule?`导入或录入 ${companionDisplayName(companion)} 的安排后，这里会显示每天的课程与会议。`:selectedIsToday?'今天没有已录入的课程。':'这一天没有课程安排，可以切换日期查看。',illustration:'assets/gen/empty-companion-day.png',actions:!hasCompanionSchedule?b('前往课表管理',()=>setTab('courses'),'secondary'):null})))):null,
       kind==='tasks'?h(ManagementOverview,{tasks:[...s.tasks].sort((a,b)=>Number(a.done)-Number(b.done)||(a.due?epoch(a.due):Infinity)-(b.due?epoch(b.due):Infinity)),events:s.events,now,query,setQuery:search,taskCard,editEvent:(event:Event)=>open('events',event),deleteEvent:(event:Event)=>setDeletion({entity:'events',id:event.id}),createTask:()=>open('tasks'),createEvent:()=>open('events')}):null,
       kind==='courses'?h(React.Fragment,null,
-        // 课表管理页：先选课表，再加课程；学校作息是配置，降级为一行文字入口。
+        // 浏览是默认状态；课程增改只在显式进入编辑状态后出现。
         h('div',{className:'course-toolbar'},
           h('div',{className:'course-toolbar-main'},
             h('select',{'aria-label':'课表所属人',value:activePerson,onChange:(e:any)=>setPerson(e.target.value)},...personOptions(s).map(o=>h('option',{key:o.value,value:o.value},o.label))),
-             scheduleMode==='edit'?b('添加课程',()=>open('courses'),'primary'):h('span',{className:'course-overview-note'},'一览模式 · 完整查看本周')),
-          h('div',{className:'course-toolbar-meta'},
-            h('span',null,`${profile.startDate} 起 · 共 ${profile.weeks} 周 · 每日 ${profile.periods.length} 节`),
-            h('span',{className:'course-toolbar-dot'},'·'),
-            h('span',null,`课表更新 ${fmt(profile.updatedAt,true)}`),
-            b('学校作息',()=>open('profiles',profile),'text-button'),
+            h('div',{className:'course-toolbar-copy'},h('strong',null,`${profile.startDate} 起 · ${profile.weeks} 周`),h('small',null,`课表更新于 ${fmt(profile.updatedAt,true)}`))),
+          h('div',{className:'course-toolbar-actions'},
+            scheduleMode==='edit'?b('添加课程',()=>open('courses'),'primary'):null,
+            b(scheduleMode==='edit'?'完成':'编辑课表',()=>setScheduleMode(scheduleMode==='edit'?'overview':'edit'),scheduleMode==='edit'?'secondary':'ghost'),
+            h('button',{type:'button',className:'secondary icon-action',onClick:()=>open('profiles',profile)},uiIcon(Clock3),'节次时间'),
             b(importing?'正在读取…':'导入课表',chooseSchedule,'ghost',importing||pending))),
-        h(ScheduleGrid,{state:s,profile,courses:active,now,mode:scheduleMode,onModeChange:setScheduleMode,edit:(course:Course)=>open('courses',course),create:(value:Partial<Course>)=>open('courses',{...newValue('courses',activePerson,selfId),...value})}),
+        h(ScheduleGrid,{state:s,profile,courses:active,now,mode:scheduleMode,edit:(course:Course)=>open('courses',course),create:(value:Partial<Course>)=>open('courses',{...newValue('courses',activePerson,selfId),...value})}),
         h('section',{className:'panel exceptions-panel'},
           h('div',{className:'section-head'},h('div',null,h('h2',null,'单次调课与停课'),h('small',{className:'section-subtitle'},exceptionList.length?`${exceptionList.length} 条记录`:'暂无记录'))),
-          exceptionList.length?h('div',{className:'exception-list'},...exceptionList.map(exceptionCard)):h(EmptyState,{title:'还没有单次调课或停课',description:'你可以在上方课程项中点击“本次调课 / 停课”，仅修改某一天的这一次课程。添加后，记录会显示在这里，并影响当日课表与状态展示。',actions:b('查看可修改课程',focusSchedule,'secondary')}))):null,
+          exceptionList.length?h('div',{className:'exception-list'},...exceptionList.map(exceptionCard)):h(EmptyState,{title:'还没有单次调课或停课',description:'临时调课或停课记录会显示在这里。',actions:b('查看可修改课程',focusSchedule,'secondary')}))):null,
       kind==='inbox'?h(InboxHub,{state:s,saved:set,selected:selectedNotice,select:setSelectedNotice,open}):null,
       kind==='reminders'?h(ReminderWorkbench,{items:pendingReminders,now,render:(r:Reminder)=>h('article',{className:'entry reminder-item',key:r.id},h('div',{className:'reminder-item-copy'},h('h3',null,r.title),h('p',{className:'muted'},`${fmt(r.due,true)} 到提醒时间 · 未处理`)),h('div',{className:'actions'},b('已处理',()=>change({type:'ack',id:r.id}),'primary',pending),...([10,30,60] as const).map(minutes=>b(minutes===60?'1 小时后':`${minutes} 分钟后`,()=>change({type:'snooze',id:r.id,minutes}),'secondary',pending)),b('打开事项',()=>{const [entity,i]=r.target.split(':');const item=(s[entity as Entity] as any[]).find(v=>v.id===i);if(item)open(entity as Entity,item);},'ghost')))}):null,
       kind==='settings'?h('div',{className:'settings-layout'},

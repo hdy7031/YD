@@ -18,23 +18,23 @@ test('0.2.20 桌宠画布是固定尺寸：状态与素材内容无法改变窗�
     // 角色宽度按画布比例缩放，不变形。
     const fromAspect=Math.max(companionCharacter.minWidth,Math.round(companionCharacter.height[size]*aspect)+companionFrame.padX*2);
     assert.ok(Math.abs(custom.width-fromAspect)<=1);
-    // Visual System 2.0：Together / Solo 各自有完整 default + internal-hover 几何。
+    // Visual System 2.0：Together / Solo 各自有固定几何，hover 只能改变内部内容。
     const dock=companionGeometry('orb',size,aspect,2,false);
     assert.deepEqual(dock,{...companionDock.collapsed[size],shape:'rounded'});
-    assert.ok(dock.width>=180&&dock.width<=212,`${size} Together Dock 宽度落在校正区间`);
-    assert.ok(dock.height>=48&&dock.height<=54,`${size} Together Dock 高度落在校正区间`);
+    assert.ok(dock.width>=248&&dock.width<=304,`${size} Together Dock 宽度落在参考区间`);
+    assert.ok(dock.height>=54&&dock.height<=62,`${size} Together Dock 高度落在参考区间`);
     assert.ok(dock.width>dock.height,'Dock 是横向状态牌，不是球体');
     assert.equal(dock.shape,'rounded','Dock 使用圆角矩形窗口裁剪');
     assert.notEqual(dock.width,dock.height,'不再保留单球体设计');
     const togetherExpanded=companionGeometry('orb',size,aspect,2,true);
     assert.deepEqual(togetherExpanded,{...companionDock.expanded[size],shape:'rounded'});
-    assert.ok(togetherExpanded.width>dock.width&&togetherExpanded.height>dock.height,'Together hover 在组件内部扩出第二信息层');
+    assert.deepEqual(togetherExpanded,dock,'Together hover 不得改变窗口几何');
     const solo=companionGeometry('orb',size,aspect,1,false);
     const soloExpanded=companionGeometry('orb',size,aspect,1,true);
     assert.deepEqual(solo,{...companionDock.solo[size],shape:'rounded'});
     assert.deepEqual(soloExpanded,{...companionDock.soloExpanded[size],shape:'rounded'});
     assert.ok(solo.width<dock.width&&solo.width>solo.height,'Solo 是重新配比的独立横向形态');
-    assert.ok(soloExpanded.width>solo.width&&soloExpanded.height>solo.height,'Solo 保留完整 hover 交互');
+    assert.deepEqual(soloExpanded,solo,'Solo hover 不得改变窗口几何');
   }
   // 素材比例异常时退回安全比例而不是生成 0 宽窗口。
   assert.deepEqual(companionGeometry('custom','medium',0),companionGeometry('custom','medium',0.68));

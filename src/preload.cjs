@@ -1,6 +1,7 @@
 const {contextBridge,ipcRenderer}=require('electron');
 const call=(name)=>(...args)=>ipcRenderer.invoke('dayhub:'+name,...args);
 contextBridge.exposeInMainWorld('dayhub',{
+ version:call('version'),
  onSettings(callback){const fn=()=>callback();ipcRenderer.on('dayhub:settings',fn);return()=>ipcRenderer.removeListener('dayhub:settings',fn);},
  onStatus(callback){const fn=()=>callback();ipcRenderer.on('dayhub:status',fn);return()=>ipcRenderer.removeListener('dayhub:status',fn);},
   live:call('live'),window:call('window'),bubble:call('bubble'),presence:call('presence'),pointer:call('pointer'),companionAssets:call('companionAssets'),avatarVisualReady:call('avatarVisualReady'),

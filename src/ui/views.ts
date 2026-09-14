@@ -7,6 +7,7 @@ import type {Course,Event,Profile,Task} from '../types.ts';
 
 const h=React.createElement;
 const shortDate=(date:string)=>`${Number(date.slice(5,7))}/${Number(date.slice(8,10))}`;
+const longDate=(date:string)=>`${Number(date.slice(5,7))} 月 ${Number(date.slice(8,10))} 日`;
 const weekNow=(profile:Profile,now:number)=>Math.max(1,Math.min(profile.weeks,Math.floor((epoch(dateOf(now))-epoch(profile.startDate))/604800000)+1));
 
 interface EmptyStateProps {
@@ -33,24 +34,20 @@ export function EmptyState({title,description,actions,compact=false,illustration
 interface ScheduleGridProps {
   state:State; profile:Profile; courses:Course[]; now:number;
   edit:(course:Course)=>void; create:(value:Partial<Course>)=>void;
-  mode:'overview'|'edit'; onModeChange:(mode:'overview'|'edit')=>void;
+  mode:'overview'|'edit';
 }
-export function ScheduleGrid({state,profile,courses,now,edit,create,mode,onModeChange}:ScheduleGridProps){
+export function ScheduleGrid({state,profile,courses,now,edit,create,mode}:ScheduleGridProps){
   const [week,setWeek]=useState(()=>weekNow(profile,now));
   useEffect(()=>setWeek(weekNow(profile,now)),[profile.id,profile.startDate,profile.weeks]);
   const monday=addDays(profile.startDate,(week-1)*7),active=scheduleDays(state,monday,profile.id);
   return h(React.Fragment,null,
     h('div',{className:'schedule-toolbar'},
-      h('div',null,h('strong',null,`${profile.name}的第 ${week} 教学周`),h('small',null,`${shortDate(monday)}—${shortDate(addDays(monday,6))}`)),
-      h('div',{className:'schedule-view-actions'},
-        h('div',{className:'segmented schedule-mode',role:'group','aria-label':'课表模式'},
-          h('button',{type:'button',className:mode==='overview'?'active':'','aria-pressed':mode==='overview',onClick:()=>onModeChange('overview')},'一览'),
-          h('button',{type:'button',className:mode==='edit'?'active':'','aria-pressed':mode==='edit',onClick:()=>onModeChange('edit')},'编辑')),
-        h('div',{className:'week-switch'},h('button',{disabled:week<=1,onClick:()=>setWeek(w=>w-1),'aria-label':'上一教学周'},'‹'),h('select',{'aria-label':'查看教学周',value:week,onChange:(e:React.ChangeEvent<HTMLSelectElement>)=>setWeek(Number(e.target.value))},...Array.from({length:profile.weeks},(_,i)=>h('option',{value:i+1,key:i+1},`第 ${i+1} 周`))),h('button',{disabled:week>=profile.weeks,onClick:()=>setWeek(w=>w+1),'aria-label':'下一教学周'},'›')))),
+      h('div',null,h('strong',null,`第 ${week} 教学周`),h('small',null,`${longDate(monday)} – ${longDate(addDays(monday,6))}`)),
+      h('div',{className:'week-switch'},h('button',{disabled:week<=1,onClick:()=>setWeek(w=>w-1),'aria-label':'上一教学周'},'‹'),h('select',{'aria-label':'查看教学周',value:week,onChange:(e:React.ChangeEvent<HTMLSelectElement>)=>setWeek(Number(e.target.value))},...Array.from({length:profile.weeks},(_,i)=>h('option',{value:i+1,key:i+1},`第 ${i+1} 周`))),h('button',{disabled:week>=profile.weeks,onClick:()=>setWeek(w=>w+1),'aria-label':'下一教学周'},'›'))),
     h('div',{className:`schedule-scroll schedule-${mode}`,'data-schedule-mode':mode},h('div',{className:`schedule-grid schedule-grid-${mode}`,style:{'--period-count':profile.periods.length} as React.CSSProperties},
       h('div',{className:'schedule-corner'},'节次'),
       ...Array.from({length:7},(_,d)=>h('div',{className:'schedule-day',key:'d'+d},h('strong',null,'周'+'一二三四五六日'[d]),h('small',null,shortDate(addDays(monday,d))))),
-      ...profile.periods.map((p,i)=>h('div',{className:'period-label',key:'p'+i,style:{gridColumn:1,gridRow:i+2}},h('strong',null,i+1),h('small',null,`${p.start}\n${p.end}`))),
+      ...profile.periods.map((p,i)=>h('div',{className:'period-label',key:'p'+i,style:{gridColumn:1,gridRow:i+2}},h('strong',null,i+1),h('small',null,`${p.start}–${p.end}`))),
       ...Array.from({length:profile.periods.length*7},(_,i)=>{const period=Math.floor(i/7)+1,day=i%7+1;return mode==='edit'
         ?h('button',{className:'schedule-cell',key:`${period}-${day}`,style:{gridColumn:day+1,gridRow:period+1},title:`周${'一二三四五六日'[day-1]}第 ${period} 节添加课程`,onClick:()=>create({weekday:day,first:period,last:period,weeks:[week]})},'＋')
         :h('span',{className:'schedule-cell schedule-cell-readonly','aria-hidden':true,key:`${period}-${day}`,style:{gridColumn:day+1,gridRow:period+1}});}),
@@ -60,8 +57,8 @@ export function ScheduleGrid({state,profile,courses,now,edit,create,mode,onModeC
         const content=h(React.Fragment,null,h('strong',null,o.title),h('small',null,mode==='overview'?(o.place||'地点未填'):`${start}—${end} · ${o.place||'未填地点'}`),state.exceptions.some(e=>e.courseId===o.courseId&&e.date===o.date)?h('em',null,'本次已调课'):null);
         const props={className:`course-block ${courseTone(c)}`,'data-course-id':c.id,key:o.segmentId,style:{gridColumn:weekday(day)+1,gridRow:`${first+2} / ${Math.max(first,last)+3}`},title:mode==='edit'?`编辑课程模板 ${c.title}`:`${o.title} · ${start}—${end} · ${o.place||'地点未填'}`};
         return mode==='edit'?h('button',{...props,onClick:()=>edit(c)},content):h('div',props,content);}),
-      !active.length?h('div',{className:'schedule-empty'},h('strong',null,emptyScheduleText(courses.length)),h('small',null,'点击空白格可按星期与节次添加课程，也可以导入课表文件。')):null)),
-    h('p',{className:'schedule-hint'},mode==='overview'?'一览模式用于完整查看本周；切换到编辑模式可新增或修改课程。':'点击课程编辑；点击空白格可按该星期、节次和当前周新增课程。'));
+      !active.length?h('div',{className:'schedule-empty'},h('strong',null,emptyScheduleText(courses.length)),h('small',null,mode==='edit'?'点击空白节次添加安排。':'可以导入课表，或进入编辑后添加课程。')):null)),
+    mode==='edit'?h('p',{className:'schedule-hint'},'点击课程进行修改，点击空白节次添加安排。'):null);
 }
 
 interface OverviewProps {
@@ -100,16 +97,18 @@ export function ManagementOverview({tasks,events,now,query,setQuery,taskCard,edi
   return h(React.Fragment,null,
     h('div',{className:'management-toolbar'},
       h('input',{'aria-label':'搜索事项与会议',placeholder:'搜索待办、会议、地点或备注',value:query,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>setQuery(e.target.value)}),
-      kind==='tasks'?h(React.Fragment,null,
-        FilterSelect({label:'状态',value:status,onChange:setStatus,options:taskStatusOptions}),
-        FilterSelect({label:'时间',value:taskTime,onChange:setTaskTime,options:taskTimeOptions})):null,
-      kind==='events'?FilterSelect({label:'时间',value:eventTime,onChange:setEventTime,options:eventTimeOptions}):null,
-      h('div',{className:'segmented'},...([['all','全部'],['tasks','待办'],['events','会议']] as const).map(([value,label])=>h('button',{key:value,className:kind===value?'active':'',onClick:()=>setKind(value)},label))),
       h('details',{className:'create-menu',open:creating,onToggle:(e:React.SyntheticEvent<HTMLDetailsElement>)=>setCreating(e.currentTarget.open)},
         h('summary',{className:'primary'},'+ 新建'),
         h('div',{className:'action-menu-pop'},
           createTask?h('button',{className:'ghost',onClick:()=>{setCreating(false);createTask();}},'待办'):null,
           createEvent?h('button',{className:'ghost',onClick:()=>{setCreating(false);createEvent();}},'会议 / 活动'):null))),
+    h('div',{className:'management-subbar'},
+      h('nav',{className:'text-tabs','aria-label':'事项类型'},...([['all','全部'],['tasks','待办'],['events','会议']] as const).map(([value,label])=>h('button',{key:value,className:kind===value?'active':'','aria-current':kind===value?'page':undefined,onClick:()=>setKind(value)},label))),
+      h('div',{className:'management-filters'},
+      kind==='tasks'?h(React.Fragment,null,
+        FilterSelect({label:'状态',value:status,onChange:setStatus,options:taskStatusOptions}),
+        FilterSelect({label:'时间',value:taskTime,onChange:setTaskTime,options:taskTimeOptions})):null,
+      kind==='events'?FilterSelect({label:'时间',value:eventTime,onChange:setEventTime,options:eventTimeOptions}):null)),
     h('div',{className:'overview-stats'},h('span',null,h('strong',null,openTasks(tasks).length),' 待处理'),h('span',null,h('strong',null,events.filter(e=>epoch(e.end||e.start)>=now).length),' 场待进行会议')),
     h('div',{className:`management-columns ${kind}`},
       kind!=='events'?h('section',{className:'management-section'},h('div',{className:'section-head'},h('h2',null,'待办事项'),h('small',null,`${shownTasks.length} 项`)),...shownTasks.map(taskCard),!shownTasks.length?h(EmptyState,{compact:true,title:query.trim()?'没有匹配的待办':tasks.length?'没有符合条件的待办':'暂无待办',description:tasks.length?'换个筛选条件或搜索词试试。':'新建待办后可以按时间与状态统一管理。',actions:createTask?h('button',{type:'button',className:'primary',onClick:createTask},'新建待办'):null}):null):null,

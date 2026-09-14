@@ -45,6 +45,7 @@ export interface Occurrence {
 export type Entity = 'profiles' | 'courses' | 'exceptions' | 'events' | 'tasks' | 'notices';
 export type Command = { type:"inbound"; payload:InboundPayload; id:string } | { type:"review"; noticeId:string; draft:ParsedDraft; allowDuplicate?:boolean; updateId?:string } | { type:"inboxStatus"; noticeId:string; status:"IGNORED"|"UNPARSED" } | {type:"draft";noticeId:string;draft:ParsedDraft} | { type: 'save'; entity: Entity; value: unknown } | { type: 'delete'; entity: Entity; id: string } | { type: 'convert'; noticeId: string; task: unknown } | { type: 'ack'; id: string } | { type: 'snooze'; id: string; minutes?: 10|30|60 } | { type: 'settings'; launch?: boolean; setup?: boolean; trayResident?: boolean; pet?: Partial<import('./live.ts').PetPreferences> } | { type: 'importSchedule'; value: SchedulePackage } | { type: 'manual'; kind: import('./state/manual.ts').ManualStateKind; label: string; endAt: number | null; personId?: PersonId } | { type: 'manualCancel'; id?: string } | { type: 'avatarSet'; personId: PersonId; packId: import('./avatar.ts').AvatarPackId } | { type: 'avatarReset'; personId: PersonId };
 export interface DesktopAPI {
+  version():Promise<string>;
   onSettings(callback:()=>void):()=>void;
   // 桌宠右键菜单 → 主窗口：打开"设置当前状态"。
   onStatus(callback:()=>void):()=>void;

@@ -40,7 +40,7 @@ let busy=false, ocrBusy=false, lastTick=Date.now(), timer:ReturnType<typeof setI
 // 拖动锚点同时记录窗口原点、渲染层指针与系统光标：真实拖动时以系统光标为准
 // （多显示器与 125%/150% 缩放下不会越拖越偏），无光标移动的自动化场景退回
 // 渲染层指针增量，两条路径都只改窗口位置，不碰任何 CSS 变换。
-let dragAnchor:DragAnchor|undefined;
+let dragAnchor:DragAnchor|undefined,dragActive=false;
 const notifications=new Set<Notification>();
 const windows=()=>[orb,panel,companion?.bubble,companion?.mini,companion?.tip,companion?.sheet].filter((w):w is BrowserWindow=>!!w&&!w.isDestroyed());
 // 正式日志先写文件；控制台只在开发环境或控制台仍可用时作为镜像。
@@ -96,16 +96,19 @@ function clampPosition(x:number,y:number,snap=false,size?:{width:number;height:n
   return clampToArea(x,y,width,height,a,snap);
 }
 function moveOrb(x:number,y:number,width?:number,height?:number){
-  const [currentWidth,currentHeight]=orb.getSize(),wasResizable=orb.isResizable();
+  const [currentWidth,currentHeight]=orb.getSize();
   const targetWidth=width??currentWidth,targetHeight=height??currentHeight;
   // 尺寸没变时只移动位置：setBounds 会让 Windows 把透明窗口重新对齐到物理像素，
   // 拖动过程中反复调用就会出现 1px 的尺寸抖动与贴图残影。
   if(targetWidth===currentWidth&&targetHeight===currentHeight){orb.setPosition(Math.round(x),Math.round(y));return;}
-  if(!wasResizable)orb.setResizable(true);
   orb.setBounds({x:Math.round(x),y:Math.round(y),width:targetWidth,height:targetHeight},false);
-  if(!wasResizable)orb.setResizable(false);
 }
-async function savePosition(){const [x,y]=orb.getPosition(),pos=clampPosition(x,y,true);moveOrb(pos.x,pos.y);if(store.state.settings.pet?.rememberPosition===false)return;await store.update(s=>{s.settings.orb=pos;return s;});}
+function canonicalOrbSize(){
+  const p={...petDefaults,...store.state.settings.pet};
+  const {width,height}=companion?.geometry(p)??{width:orb.getBounds().width,height:orb.getBounds().height};
+  return {width,height};
+}
+async function savePosition(){const [x,y]=orb.getPosition(),size=canonicalOrbSize(),pos=clampPosition(x,y,true,size);moveOrb(pos.x,pos.y,size.width,size.height);if(store.state.settings.pet?.rememberPosition===false)return;await store.update(s=>{s.settings.orb=pos;return s;});}
 async function processReminders(forceSummary=false){
   if(busy)return;busy=true;
   try{
@@ -191,17 +194,18 @@ function setupHandlers(){
     changed();return result;
   });
   handler('toggle',()=>{if(panel.isVisible())panel.hide();else showPanel();});
+  handler('version',()=>app.getVersion());
   handler('beginDrag',(pointerX:number,pointerY:number)=>{
     if(!Number.isFinite(pointerX)||!Number.isFinite(pointerY))throw new Error('拖动参数无效');
-    companion?.dragStart();
-    const {x:windowX,y:windowY,width,height}=orb.getBounds(),cursor=screen.getCursorScreenPoint();
+    const {x:windowX,y:windowY}=orb.getBounds(),{width,height}=canonicalOrbSize(),cursor=screen.getCursorScreenPoint();
     dragAnchor={windowX,windowY,pointerX,pointerY,cursorX:cursor.x,cursorY:cursor.y,width,height,cursorMode:false};
-    // 拖动期间不再切换 resizable：在 Windows 上它会改动窗口样式位并触发一次
-    // 透明窗口重排，是贴图异常与状态条被裁掉的来源之一。这里只记录锚点，
-    // 后面全程只改位置。
+    dragActive=false;
+    // pointer down 只保存初始光标与窗口 bounds；超过阈值后的第一帧才进入 drag。
+    // 这样 click / double click 不会触发透明窗口重排或任何几何清理。
   });
   handler('drag',(pointerX:number,pointerY:number)=>{
     if(!dragAnchor||!Number.isFinite(pointerX)||!Number.isFinite(pointerY))throw new Error('拖动参数无效');
+    if(!dragActive){dragActive=true;companion?.dragStart();}
     const cursor=screen.getCursorScreenPoint();
     const step=resolveDragStep(dragAnchor,{x:pointerX,y:pointerY},cursor);
     if(step.adoptedCursor){
@@ -212,9 +216,12 @@ function setupHandlers(){
     const pos=clampPosition(dragAnchor.windowX+step.delta.x,dragAnchor.windowY+step.delta.y);
     // 拖动只移动位置。把 getBounds() 经过 DPI 物理像素取整后的宽高再写回
     // setBounds，会在每次拖动后把透明 Dock 累积放大 1–2px。
-    moveOrb(pos.x,pos.y);
+    // Always write the canonical DIP size together with the new position. On
+    // Windows fractional DPI, setPosition() alone can preserve a re-quantized
+    // native width and then grow the transparent window again on the next move.
+    moveOrb(pos.x,pos.y,dragAnchor.width,dragAnchor.height);
   });
-  handler('endDrag',async()=>{try{companion?.dragEnd();if(dragAnchor)await savePosition();}finally{dragAnchor=undefined;}});
+  handler('endDrag',async()=>{try{if(dragActive){companion?.dragEnd();await savePosition();}}finally{dragAnchor=undefined;dragActive=false;}});
   handler('importImage',async()=>{const r=await dialog.showOpenDialog(panel,{title:'选择课表或通知图片',properties:['openFile'],filters:[{name:'PNG / JPEG 图片',extensions:['png','jpg','jpeg']}]});if(r.canceled)return null;const file=r.filePaths[0];if(!/\.(png|jpe?g)$/i.test(file)||fs.statSync(file).size>20*1024*1024)throw new Error('请选择不超过 20 MB 的 PNG 或 JPEG 图片');return storeImage(nativeImage.createFromPath(file));});
   handler('chooseSchedule',async()=>{
     const r=await dialog.showOpenDialog(panel,{title:'选择整理后的课表',properties:['openFile'],filters:[{name:'YD 课表',extensions:['dayhub-schedule.json','json']}]});
