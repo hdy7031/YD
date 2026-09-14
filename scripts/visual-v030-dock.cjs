@@ -24,6 +24,10 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 function moveCursor(x, y) {
   try {
     spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      // per-monitor DPI aware 后再定位：DPI-unaware 进程的坐标会被虚拟化，
+      // 在 125% / 150% 显示器上光标会被夹到屏幕角落，hover 守卫随即正确地收回展开态。
+      `$dpi='[DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);';` +
+      `Add-Type -MemberDefinition $dpi -Name D -Namespace YD;[YD.D]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null;` +
       `Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point(${Math.round(x)},${Math.round(y)});` +
       `$sig='[DllImport("user32.dll")] public static extern void mouse_event(uint f,int dx,int dy,uint d,System.IntPtr e);';` +
       `Add-Type -MemberDefinition $sig -Name M -Namespace YD;[YD.M]::mouse_event(1,1,1,0,[System.IntPtr]::Zero);[YD.M]::mouse_event(1,-1,-1,0,[System.IntPtr]::Zero)`], { windowsHide: true });
@@ -128,11 +132,12 @@ async function run() {
   await wait(260);
   await dock.webContents.executeJavaScript("document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('click',{bubbles:true}))");
   await wait(650);
-  const mini = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('#mini'));
-  const detailText = await mini.webContents.executeJavaScript("document.body.innerText.replace(/\\s+/g,' ').trim()");
-  check(`${mode} detail 截图状态`, mini.isVisible() && detailText.length > 10, detailText.slice(0, 120));
-  await save(mini, `${tag}-detail.png`);
-  await mini.hide();
+  // 详情与状态牌在**同一个** floating 窗口里：详情截图就是 Dock 窗口自己。
+  const detailText = await dock.webContents.executeJavaScript("document.body.innerText.replace(/\\s+/g,' ').trim()");
+  const detailView = await dock.webContents.executeJavaScript("document.querySelector('.pet-dock').dataset.dockView");
+  check(`${mode} detail 截图状态`, detailView === 'detail' && detailText.length > 10, JSON.stringify({ detailView, text: detailText.slice(0, 120) }));
+  await save(dock, `${tag}-detail.png`);
+  await dock.webContents.executeJavaScript("window.dayhub.window('detail-close')");
   await wait(240);
 
   // 两个真实状态：

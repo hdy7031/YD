@@ -22,7 +22,9 @@ test('0.2.20 桌宠画布是固定尺寸：状态与素材内容无法改变窗�
     const dock=companionGeometry('orb',size,aspect,2,false);
     // 窗口 = 展开态足迹：默认牌面在画布内向右下收拢，hover 只在画布内向左上生长。
     assert.deepEqual(dock,{...companionDock.expanded[size],shape:'rounded'});
-    assert.ok(dock.width>=200&&dock.width<=244,`${size} Together Dock 宽度落在参考区间（约 220）`);
+    // 展开态宽度由第二行辅助文案反推（"还有 1 小时 30 分"必须完整显示），
+    // 因此三档共用同一个 248px 画布；默认态仍然按尺寸档区分。
+    assert.ok(dock.width>=240&&dock.width<=268,`${size} Together Dock 宽度落在参考区间（约 248）`);
     assert.ok(dock.height>=52&&dock.height<=58,`${size} Together Dock 画布高度落在参考区间（约 54）`);
     assert.ok(dock.width>dock.height,'Dock 是横向状态牌，不是球体');
     assert.equal(dock.shape,'rounded','Dock 使用圆角矩形窗口裁剪');
@@ -51,7 +53,8 @@ test('0.2.20 桌宠画布是固定尺寸：状态与素材内容无法改变窗�
   assert.equal(companionDock.collapsed.medium.width-8,176);
   assert.equal(companionDock.collapsed.medium.height-8,36);
   assert.equal(companionDock.solo.medium.width-8,116);
-  assert.equal(companionDock.expanded.medium.width-8,212);
+  // 牌面 240 = 11px 的第二行文案完整显示所需的宽度（见 companion-layout 的说明）。
+  assert.equal(companionDock.expanded.medium.width-8,240);
   assert.equal(companionDock.expanded.medium.height-8,46);
   assert.equal(companionDock.expanded.medium.height,54);
   // 详情浮层是轻量 popover，不再是接近 800×500 的页面。

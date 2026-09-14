@@ -6,7 +6,8 @@
 //   C. hover         —— 真正增加第二行信息（不是 scale），窗口 bounds 完全不变
 //   D. 指针离开      —— 连续多次都回到 collapsed（不依赖 timer 的正确性）
 //   E. resize 竞态   —— hover 中改变 Dock 尺寸：不卡在展开态，右 / 下锚点不跳
-//   F. 详情浮层      —— 轻量 popover（316×162），打开的 Dock 状态是 detail
+//   F. 详情          —— 与状态牌**同一个** floating 窗口（详情画布 468×290），
+//                       打开 / 收起时牌面的屏幕位置完全不变，且不创建第二个窗口
 //   G. drag          —— >4px 进入 dragging、清掉 hover / 提示、结束后不残留、不误触 detail
 //   H. alwaysOnTop   —— 每个状态之后仍为 true，并用 Win32 检查 WS_EX_TOPMOST 与真实 z-order
 //   I. 工作区约束    —— 窗口始终可见、bounds 合法、resize 后不会跑出 workArea
@@ -26,10 +27,17 @@ const { configureIsolatedUserData } = require('./scripts/electron-test-profile.c
 /**
  * 真实鼠标移动：SetCursorPos 只挪光标、不产生输入消息，而点击穿透窗口的
  * mouse 转发走的是低层鼠标钩子，因此这里额外注入一像素的相对 mouse_event。
+ *
+ * 坐标必须是**物理像素**：先把 PowerShell 设成 per-monitor DPI aware 再定位。
+ * 否则 DPI-unaware 的进程会把坐标按 96-DPI 虚拟化，在 125% / 150% 的显示器上
+ * 光标会被系统夹到屏幕角落 —— "真实光标 hover" 就成了假通过（hover 兜底守卫
+ * 读到光标在窗口之外，第二行会在 150ms 内收回）。
  */
 function moveCursor(x, y) {
   try {
     spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      `$dpi='[DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);';` +
+      `Add-Type -MemberDefinition $dpi -Name D -Namespace YD;[YD.D]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null;` +
       `Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point(${Math.round(x)},${Math.round(y)});` +
       `$sig='[DllImport("user32.dll")] public static extern void mouse_event(uint f,int dx,int dy,uint d,System.IntPtr e);';` +
       `Add-Type -MemberDefinition $sig -Name M -Namespace YD;[YD.M]::mouse_event(1,1,1,0,[System.IntPtr]::Zero);[YD.M]::mouse_event(1,-1,-1,0,[System.IntPtr]::Zero)`], { windowsHide: true });
@@ -76,10 +84,12 @@ const output = path.join(root, 'test-data', 'v030-dock');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const report = [];
 const check = (name, value, detail = '') => report.push({ name, ok: !!value, detail });
-// 新几何契约（中档）：窗口 220×54（展开态足迹）；牌面 collapsed 176×36 / hover 212×46。
-const CANVAS = { width: 220, height: 54 };
-const PLATE = { collapsedWidth: 176, collapsedHeight: 36, hoverWidth: 212, hoverHeight: 46 };
-const DETAIL = { width: 316, height: 162 };
+// 新几何契约（中档）：窗口 248×54（展开态足迹）；牌面 collapsed 176×36 / hover 240×46。
+// 展开态比默认态宽是因为第二行辅助文案（"还有 1 小时 30 分"）必须完整显示。
+const CANVAS = { width: 248, height: 54 };
+const PLATE = { collapsedWidth: 176, collapsedHeight: 36, hoverWidth: 240, hoverHeight: 46 };
+// 详情画布 = 卡片 460×236 + 10px 间距 + 牌面 36 + 两侧 4px 阴影画布（同一个窗口）。
+const DETAIL = { width: 468, height: 290 };
 
 async function boot(dataDir) {
   configureIsolatedUserData('dock', dataDir);
@@ -117,9 +127,20 @@ async function runTogether() {
   const { panel, dock } = await boot(dataDir);
   const run = code => panel.webContents.executeJavaScript(code);
   // 渲染层脚本失败时记录一条明确的失败项并继续，而不是让整个验收静默中断。
-  /** 真实光标进入状态牌：hover 兜底守卫会核对系统光标是否还在窗口内。 */
-  // SetCursorPos 用的是物理像素，而 Electron 的 bounds 是 DIP，必须带上显示器缩放因子。
-  const cursorInto = () => { const b = dock.getBounds(); const scale = screen.getDisplayMatching(b).scaleFactor || 1; moveCursor(Math.round((b.x + b.width / 2) * scale), Math.round((b.y + b.height / 2) * scale)); };
+  /**
+   * 真实光标进入状态牌：hover 兜底守卫会核对系统光标是否还在窗口内，
+   * 因此定位之后必须**确认**光标真的落在窗口里（DPI / 多屏 / 虚拟化都可能让定位失败）。
+   */
+  const cursorInto = async () => {
+    const b = dock.getBounds(), scale = screen.getDisplayMatching(b).scaleFactor || 1;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      moveCursor(Math.round((b.x + b.width / 2) * scale), Math.round((b.y + b.height / 2) * scale));
+      await wait(90);
+      if (await pet('window.dayhub.cursorInside()')) return true;
+    }
+    check('真实光标能够进入 Dock 窗口（hover 兜底守卫依赖系统光标位置）', false, JSON.stringify({ bounds: b, scale, cursor: screen.getCursorScreenPoint() }));
+    return false;
+  };
   const pet = async code => {
     try {
       return await dock.webContents.executeJavaScript(code);
@@ -164,14 +185,14 @@ async function runTogether() {
   check('Dock 是固定状态牌（两端半圆、mist 白底、轻玻璃层）', parseFloat(structure.radius) >= 20 && /rgba?\(\s*250\s*,\s*252\s*,\s*251/.test(String(structure.background)) && /blur\(18px\)/.test(String(structure.backdrop)), JSON.stringify({ radius: structure.radius, background: structure.background }));
   check('legacy orb 结构已不在 DOM 中', structure.legacy === false);
   const dockSize = dock.getSize();
-  check('Dock 窗口尺寸 = 展开态画布（中档 220×54，hover 时窗口本身不变）', Math.abs(dockSize[0] - CANVAS.width) <= 2 && Math.abs(dockSize[1] - CANVAS.height) <= 2, dockSize.join('x'));
+  check('Dock 窗口尺寸 = 展开态画布（中档 248×54，hover 时窗口本身不变）', Math.abs(dockSize[0] - CANVAS.width) <= 2 && Math.abs(dockSize[1] - CANVAS.height) <= 2, dockSize.join('x'));
   /* ---------- H(1). alwaysOnTop：初始状态 ---------- */
   check('创建后 Dock 就是 alwaysOnTop', topmost() === true);
 
   /* ---------- C. hover：真正的信息展开 ---------- */
   const beforeHover = dock.getBounds();
   // 真实光标必须一起进入窗口：hover 的兜底守卫会用系统光标位置确认指针是否还在。
-  cursorInto();
+  await cursorInto();
   await pet(pointerOver('.pet-handle'));
   await wait(320);
   // 拆成几条极小的脚本：任何一条失败都能精确指认，而不是整块返回 undefined。
@@ -194,7 +215,7 @@ async function runTogether() {
   /* ---------- D. 指针离开必须 100% 回到 collapsed ---------- */
   let leaveFailures = 0;
   for (let i = 0; i < 6; i++) {
-    cursorInto();
+    await cursorInto();
     await pet(pointerOver('.pet-handle'));
     await wait(220);
     const entering = await dockView();
@@ -209,7 +230,7 @@ async function runTogether() {
 
   /* ---------- E. hover 中 resize：不卡住、锚点不跳 ---------- */
   {
-    cursorInto();
+    await cursorInto();
     await pet(pointerOver('.pet-handle'));
     await wait(260);
     const anchored = dock.getBounds();
@@ -236,30 +257,54 @@ async function runTogether() {
     await wait(700);
   }
 
-  /* ---------- F. 详情浮层 ---------- */
+  /* ---------- F. 详情 = 同一个 floating 窗口的第 3 种画布 ---------- */
   const mini = windowOf('mini');
+  // 牌面的**屏幕**矩形：窗口 bounds + 窗口内偏移。整个详情往返里它必须一模一样。
+  const plateOnScreen = async () => {
+    const b = dock.getBounds();
+    const rect = await pet(`(()=>{const r=document.querySelector('.dock-surface').getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width),height:Math.round(r.height)}})()`);
+    return rect ? { x: b.x + rect.x, y: b.y + rect.y, width: rect.width, height: rect.height } : null;
+  };
+  const beforeDetailBounds = dock.getBounds();
+  const beforeDetailPlate = await plateOnScreen();
   await pet("document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('click',{bubbles:true}))");
-  await wait(500);
-  const detailSize = mini.getSize();
+  await wait(520);
+  const detailBounds = dock.getBounds();
   const detailView = await dockView();
-  const detailBody = await mini.webContents.executeJavaScript(`(()=>{const panel=document.querySelector('.mini-panel');const pr=panel.getBoundingClientRect();
-    const box=sel=>{const el=panel.querySelector(sel);if(!el)return null;const r=el.getBoundingClientRect();return {top:Math.round(r.top-pr.top),h:Math.round(r.height)}};
-    return {title:panel.querySelector('.mini-head h2')?.textContent.trim(),people:panel.querySelectorAll('.detail-person').length,next:panel.querySelectorAll('.detail-next').length,foot:!!panel.querySelector('.detail-foot'),brand:panel.querySelector('.mini-brand b')?.textContent??null,
-      overflow:panel.scrollHeight>panel.clientHeight+1,scroll:panel.scrollHeight,client:panel.clientHeight,
-      boxes:{head:box('.mini-head'),grid:box('.mini-grid'),person:box('.detail-person'),next:box('.detail-next'),foot:box('.detail-foot')}}})()`);
-  check('click 打开轻量详情浮层，Dock 进入 detail 状态', mini.isVisible() && detailView === 'detail', JSON.stringify({ visible: mini.isVisible(), detailView }));
-  check('Together 详情是轻量 popover（316×162），不再是接近 800×500 的页面', Math.abs(detailSize[0] - DETAIL.width) <= 2 && Math.abs(detailSize[1] - DETAIL.height) <= 2, detailSize.join('x'));
-  check('详情头部是正常 UI 标题 + 极小 YD 签名（没有大 Logo / 大书法标题）', detailBody.title === '我们 · 此刻' && detailBody.brand === 'YD', JSON.stringify(detailBody));
-  check('详情包含两个平级人物区与两栏「下一项」', detailBody.people === 2 && detailBody.next === 2, JSON.stringify(detailBody));
-  check('详情底部内容不被裁切（面板无溢出）', detailBody.overflow === false, JSON.stringify(detailBody));
-  check('详情浮层可见且 bounds 落在工作区内', mini.isVisible() && inside(mini.getBounds(), screen.getDisplayMatching(mini.getBounds()).workArea), JSON.stringify(mini.getBounds()));
-  check('详情浮层同样保持 alwaysOnTop', mini.isAlwaysOnTop() === true);
-  fs.writeFileSync(path.join(output, 'dock-together-detail.png'), (await mini.capturePage()).toPNG());
-  await mini.hide();
-  await wait(320);
-  // 关闭详情后 Dock 不再处于 detail；指针如果还在状态牌上，就是 hover（第二行可见）。
+  const detailBody = await pet(`(()=>{const panel=document.querySelector('.mini-panel');if(!panel)return null;const pr=panel.getBoundingClientRect();
+    const icon=panel.querySelector('.detail-icon');
+    const plate=document.querySelector('.dock-surface').getBoundingClientRect();
+    return {title:panel.querySelector('.mini-head h2')?.textContent.trim(),brand:panel.querySelector('.mini-brand b')?.textContent??null,
+      people:panel.querySelectorAll('.detail-person').length,next:panel.querySelectorAll('.detail-next').length,
+      icons:panel.querySelectorAll('.detail-icon').length,iconSrc:icon?icon.getAttribute('src'):null,
+      foot:panel.querySelector('.detail-foot')?.textContent?.trim()??null,legacyTail:!!document.querySelector('.mini-tail'),
+      rect:{x:Math.round(pr.x),y:Math.round(pr.y),width:Math.round(pr.width),height:Math.round(pr.height)},
+      plate:{x:Math.round(plate.x),y:Math.round(plate.y),width:Math.round(plate.width),height:Math.round(plate.height)},
+      overlap:!(pr.right<=plate.left||pr.left>=plate.right||pr.bottom<=plate.top||pr.top>=plate.bottom),
+      overflow:panel.scrollHeight>panel.clientHeight+1}})()`);
+  const afterDetailPlate = await plateOnScreen();
+  const detailArea = screen.getDisplayMatching(detailBounds).workArea;
+  check('单击 Dock 打开详情：是同一个窗口进入 detail 状态（没有第二个 BrowserWindow）', detailView === 'detail' && !mini.isVisible(), JSON.stringify({ detailView, miniVisible: mini.isVisible() }));
+  check('详情画布 = 卡片 + 间距 + 状态牌（Together 中档 468×290）', Math.abs(detailBounds.width - DETAIL.width) <= 2 && Math.abs(detailBounds.height - DETAIL.height) <= 2, detailBounds.width + 'x' + detailBounds.height);
+  check('打开详情不移动状态牌（牌面的屏幕矩形完全一致）', !!beforeDetailPlate && !!afterDetailPlate && Math.abs(afterDetailPlate.x - beforeDetailPlate.x) <= 2 && Math.abs(afterDetailPlate.y - beforeDetailPlate.y) <= 2, JSON.stringify({ beforeDetailPlate, afterDetailPlate }));
+  check('详情卡片不与状态牌重叠，且完全落在工作区内', !!detailBody && detailBody.overlap === false && inside({ x: detailBounds.x + detailBody.rect.x, y: detailBounds.y + detailBody.rect.y, width: detailBody.rect.width, height: detailBody.rect.height }, detailArea), JSON.stringify({ rect: detailBody?.rect, detailBounds, detailArea }));
+  check('详情头部是正常 UI 标题 + 极小 YD 签名（没有大 Logo / 大书法标题）', detailBody?.title === '我们 · 此刻' && detailBody?.brand === 'YD', JSON.stringify(detailBody));
+  check('详情真正接入素材图 4 的原素材插图（每人一枚，路径指向 dock-icons）', detailBody?.icons >= 2 && /assets\/dock-icons\/[a-z]+\.png$/.test(String(detailBody?.iconSrc)), JSON.stringify({ icons: detailBody?.icons, iconSrc: detailBody?.iconSrc }));
+  check('详情是两张 person context card，各有自己的「下一项」', detailBody?.people === 2 && detailBody?.next === 2, JSON.stringify(detailBody));
+  check('详情不再有鸡汤页脚（只有真正共享的上下文或干脆不显示）', detailBody?.foot === null || /进行中的安排/.test(String(detailBody?.foot)), JSON.stringify({ foot: detailBody?.foot }));
+  check('详情不再使用笨重的底部大三角 pointer', detailBody?.legacyTail === false, JSON.stringify({ legacyTail: detailBody?.legacyTail }));
+  check('详情内容不被裁切（卡片无溢出）', detailBody?.overflow === false, JSON.stringify(detailBody));
+  check('详情仍然在同一个 alwaysOnTop 窗口上', dock.isAlwaysOnTop() === true);
+  fs.writeFileSync(path.join(output, 'dock-together-detail.png'), (await dock.capturePage()).toPNG());
+  // 关闭：再点 Dock 自己（不是隐藏第二个窗口）。
+  await pet("document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('click',{bubbles:true}))");
+  await wait(520);
   const afterClose = await dockView();
-  check('关闭详情后 Dock 不再停留在 detail 状态', afterClose !== 'detail', JSON.stringify({ afterClose }));
+  const afterCloseBounds = dock.getBounds();
+  const afterClosePlate = await plateOnScreen();
+  // 指针如果还在状态牌上就是 hover（第二行可见），但绝不能停留在 detail。
+  check('再点 Dock 收起详情并回到状态牌画布', afterClose !== 'detail' && afterCloseBounds.width === beforeDetailBounds.width && afterCloseBounds.height === beforeDetailBounds.height, JSON.stringify({ afterClose, afterCloseBounds, beforeDetailBounds }));
+  check('收起详情后牌面仍在原来的位置', !!afterClosePlate && Math.abs(afterClosePlate.x - beforeDetailPlate.x) <= 2 && Math.abs(afterClosePlate.y - beforeDetailPlate.y) <= 2, JSON.stringify({ beforeDetailPlate, afterClosePlate }));
 
   /* ---------- H(2). Win32 层级检查（真实 z-order，不是 Electron 缓存标志） ---------- */
   {

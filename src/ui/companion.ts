@@ -8,7 +8,10 @@ import {companionDisplayLabels} from '../companion-display.ts';
 import {companionVisualStates,type CompanionDisplayState} from '../companion-visual.ts';
 import {stateSourceLabel} from '../state/presentation.ts';
 import {companionTone,type CompanionTone} from '../companion-colors.ts';
-import {companionFrame,companionRail,dockSurfaceMetrics} from '../companion-layout.ts';
+import {companionFrame,companionRail,dockDetail,dockDetailPanel,dockSurfaceMetrics} from '../companion-layout.ts';
+// Asset 03 语义图标（素材图 4 的七枚原素材）：只在表现层把 CurrentState / 下一项
+// 映射到真实图片，找不到准确映射时返回 null —— 不用 emoji、不用第三方图标替代。
+import {iconForCurrent,iconForNext,iconSrc} from './state-icons.ts';
 import {petRoutineSummary,type CompanionDisplay} from '../companion-display.ts';
 import {createDefaultRoutine,routineKindPriority,type RoutineRule} from '../routine.ts';
 import {EmptyState} from './views.ts';
@@ -63,6 +66,13 @@ function StatusCore({tone}:{tone:CompanionTone}){return h('span',{className:`sta
  *
  * 默认态只显示 short status（空闲 / 上课中 / 专注中…），第二行上下文只在展开时出现。
  * `data-code` 只把日程阶段码透给 CSS / 验证脚本用于断言，不参与状态判断。
+ *
+ * 结构就是层级本身：首字母在左列，主状态（状态点 + 文案）与辅助信息都在右列，
+ * 于是"还有 1 小时 30 分"天然从主状态内容区开始，而不是和 D / Y 平级。
+ *   ┌────┬───────────────────┐
+ *   │ D  │ ● 上课中          │
+ *   │    │   还有 1 小时 30 分│
+ *   └────┴───────────────────┘
  */
 function DockRow({status,hovered,onHover}:{status:PersonStatus;hovered:boolean;onHover?:(person:PersonId)=>void}){
   const person=status.person;
@@ -70,11 +80,12 @@ function DockRow({status,hovered,onHover}:{status:PersonStatus;hovered:boolean;o
   const state=presenceStateFor(status);
   const current=status.current;
   return h('div',{className:`dock-row presence-${person} state-${state} kind-${current.kind} source-${current.source}${hovered?' is-hovered':''}`,'data-person':person,'data-state-kind':current.kind,'data-code':status.code,onPointerEnter:()=>onHover?.(person)},
-    h('div',{className:'dock-line'},
-      h('span',{className:'dock-alias'},status.alias),
-      h(StatusCore,{tone:view.dotTone}),
-      h('span',{className:'dock-status'},view.primaryLabel)),
-    h('span',{className:'dock-extra'},view.secondaryLabel));
+    h('span',{className:'dock-alias'},status.alias),
+    h('div',{className:'dock-main'},
+      h('div',{className:'dock-line'},
+        h(StatusCore,{tone:view.dotTone}),
+        h('span',{className:'dock-status'},view.primaryLabel)),
+      h('span',{className:'dock-extra'},view.secondaryLabel)));
 }
 // Dock 按实际档案渲染平级 person item：2 人双项，1 人重排为独立 Solo，不保留空槽。
 // `expanded` 来自渲染层的真实指针状态：点击穿透窗口不会触发 CSS :hover，
@@ -118,9 +129,9 @@ export function DesktopPet(){
   const [dockView,setDockView]=useState<'collapsed'|'hover'|'detail'|'dragging'>('collapsed');
   const cancelLeave=()=>{if(leaveTimer.current){clearTimeout(leaveTimer.current);leaveTimer.current=null;}};
   const enterDock=()=>{cancelLeave();if(draggingRef.current)return;setDockView(current=>current==='dragging'?current:'hover');};
-  // 允许 80–150ms 的极轻离开防抖，但正确性不依赖 timer：
-  // 拖动、失去指针捕获、window blur、光标守卫、卸载都会立即收回到 collapsed。
-  const leaveDock=()=>{cancelLeave();setHovering(false);hidePresence();if(draggingRef.current)return;leaveTimer.current=setTimeout(()=>{leaveTimer.current=null;setDockView(current=>current==='dragging'?current:'collapsed');},120);};
+  // 指针离开：hovering 立刻置 false（view 立刻回到 collapsed，不依赖任何计时器），
+  // 只留一个 90ms 的极短防抖计时器兜住边缘抖动；enter / drag / blur / 卸载都会清掉它。
+  const leaveDock=()=>{cancelLeave();setHovering(false);setDockView(current=>current==='dragging'?current:'collapsed');hidePresence();if(draggingRef.current)return;leaveTimer.current=setTimeout(()=>{leaveTimer.current=null;setDockView(current=>current==='dragging'?current:'collapsed');},90);};
   const setView=(next:'collapsed'|'hover'|'detail'|'dragging')=>{cancelLeave();setDockView(next);};
   useEffect(()=>()=>{if(leaveTimer.current)clearTimeout(leaveTimer.current);},[]);
   const finishDrag=(target?:HTMLButtonElement,pointerId?:number)=>{
@@ -170,37 +181,59 @@ export function DesktopPet(){
     onPointerUp:(e:React.PointerEvent<HTMLButtonElement>)=>finishDrag(e.currentTarget,e.pointerId),
     onPointerCancel:(e:React.PointerEvent<HTMLButtonElement>)=>{hoverArmed.current=false;cancelLeave();finishDrag(e.currentTarget,e.pointerId);},
     onLostPointerCapture:()=>{hoverArmed.current=false;finishDrag();},
-    onClick:()=>{if(moved.current)return;if(clickTimer.current)clearTimeout(clickTimer.current);clickTimer.current=setTimeout(()=>{clickTimer.current=null;setView('detail');void api.window('mini');},220);},
+    // 单击 = 打开详情 / 再点 = 收起详情。意图在点击这一刻定下来（不是靠 220ms 后的
+    // 全局状态猜），所以"点 Dock 收起"永远不会变成"重新打开"。
+    onClick:()=>{if(moved.current)return;const open=live?.detail!==true;if(clickTimer.current)clearTimeout(clickTimer.current);clickTimer.current=setTimeout(()=>{clickTimer.current=null;if(open)setView('detail');void api.window(open?'mini':'detail-close');},220);},
     onDoubleClick:(e:React.MouseEvent)=>{e.preventDefault();if(clickTimer.current){clearTimeout(clickTimer.current);clickTimer.current=null;}},
   };
   // 详情浮层打开时 Dock 保持默认态：信息在浮层里，状态牌不需要同时展开。
   const view:'collapsed'|'hover'|'detail'|'dragging'=dragging?'dragging':live?.detail?'detail':hovering?dockView:'collapsed';
+  // 详情画布（Dock 模式）：状态牌与卡片在同一个窗口里，偏移由主进程按显示器工作区算好。
+  const detailFrame=live?.detailFrame;
+  const detailOpen=!custom&&view==='detail'&&!!detailFrame;
+  // ESC 收起详情：窗口在详情期间是真正获得焦点的，所以键盘路径可靠。
+  useEffect(()=>{
+    if(view!=='detail')return;
+    const key=(e:KeyboardEvent)=>{if(e.key==='Escape')void api.window('detail-close');};
+    window.addEventListener('keydown',key);
+    return()=>window.removeEventListener('keydown',key);
+  },[view]);
   /**
    * hover 的兜底守卫：状态牌所在窗口是点击穿透窗口，一旦变成 WS_EX_TRANSPARENT，
    * Windows 可能就不再投递 pointerleave，于是出现"鼠标离开仍然保持放大"。
-   * 展开期间按 150ms 用系统光标位置确认一次：光标真的在窗口之外就立刻收起。
-   * 这是纠错，不是正确性的唯一依据——pointerleave / blur / drag 各自也会收起。
+   * 展开期间按 150ms 用系统光标位置确认：只要读到一次"光标在窗口之外"就立刻收起。
+   * 这是纠错而不是唯一依据 —— pointerleave / blur / drag 各自也会收起；
+   * 详情打开时不参与（详情只由点击外部 / 再点 Dock / ESC / 拖动收起）。
    */
   useEffect(()=>{
-    if(view!=='hover'&&view!=='detail')return;
-    // 连续两次读到"光标在窗口之外"才收起（≈400ms）：单次读取可能是 DPI / 合成时序的抖动，
-    // 但真正卡住的 hover 会在半秒内回到默认态，用户感觉不到延迟。
-    let alive=true,outside=0;
+    if(view!=='hover')return;
+    let alive=true;
+    const collapse=()=>{cancelLeave();setHovering(false);setDockView('collapsed');void api.presence('leave');};
     const guard=setInterval(()=>{
       if(!alive)return;
-      void api.cursorInside().then(inside=>{
-        if(!alive)return;
-        outside=inside?0:outside+1;
-        if(outside<2)return;
-        cancelLeave();setHovering(false);setDockView('collapsed');void api.presence('leave');
-      }).catch(()=>{});
-    },200);
-    // 指针离开窗口（document 级）也立刻收起，不等 120ms 防抖。
-    const leaveWindow=()=>{cancelLeave();setHovering(false);setDockView('collapsed');void api.presence('leave');};
+      void api.cursorInside().then(inside=>{if(alive&&!inside)collapse();}).catch(()=>{});
+    },150);
+    // 指针离开窗口（document 级）也立刻收起，不留任何残留。
+    const leaveWindow=()=>{if(alive)collapse();};
     document.addEventListener('mouseleave',leaveWindow);
     return()=>{alive=false;clearInterval(guard);document.removeEventListener('mouseleave',leaveWindow);};
   },[view]);
-  const handle=h('button',{'data-interactive':true,className:`pet-handle${p.mode==='orb'?' dock-handle':''}`,'aria-label':label,'data-dock-view':view,...dragHandlers},
+  // 状态牌的可见尺寸契约来自 companion-layout（默认 / hover 两档）；Dock 模式下窗口
+  // 在 collapsed / hover 之间固定不变，只有打开详情时窗口才变成详情画布。
+  const dockMetrics=dockSurfaceMetrics(p.mode==='orb'?'orb':'custom',p.size,people.length);
+  // 详情打开时命中区跟着状态牌一起贴到画布的共享边上（命中区 = 牌面 + 4px 阴影画布），
+  // 所以牌面在屏幕上的位置与默认态完全一致；卡片则按主进程给的偏移绝对定位。
+  const handleStyle=detailOpen&&detailFrame?{
+    width:detailFrame.dock.width+'px',
+    height:detailFrame.dock.height+'px',
+    ...(detailFrame.dock.left!==undefined
+      ? {left:(detailFrame.dock.left-dockDetail.pad)+'px',right:'auto'}
+      : {right:((detailFrame.dock.right??dockDetail.pad)-dockDetail.pad)+'px',left:'auto'}),
+    ...(detailFrame.dock.top!==undefined
+      ? {top:(detailFrame.dock.top-dockDetail.pad)+'px',bottom:'auto'}
+      : {bottom:((detailFrame.dock.bottom??dockDetail.pad)-dockDetail.pad)+'px',top:'auto'}),
+  }as React.CSSProperties:undefined;
+  const handle=h('button',{'data-interactive':true,className:`pet-handle${p.mode==='orb'?' dock-handle':''}`,'aria-label':label,'data-dock-view':view,style:handleStyle,...dragHandlers},
     custom
       // 固定画布：stage 只负责角色本体与动作，rail 是它的兄弟节点，
       // 两者的 transform / 动画永远不会互相影响，拖动时也不会被裁掉。
@@ -209,8 +242,6 @@ export function DesktopPet(){
   const side=custom
     ?h('div',{className:'status-rail'},h('button',{'data-interactive':true,className:'companion-rail-button',title:people.length>1?'查看双方状态':'查看当前状态',onClick:()=>void api.window('mini')},h(CompanionRail,{live})))
     :null;
-  // 状态牌的可见高度契约来自 companion-layout（默认 / hover 两档），窗口尺寸固定不变。
-  const dockMetrics=dockSurfaceMetrics(p.mode==='orb'?'orb':'custom',p.size,people.length);
   return h('div',{className:`pet-dock ${p.mode==='orb'?'orb-mode':'custom-mode'}${dragging?' is-dragging':''}`,'data-dock-view':view,style:{
     '--rail-height':companionRail.height+'px',
     '--frame-pad-x':companionFrame.padX+'px',
@@ -219,7 +250,11 @@ export function DesktopPet(){
     '--dock-height':dockMetrics.defaultHeight+'px',
     '--dock-width-hover':dockMetrics.hoverWidth+'px',
     '--dock-height-hover':dockMetrics.hoverHeight+'px',
-  } as React.CSSProperties},handle,side);
+    '--dock-pad':dockDetail.pad+'px',
+  } as React.CSSProperties},handle,side,
+    // 详情卡：与状态牌在同一个窗口里（不是第二个 BrowserWindow），
+    // 偏移由主进程按工作区算好；卡片本身是唯一可交互区域。
+    detailOpen&&detailFrame?h(Mini,{variant:'dock',frame:{left:detailFrame.panel.left,top:detailFrame.panel.top}}):null);
 }
 export function PresenceTip(){const live=useLive();useEffect(()=>{document.documentElement.classList.add('companion-root');document.body.classList.add('tip-body');return()=>document.body.classList.remove('tip-body');},[]);return live?.hoverTip?h('div',{className:`presence-tip tip-${live.hoverTip.state}`,role:'status'},live.hoverTip.text):null;}
 // 桌宠右键菜单：内容由主进程按同一份模型投递，形状与产品界面一致（瓷白卡片 +
@@ -250,49 +285,68 @@ export function PetMenu(){
         item.kind==='item'&&item.hint?h('span',{className:'pet-menu-hint'},item.hint):null)));
 }
 export function Bubble(){const live=useLive();useSurface('bubble-body');return live?.bubble?h('section',{'data-interactive':true,className:'speech-cloud'+(live.bubble.below?' cloud-below':''),role:'status',onMouseEnter:()=>void api.bubble('hold'),onMouseLeave:()=>void api.bubble('release')},h('button',{className:'cloud-close',title:'收起气泡',onClick:()=>void api.bubble('close')},'×'),h('small',null,'时间小提醒'),h('div',{className:'cloud-text'},live.bubble.text),h('button',{className:'text-button',onClick:()=>void api.window('mini')},'查看状态 →')):null;}
-export function Mini(){
+/**
+ * 详情卡（轻量桌面状态卡，不是 dashboard）。
+ *
+ * 两种宿主共用同一份内容与同一份数据投影：
+ *   variant='dock'   —— Dock 模式：卡片与状态牌在**同一个** floating 窗口里（0.3 收口）。
+ *   variant='window' —— 桌宠模式：卡片仍在独立浮层窗口里（桌宠画布尺寸不能变）。
+ *
+ * 信息顺序固定为 谁 → 此刻状态 → 还剩多久 → 当前内容 → 下一次变化；
+ * 右侧放 Asset 03（素材图 4）里对应语义的原素材插图，不重画、不换 emoji。
+ */
+export interface MiniProps { variant?:'window'|'dock'; frame?:{left:number;top:number}; }
+export function Mini({variant,frame}:MiniProps){
   const live=useLive();
-  // 详情浮层：窗口比卡片大一圈（阴影画布 + 底部 10px 指示三角，见 style.css）。
-  useEffect(()=>{document.documentElement.classList.add('companion-root');document.body.classList.add('mini-body');return()=>{document.body.classList.remove('mini-body');document.documentElement.classList.remove('companion-root');};},[]);
-  // 轻量 popover：header（此刻 / 我们 · 此刻 + 极小 YD 签名 + 齿轮）→ 每人一块
-  // （alias + 状态点 + 此刻状态 → 上下文 → 下一项）→（Together）一条弱化的页脚。
-  // 层级只由字号、间距与极淡分隔线建立，不做卡片套卡片，也不放大 Logo。
+  const dock=variant==='dock';
+  // 桌宠模式的浮层窗口比卡片大一圈（8px 阴影画布 + 底部 10px 指示三角，见 style.css）。
+  useEffect(()=>{if(dock)return;document.documentElement.classList.add('companion-root');document.body.classList.add('mini-body');return()=>{document.body.classList.remove('mini-body');document.documentElement.classList.remove('companion-root');};},[dock]);
   const people=live?.people??[];
   const solo=people.length<=1;
+  const panel=dockDetailPanel(people.length);
   const gear=h('button',{type:'button',className:'mini-gear',title:'设置','aria-label':'设置',onClick:()=>void api.window('settings')},
     h('svg',{viewBox:'0 0 24 24',width:15,height:15,'aria-hidden':true},
       // 标准齿轮轮廓（Material settings 图标路径）。
       h('path',{d:'M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.48.41l-.36 2.54a7 7 0 0 0-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87a.49.49 0 0 0 .12.61l2.03 1.58a7 7 0 0 0 0 1.88l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.05.7 1.62.94l.36 2.54c.05.24.25.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54a7 7 0 0 0 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z',fill:'currentColor'})));
   /**
-   * 每个人的一栏：状态（alias + 点 + 此刻状态）→ 上下文 → 紧凑的下一项。
-   * Together 每栏更窄，只保留「下一项 + 相对日期时间 + 课程名」；地点属于 Solo 的完整结构。
+   * 每个人的一张 context card：谁 + 此刻状态 + 还剩多久 → 当前内容 → 下一次变化。
+   * 插图来自当前状态（找不到准确映射时退回"下一项"的语义），始终是同一套原素材。
    */
   const person=(status:PersonStatus)=>{
     const view=personPresentation(status),next=view.nextItem;
-    const nextBody=[h('span',{className:'detail-next-label',key:'label'},'下一项'),
-      h('span',{className:'detail-next-when',key:'when'},next?`${next.relativeDay} ${next.time}`:'暂无安排'),
-      next?h('span',{className:'detail-next-title',key:'title',title:next.title},next.title):null,
-      solo&&next?.place?h('span',{className:'detail-place',key:'place',title:next.place},next.place):null];
+    const icon=iconForCurrent(status.current)??iconForNext(status.next);
     return h('article',{className:`detail-person state-${presenceStateFor(status)}`,key:status.person,'data-person':status.person,'data-state-kind':status.current.kind,'data-code':status.code},
-      h('div',{className:'detail-line'},
+      h('header',{className:'detail-head'},
         h('span',{className:'detail-alias'},status.alias),
-        h(StatusCore,{tone:view.dotTone}),
-        h('strong',{className:'detail-state',title:view.primaryLabel},view.primaryLabel)),
+        icon?h('img',{className:'detail-icon',src:iconSrc(icon),alt:'','aria-hidden':true,draggable:false}):null),
+      h('strong',{className:'detail-state',title:view.primaryLabel},view.primaryLabel),
       h('small',{className:'detail-context',title:view.secondaryLabel},view.secondaryLabel),
       next
-        ?h('button',{type:'button',className:'detail-next','data-person':status.person,onClick:()=>void api.window('open')},...nextBody)
-        :h('div',{className:'detail-next is-empty','data-person':status.person},...nextBody));
+        ?h('button',{type:'button',className:'detail-next','data-person':status.person,onClick:()=>void api.window('open')},
+          h('span',{className:'detail-next-title',title:next.title},next.title),
+          h('span',{className:'detail-next-when'},
+            h('span',{className:'detail-next-label'},'下一项'),
+            h('i',{className:'detail-next-sep','aria-hidden':true}),
+            `${next.relativeDay} ${next.time}`),
+          solo&&next.place?h('span',{className:'detail-place',title:next.place},next.place):null)
+        :h('div',{className:'detail-next is-empty','data-person':status.person},
+          h('span',{className:'detail-next-title'},'暂无后续安排')));
   };
+  // 底部只放一条真正共享的上下文（>= 2 个人都在进行中才有意义）；没有就留空，
+  // 不再每次点开都放一句文案。
+  const active=people.filter(item=>item.current.kind!=='idle');
+  const foot=!solo&&active.length>=2?`今天 · ${active.length} 个进行中的安排`:null;
+  const style=dock&&frame?{position:'absolute',left:frame.left+'px',top:frame.top+'px',width:panel.width+'px',height:panel.height+'px'}as React.CSSProperties:undefined;
   return h(React.Fragment,null,
-    h('section',{className:`mini-panel${solo?' solo':''}`},
+    h('section',{className:`mini-panel${solo?' solo':''}${dock?' dock':''}`,'data-interactive':dock?true:undefined,style},
       h('header',{className:'mini-head'},
         h('h2',null,solo?'此刻':'我们 · 此刻'),
         // 品牌只做弱化签名：极小 wordmark + 设置入口，绝不是详情的主体。
         h('div',{className:'mini-brand'},h('b',null,'YD'),gear)),
       h('div',{className:'mini-grid'},...people.map(person)),
-      solo?null:h('p',{className:'detail-foot'},h('i',{'aria-hidden':true}),'两个人的日常，也是一种前进。')),
-    h('span',{className:'mini-tail','aria-hidden':true}));
-};
+      foot?h('p',{className:'detail-foot'},h('i',{'aria-hidden':true}),foot):null),
+    dock?null:h('span',{className:'mini-tail','aria-hidden':true}));
+}
 const modeOptions:[PetPreferences['mode'],string,string][]=[
   ['custom','角色陪伴','使用当前角色素材，并随状态切换动作'],
   ['orb','状态 Dock','轻量显示当前状态，适合随时扫一眼'],

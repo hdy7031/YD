@@ -49,8 +49,11 @@ export const companionCharacter = {
  * 这样 hover 不会移动窗口、也不会改变指针与窗口的几何关系，从根上消除了
  * "resize 丢掉 mouseleave → 鼠标离开仍然放大"这类问题。尺寸取产品定义值：
  *
- *   Together: collapsed 176×44（+8 给中文字形余量）/ hover 220×50
- *   Solo:     collapsed 124×44 / hover 196×50
+ *   Together: collapsed 184×44（牌面 176×36）/ hover 248×54（牌面 240×46）
+ *   Solo:     collapsed 124×44（牌面 116×36）/ hover 196×54（牌面 188×46）
+ *
+ * hover 牌面比默认态宽，是因为第二行辅助信息必须**缩进到主状态内容区下方**并且
+ * 完整显示（"还有 1 小时 30 分"），这条约束由 11px 文案反推出来，不随尺寸档变化。
  */
 export const companionDock = {
   collapsed: {
@@ -66,9 +69,13 @@ export const companionDock = {
     large: { width: 132, height: 46 },
   } as Record<CompanionSize, CompanionGeometry>,
   expanded: {
-    small: { width: 204, height: 54 },
-    medium: { width: 220, height: 54 },
-    large: { width: 240, height: 56 },
+    // 展开态宽度由**第二行文案**决定，而不是尺寸档：三档显示的信息量完全相同，
+    // 所以 240px 牌面（含 4px 阴影画布 = 248 窗口）对三档都成立。
+    // 这样第二行永远以完整句子出现，不会被 ellipsis 截断，也不会为了 hover 单独换字号。
+    // 高度只比默认态高 10px：这是"双行胶囊"，不是 mini 详情页。
+    small: { width: 248, height: 54 },
+    medium: { width: 248, height: 54 },
+    large: { width: 248, height: 56 },
   } as Record<CompanionSize, CompanionGeometry>,
   soloExpanded: {
     small: { width: 180, height: 54 },
@@ -106,6 +113,116 @@ export const companionDetail = {
 export function detailGeometry(people: number): CompanionGeometry {
   const size = people <= 1 ? companionDetail.solo : companionDetail.together;
   return { width: size.width, height: size.height, shape: 'rounded' };
+}
+
+/**
+ * 合并式详情（0.3 Dock 收口）：详情不再是第二个 BrowserWindow，而是**同一个**
+ * floating Dock 窗口在 detail 状态下的画布。这样详情天然跟随 Dock 的 topmost
+ * 语义，不会出现"点开详情后被浏览器盖住"，也不再有第二个窗口与 Dock 抢层级。
+ *
+ *   detail 画布 = 详情卡 + 10px 间距 + 状态牌 + 四周 4px 阴影画布
+ *
+ * 牌面在屏幕上的右下角永远不动（见 dockDetailFrame），因此 collapsed → detail
+ * → collapsed 的往返里 Dock 不会漂，动画只是画布内的展开。
+ */
+export const dockDetail = {
+  /** 详情卡与状态牌之间的呼吸。 */
+  gap: 10,
+  /** 画布四周留给 CSS 阴影的透明区（4px/边，与牌面的阴影画布同一尺度）。 */
+  pad: 4,
+  /** 卡片尺寸：Together 是两张并排的 person card，Solo 是同一张卡的收窄版。 */
+  together: { width: 460, height: 236 },
+  solo: { width: 340, height: 218 },
+} as const;
+
+export function dockDetailPanel(people: number): { width: number; height: number } {
+  return people <= 1 ? dockDetail.solo : dockDetail.together;
+}
+
+/** 详情画布：窗口矩形 + 状态牌 / 卡片在窗口内的偏移（都由主进程算好后交给渲染层）。 */
+export interface DockDetailFrame {
+  window: { x: number; y: number; width: number; height: number };
+  /**
+   * 状态牌命中区（牌面 + 4px 阴影画布）在窗口内的位置。
+   *
+   * 只给出"贴着哪两条边"以及贴边的距离：这两个数值和默认画布里完全一样，
+   * 所以渲染层无论在新窗口还是旧窗口里渲染这一层，牌面的屏幕位置都一致 ——
+   * 打开 / 收起详情时不可能看到牌面跳一下。
+   */
+  dock: { left?: number; top?: number; right?: number; bottom?: number; width: number; height: number };
+  /** 详情卡在窗口内的位置。 */
+  panel: { left: number; top: number; width: number; height: number };
+  /** 卡片在牌面上方还是下方（屏幕边界决定）。 */
+  placement: 'above' | 'below';
+}
+
+/**
+ * 计算 detail 画布：输入当前 Dock 窗口矩形与所在显示器工作区，输出新的窗口矩形
+ * 以及牌面 / 卡片在窗口内的偏移。纯函数，主进程与验收脚本共用。
+ *
+ * 不变量：牌面（collapsed 牌面）在屏幕上的右下角 = 传入 bounds 的右下角 − 4px，
+ * 与 collapsed / hover 时的位置完全一致。
+ */
+export function dockDetailFrame(input: {
+  people: number;
+  size: CompanionSize;
+  bounds: { x: number; y: number; width: number; height: number };
+  area: { x: number; y: number; width: number; height: number };
+}): DockDetailFrame {
+  const surface = dockSurfaceMetrics('orb', input.size, input.people);
+  const plate = { width: surface.defaultWidth, height: surface.defaultHeight };
+  const pad = dockDetail.pad;
+  const canvas = { width: input.bounds.width, height: input.bounds.height };
+  // 牌面在默认画布里的偏移（collapsed 与 hover 共用同一个右下角锚点）。
+  const plateLeft = canvas.width - pad - plate.width;
+  const plateTop = canvas.height - pad - plate.height;
+  const plateRect = {
+    x: input.bounds.x + plateLeft,
+    y: input.bounds.y + plateTop,
+    width: plate.width,
+    height: plate.height,
+  };
+  const plateRight = plateRect.x + plate.width;
+  const plateBottom = plateRect.y + plate.height;
+  const panelSize = dockDetailPanel(input.people);
+  const areaRight = input.area.x + input.area.width, areaBottom = input.area.y + input.area.height;
+  // 垂直：默认向上（详情在 Dock 上方）；上方放不下时向下展开；两侧都放不下（极端窄的
+  // 可用区）时把卡片收回工作区，宁可压住牌面也不出屏。
+  const aboveTop = plateRect.y - dockDetail.gap - panelSize.height;
+  const belowTop = plateBottom + dockDetail.gap;
+  let vertical: 'above' | 'below' | 'free' = 'above';
+  let panelY = aboveTop;
+  if (aboveTop < input.area.y) {
+    if (belowTop + panelSize.height <= areaBottom) { vertical = 'below'; panelY = belowTop; }
+    else { vertical = 'free'; panelY = Math.max(input.area.y, Math.min(aboveTop, areaBottom - panelSize.height)); }
+  }
+  // 水平：卡片默认挂在"牌面右边缘向左"（靠右的 Dock 向左收）；左边放不下时翻到
+  // 牌面左边缘向右（靠左的 Dock 向右收），再放不下才允许画布自由生长。
+  const canvasLeft = input.bounds.x;
+  let horizontal: 'right' | 'left' | 'free' = 'right';
+  let panelX = plateRight - panelSize.width;
+  if (panelX < input.area.x) {
+    const leftAligned = canvasLeft + pad;
+    if (leftAligned + panelSize.width + pad <= areaRight) { horizontal = 'left'; panelX = leftAligned; }
+    else { horizontal = 'free'; panelX = Math.max(input.area.x, Math.min(panelX, Math.max(input.area.x, areaRight - panelSize.width))); }
+  }
+  // 画布：与默认画布共享垂直 / 水平各一条边（上或下、左或右），另一条边由卡片撑开。
+  const windowTop = vertical === 'below' ? input.bounds.y : vertical === 'above' ? panelY - pad : Math.min(plateRect.y, panelY) - pad;
+  const windowBottom = vertical === 'above' ? input.bounds.y + canvas.height : panelY + panelSize.height + pad;
+  const windowLeft = horizontal === 'left' ? input.bounds.x : horizontal === 'right' ? panelX - pad : Math.min(plateRect.x, panelX) - pad;
+  const windowRight = horizontal === 'right' ? input.bounds.x + canvas.width : panelX + panelSize.width + pad;
+  const dock: DockDetailFrame['dock'] = {
+    width: plate.width + pad * 2,
+    height: plate.height + pad * 2,
+    ...(horizontal === 'right' ? { right: pad } : { left: horizontal === 'left' ? plateLeft : plateRect.x - windowLeft }),
+    ...(vertical === 'above' ? { bottom: pad } : { top: vertical === 'below' ? plateTop : plateRect.y - windowTop }),
+  };
+  return {
+    window: { x: windowLeft, y: windowTop, width: windowRight - windowLeft, height: windowBottom - windowTop },
+    dock,
+    panel: { left: panelX - windowLeft, top: panelY - windowTop, width: panelSize.width, height: panelSize.height },
+    placement: vertical === 'below' ? 'below' : 'above',
+  };
 }
 
 export interface CompanionGeometry {

@@ -98,7 +98,19 @@ export function presenceStateFor(status?:PersonStatus):PresenceState {
   if(status.code==='UPCOMING')return 'upcoming';
   return 'idle';
 }
-export interface LiveSnapshot { now:number; source:string; people:PersonStatus[]; pending:number; preferences:PetPreferences; display:CompanionDisplay; petInstance:PetInstance; /** Compatibility projection of petInstance.subjectId. */ subject:PersonId; /** 详情浮层当前是否打开：Dock 用它决定 collapsed / detail 状态。 */ detail:boolean; bubble?:{id:string;text:string;below?:boolean}; hoverTip?:{person:PersonId;text:string;state:PresenceState}; }
+/**
+ * 详情画布的渲染偏移（由主进程按显示器工作区算好，渲染层不做窗口几何判断）。
+ *   dock  = 牌面在窗口内的贴边（只给实际贴着的那两条边；命中区 = 牌面 + 4px 阴影画布）
+ *   panel = 详情卡在窗口内的位置（尺寸由 CSS 契约决定）
+ *   below = 卡片在牌面下方（屏幕上方放不下时才成立）
+ */
+export interface DockDetailPlacement {
+  /** 牌面的贴边偏移 + 命中区尺寸；两个方向各贴一条边，因此渲染层总能定位到同一块牌面。 */
+  dock:{left?:number;top?:number;right?:number;bottom?:number;width:number;height:number};
+  panel:{left:number;top:number};
+  below:boolean;
+}
+export interface LiveSnapshot { now:number; source:string; people:PersonStatus[]; pending:number; preferences:PetPreferences; display:CompanionDisplay; petInstance:PetInstance; /** Compatibility projection of petInstance.subjectId. */ subject:PersonId; /** 详情浮层当前是否打开：Dock 用它决定 collapsed / detail 状态（Dock 模式下详情与状态牌是同一个窗口）。 */ detail:boolean; /** 详情打开时状态牌 / 卡片的画布内偏移；Dock 模式才出现。 */ detailFrame?:DockDetailPlacement; bubble?:{id:string;text:string;below?:boolean}; hoverTip?:{person:PersonId;text:string;state:PresenceState}; }
 export const clockText=(n:number)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(n);
 export function activity(s:State,o:Occurrence){return o.kind==='event'?'会议/活动':s.courses.find(c=>c.id===o.courseId)?.activity==='research'?'教研':'上课';}
 export function personStatus(s:State,now:number,person:PersonId):PersonStatus {

@@ -92,12 +92,12 @@ app.whenReady().then(async () => {
     check('状态浮标没有第二个（幽灵）同行者行', await orb.webContents.executeJavaScript("!document.querySelector('.dock-row[data-person=\"partner\"]')"));
     check('状态浮标单人行的短标签来自本人档案', await orb.webContents.executeJavaScript("document.querySelector('.dock-row .dock-alias')?.textContent.trim()==='A'"), await orb.webContents.executeJavaScript("document.querySelector('.dock-row .dock-alias')?.textContent.trim()"));
     check('Solo 没有 divider 或空白第二槽位',await orb.webContents.executeJavaScript("getComputedStyle(document.querySelector('.dock-row'),'::before').display==='none'&&!document.querySelector('.dock-row+.dock-row')"));
-    // Solo 是重新配比的完整一等形态，不沿用 Together 的宽度。
-    check('Solo 默认几何独立、短而利落（中档 164×70（含 hover 预留画布））', (() => { const [width, height] = orb.getSize(); return Math.abs(width-164)<=2&&Math.abs(height-70)<=2; })(), JSON.stringify(orb.getSize()));
+    // Solo 是重新配比的完整一等形态，不沿用 Together 的宽度（中档窗口 = 展开态足迹 196×54）。
+    check('Solo 默认几何独立、短而利落（中档 196×54（含 hover 预留画布））', (() => { const [width, height] = orb.getSize(); return Math.abs(width-196)<=2&&Math.abs(height-54)<=2; })(), JSON.stringify(orb.getSize()));
     fs.writeFileSync(path.join(output,'dock-solo-default.png'),(await orb.capturePage()).toPNG());
     await orb.webContents.executeJavaScript("window.dayhub.presence('enter','alex')");
     await wait(250);
-    check('Solo hover 只展开内部信息，164×70 外框保持不变', !tip.isVisible()&&Math.abs(orb.getSize()[0]-164)<=2&&Math.abs(orb.getSize()[1]-70)<=2,JSON.stringify(orb.getSize()));
+    check('Solo hover 只展开内部信息，196×54 外框保持不变', !tip.isVisible()&&Math.abs(orb.getSize()[0]-196)<=2&&Math.abs(orb.getSize()[1]-54)<=2,JSON.stringify(orb.getSize()));
     check('Solo hover 补充信息短而完整',await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row.is-hovered').length===1&&!!document.querySelector('.dock-extra')&&document.querySelector('.dock-extra').textContent.trim().length>1&&!document.body.textContent.includes('undefined')"));
     fs.writeFileSync(path.join(output,'dock-solo-hover.png'),(await orb.capturePage()).toPNG());
     check('不存在的状态区域被拒绝而不是崩溃', await orb.webContents.executeJavaScript("window.dayhub.presence('enter','partner').then(()=>false).catch(()=>true)"));
@@ -105,16 +105,29 @@ app.whenReady().then(async () => {
     await wait(180);
     check('Solo hover 离开后外框稳定且无残留',!tip.isVisible()&&Math.abs(orb.getSize()[0]-196)<=2&&Math.abs(orb.getSize()[1]-54)<=2&&await orb.webContents.executeJavaScript("!document.querySelector('.dock-row.is-hovered')"));
 
-    /* ---------- Mini / Menu ---------- */
+    /* ---------- 详情（Dock 模式：与状态牌共用同一个 floating 窗口） ---------- */
+    const soloPlate=async()=>{const b=orb.getBounds();const rect=await orb.webContents.executeJavaScript("(()=>{const r=document.querySelector('.dock-surface').getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y)}})()");return {x:b.x+rect.x,y:b.y+rect.y};};
+    const plateBefore=await soloPlate(),canvasBefore=orb.getSize();
     await orb.webContents.executeJavaScript("window.dayhub.window('mini')");
-    await wait(300);
-    check('mini 浮层打开且只有一个人物区', mini.isVisible() && await mini.webContents.executeJavaScript("document.querySelectorAll('.detail-person').length===1"));
-    // Solo 详情是独立设计的轻浮层（标题「此刻」+ 一块人物区 + 一条下一项），不是砍掉半边的 Together。
-    check('mini 标题与结构是专门的 Solo 详情态', await mini.webContents.executeJavaScript("document.querySelector('.mini-head h2')?.textContent==='此刻'&&document.querySelectorAll('.detail-person').length===1&&document.querySelectorAll('.detail-next').length===1&&!document.querySelector('.detail-foot')&&!document.querySelector('.mini-grid .detail-person + .detail-person')"));
-    // Solo 浮层：卡片 268×128 + 阴影画布 + 底部指示三角（窗口 276×146），内容占满宽度。
-    check('mini 使用完整宽度且没有空白第二列',Math.abs(mini.getSize()[0]-276)<=2&&Math.abs(mini.getSize()[1]-146)<=2&&await mini.webContents.executeJavaScript("(()=>{const panel=document.querySelector('.mini-panel'),block=document.querySelector('.detail-person');if(!panel||!block)return false;return block.getBoundingClientRect().width>=panel.getBoundingClientRect().width*0.75})()"),JSON.stringify(mini.getSize()));
-    check('mini 没有 undefined', await mini.webContents.executeJavaScript("!document.body.textContent.includes('undefined')"));
-    fs.writeFileSync(path.join(output,'dock-solo-mini.png'),(await mini.capturePage()).toPNG());
+    await wait(420);
+    const detailState = await orb.webContents.executeJavaScript(`(()=>{const panel=document.querySelector('.mini-panel');
+      const icon=panel?.querySelector('.detail-icon');
+      return {view:document.querySelector('.pet-dock').dataset.dockView,people:panel?panel.querySelectorAll('.detail-person').length:0,next:panel?panel.querySelectorAll('.detail-next').length:0,
+        title:panel?.querySelector('.mini-head h2')?.textContent??'',icons:panel?panel.querySelectorAll('.detail-icon').length:0,iconSrc:icon?icon.getAttribute('src'):null,
+        foot:!!panel?.querySelector('.detail-foot'),undef:document.body.textContent.includes('undefined'),
+        width:Math.round(panel?.getBoundingClientRect().width??0)}})()`);
+    const plateAfter=await soloPlate();
+    // Solo 详情是独立配比的一张 context card（标题「此刻」+ 状态 + 下一项 + 素材插图），不是砍掉半边。
+    check('详情与状态牌在同一个窗口里打开（没有第二个 BrowserWindow）', detailState.view==='detail'&&!mini.isVisible(), JSON.stringify({view:detailState.view,mini:mini.isVisible()}));
+    check('Solo 详情是专门的 Solo 形态：一张卡、一条下一项、没有第二个空列', detailState.people===1&&detailState.next===1&&!detailState.foot&&detailState.title==='此刻', JSON.stringify(detailState));
+    check('Solo 详情接入素材图 4 的原素材插图', detailState.icons===1&&/assets\/dock-icons\/[a-z]+\.png$/.test(String(detailState.iconSrc)), JSON.stringify({icons:detailState.icons,iconSrc:detailState.iconSrc}));
+    check('Solo 详情画布收窄（348×272），卡片占满宽度', Math.abs(orb.getSize()[0]-348)<=2&&Math.abs(orb.getSize()[1]-272)<=2&&detailState.width>=300, JSON.stringify({size:orb.getSize(),cardWidth:detailState.width}));
+    check('打开 / 收起详情不移动状态牌', Math.abs(plateAfter.x-plateBefore.x)<=2&&Math.abs(plateAfter.y-plateBefore.y)<=2, JSON.stringify({plateBefore,plateAfter}));
+    check('详情没有 undefined', detailState.undef===false);
+    fs.writeFileSync(path.join(output,'dock-solo-detail.png'),(await orb.capturePage()).toPNG());
+    await orb.webContents.executeJavaScript("window.dayhub.window('detail-close')");
+    await wait(360);
+    check('详情收起后回到 Solo 默认画布', orb.getSize()[0]===canvasBefore[0]&&orb.getSize()[1]===canvasBefore[1]&&await orb.webContents.executeJavaScript("document.querySelector('.pet-dock').dataset.dockView!=='detail'"), JSON.stringify({before:canvasBefore,after:orb.getSize()}));
     await orb.webContents.executeJavaScript("window.dayhub.window('menu')");
     await wait(300);
     check('桌宠菜单正常且不含固定 Ta', sheet.isVisible() && await sheet.webContents.executeJavaScript("(()=>{const t=document.body.textContent;return t.includes('打开 YD')&&t.includes('退出 YD')&&!t.includes('Ta')&&!t.includes('undefined')})()"));

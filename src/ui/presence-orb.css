@@ -103,26 +103,29 @@
 .dock-row {
   --status:var(--dock-idle);
   position:relative;
-  /* 单列纵向堆叠：第一行永远垂直居中，第二行只在 hover 展开时占位。
-     因此展开是"牌面长大 + 第二行出现"，不是把第一行强行推走。 */
-  display:flex;
-  flex-direction:column;
+  /* 两列结构：首字母是身份标记，右列才是"主状态 + 辅助信息"。
+     辅助信息因此天然从主状态内容区开始，而不是和 D / Y 平级：
+       ┌────┬────────────────────┐
+       │ D  │ ● 上课中            │
+       │    │   还有 1 小时 30 分 │
+       └────┴────────────────────┘ */
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
   align-items:center;
-  justify-content:center;
-  gap:2px;
+  column-gap:var(--dock-gap,5px);
   min-width:0;
   flex:1 1 0;
   /* 内边距 / 间隙要留得下最常见的三字状态（上课中 / 教研中 / 通勤中 / 刚睡醒）：
-     3px 边距 + 3px 间隙 + 12px 状态点列，中档 81px 的列还剩 54px 给状态文字（13px 三字 ≈ 39px）。 */
+     2px 边距 + 5px 间隙 + 12px 状态点列，中档 81px 的列还剩 54px 给状态文字（13px 三字 ≈ 39px）。 */
   padding:0 2px;
   transition:background-color 150ms ease;
 }
+.dock-main { display:grid; row-gap:2px; min-width:0; justify-items:start; }
 .dock-row + .dock-row::before { content:""; position:absolute; left:-1px; top:11px; bottom:11px; width:1px; background:rgba(79,119,115,.13); }
 /* 指针所在的那个人只有一层极淡的胶囊底，不铺满整块区域（Asset 04 的 hover 以文字为主）。 */
 .dock-row.is-hovered { background:rgba(79,119,115,.05); border-radius:999px; }
-/* 字母与状态之间的呼吸：展开时同步拉开，牌面长大了间距也跟着长。 */
-.dock-line { display:flex; align-items:center; gap:var(--dock-gap,5px); min-width:0; max-width:100%; transition:gap 150ms ease; }
-.dock-surface.is-expanded .dock-line { gap:var(--dock-gap-hover,8px); }
+/* 字母与状态之间的呼吸：间距固定，展开时不再变化（宽度留给第二行文案）。 */
+.dock-line { display:flex; align-items:center; gap:var(--dock-gap,5px); min-width:0; max-width:100%; }
 .dock-surface.solo { justify-content:center; }
 .dock-surface.solo .dock-row { flex:0 1 auto; width:100%; }
 .dock-surface.solo .dock-row::before { display:none; }
@@ -160,27 +163,25 @@
   min-width:0;
 }
 
-/* 第二行：Together 的列很窄，第二行从行首开始（与首字母左对齐）才放得下
-   「今日课程已结束」「下一项 明天 08:00」这类完整句子；Solo 空间宽松，保留缩进。 */
+/* 第二行辅助信息：11px、明显更浅，并且从主状态内容区开始（与状态点左边缘齐平再 +4px），
+   不允许抢过主状态。牌面宽度按"完整显示还有 1 小时 30 分"反推（见 companion-layout）。 */
 .dock-extra {
   display:block;
-  align-self:stretch;
   max-width:100%;
   box-sizing:border-box;
   height:0;
-  padding-left:0;
+  padding-left:4px;
   overflow:hidden;
-  color:#7E8D8A;
-  font:450 10.5px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
+  color:#85948F;
+  font:450 11px/1.2 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
   text-align:left;
   text-overflow:ellipsis;
   white-space:nowrap;
   opacity:0;
   transition:height 150ms ease,opacity 150ms ease;
 }
-.dock-surface.solo .dock-extra { padding-left:22px; }
 /* Hover 是二级信息揭示：整块状态牌一起显露第二行，而不是只放大被指到的那一行。 */
-.dock-surface.is-expanded .dock-extra { height:12px; opacity:1; }
+.dock-surface.is-expanded .dock-extra { height:14px; opacity:1; }
 .pet-dock.is-dragging .dock-row > * { transform:none !important; transition:none !important; }
 
 .status-core {
@@ -238,3 +239,35 @@
   .dock-surface,.dock-row,.dock-extra { transition:none; }
   .motion .status-dot,.motion .status-ring { animation:none !important; }
 }
+
+/* ---------------------------------------------------------------------------
+ * 合并式详情：卡片是**同一个** floating 窗口里的一块（不是第二个 BrowserWindow）。
+ *
+ * 位置由主进程按显示器工作区算好（见 companion-layout.dockDetailFrame），渲染层
+ * 只负责把牌面贴到共享边上、把卡片绝对定位。窗口在整个生命周期里是同一个 topmost
+ * 窗口，所以详情不可能被浏览器盖住。
+ * --------------------------------------------------------------------------- */
+.mini-panel.dock {
+  position:absolute;
+  padding:13px 14px 11px;
+  border-radius:18px;
+  /* 阴影与状态牌同一档（0 2px 5px）：卡片本来就贴在状态牌上方，不需要更重的投影，
+     而且阴影必须在画布的 4px 阴影画布内收敛，不能在窗口边缘被切出一条硬边。 */
+  box-shadow:0 2px 5px rgba(31,43,44,.06),0 1px 2px rgba(31,43,44,.04),inset 0 1px rgba(255,255,255,.92);
+}
+.mini-panel.dock .mini-head { height:20px; }
+.mini-panel.dock .mini-head h2 { font-size:14.5px; }
+.mini-panel.dock .mini-grid { gap:12px; margin-top:9px; }
+.mini-panel.dock .detail-person { padding:11px 12px 10px; border-radius:16px; background:rgba(243,248,246,.74); }
+.mini-panel.dock .detail-alias { font-size:12.5px; }
+/* 素材图 4 的插图：40–54px 之间，不让它比人物状态更抢眼。 */
+.mini-panel.dock .detail-icon { width:46px; height:46px; margin:-9px -3px -9px 0; }
+.mini-panel.dock .detail-state { margin-top:5px; font-size:19px; }
+.mini-panel.dock .detail-context { font-size:12px; }
+.mini-panel.dock .detail-next { margin:auto 0 0; padding-top:9px; gap:3px; }
+.mini-panel.dock .detail-next-title { font-size:13.5px; }
+.mini-panel.dock .detail-next-when { font-size:11.5px; }
+.mini-panel.dock .detail-place { font-size:11px; }
+.mini-panel.dock .detail-foot { font-size:11px; }
+.mini-panel.dock.solo .mini-head h2 { font-size:15px; }
+.mini-panel.dock.solo .detail-state { font-size:20px; }

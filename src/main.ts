@@ -129,7 +129,12 @@ function moveOrb(x:number,y:number,width?:number,height?:number){
  * 只在真的丢了的时候调用一次 setAlwaysOnTop，不刷新 z-order、不抢焦点。
  */
 function assertDockTopmost(){
-  if(orb&&!orb.isDestroyed()&&orb.isVisible()&&!orb.isAlwaysOnTop())orb.setAlwaysOnTop(true);
+  if(!orb||orb.isDestroyed()||!orb.isVisible()||orb.isAlwaysOnTop())return;
+  // 同样先归零再置顶：Electron 只在 JS 侧标志变化时才写原生 z-order，
+  // 而透明 / 分层 / 点击穿透会绕过它把窗口打回普通层。窗口此刻已经不在置顶层，
+  // 所以归零不会造成可见闪烁，只是把原生样式真正写回去。
+  orb.setAlwaysOnTop(false);
+  orb.setAlwaysOnTop(true);
 }
 function canonicalOrbSize(){
   const p={...petDefaults,...store.state.settings.pet};
@@ -175,7 +180,8 @@ function setupHandlers(){
   handler('get',()=>store.snapshot());
   handler('parseNotice',(id:string,text?:string,fromOcr?:boolean)=>inboxService.parse(id,text,fromOcr===true));
   handler('clipboardText',()=>clipboard.readText());
-  handler('live',()=>companion?.get()??snapshot(store.state,Date.now()));
+  // 渲染层第一次（也是每次重新）要求状态投射，说明 Dock 已经在屏幕上：顺手确认一次置顶。
+  handler('live',()=>{assertDockTopmost();return companion?.get()??snapshot(store.state,Date.now());});
   handler('companionAssets',(packId?:unknown)=>{
     if(packId!==undefined&&typeof packId!=='string')throw new Error('Avatar Pack 编号无效');
     return resolveCompanionAssets(__dirname,packId as string|undefined);
@@ -215,6 +221,7 @@ function setupHandlers(){
   handler('window',(action:string)=>{
     if(action==='minimize')panel.minimize();else if(action==='maximize'){if(panel.isMaximized())panel.unmaximize();else panel.maximize();}
     else if(action==='close')panel.hide();else if(action==='open')showPanel();else if(action==='mini')companion?.toggleMini();
+    else if(action==='detail-close')companion?.collapseDetail();
     else if(action==='settings'){showPanel();panel.webContents.send('dayhub:settings');}
     else if(action==='menu')companion?.openMenu();else throw new Error('无效窗口操作');
   });
@@ -245,8 +252,18 @@ function setupHandlers(){
   });
   handler('drag',(pointerX:number,pointerY:number)=>{
     if(!dragAnchor||!Number.isFinite(pointerX)||!Number.isFinite(pointerY))throw new Error('拖动参数无效');
-    if(!dragActive){dragActive=true;companion?.dragStart();}
     const cursor=screen.getCursorScreenPoint();
+    if(!dragActive){
+      dragActive=true;
+      const before=orb.getBounds();
+      companion?.dragStart();
+      const after=orb.getBounds();
+      // 拖动开始时收起详情会把窗口从"详情画布"还原成"状态牌画布"（牌面在屏幕上
+      // 并没有移动，但窗口原点变了）。这里按新的原点重新对齐锚点，避免第一帧跳一下。
+      if(after.x!==before.x||after.y!==before.y||after.width!==before.width||after.height!==before.height){
+        dragAnchor={...dragAnchor,windowX:after.x,windowY:after.y,cursorX:cursor.x,cursorY:cursor.y,pointerX,pointerY,cursorMode:false};
+      }
+    }
     const step=resolveDragStep(dragAnchor,{x:pointerX,y:pointerY},cursor);
     if(step.adoptedCursor){
       // 改用系统光标时按当前位置重新对齐锚点，避免切换瞬间跳一下。
@@ -378,6 +395,9 @@ else{
     setupHandlers();
     panel.on('close',e=>{if(quitting)return;if(store.state.settings.trayResident===false){quitting=true;app.quit();return;}e.preventDefault();panel.hide();});
     orb.on('close',e=>{if(!quitting){e.preventDefault();orb.hide();}});
+    // 首帧绘制完成 = 窗口真正出现在桌面上：这时再断言一次置顶，
+    // 避免"创建时设置过、显示之后被原生样式改动打回普通层"的启动竞态。
+    orb.on('ready-to-show',()=>assertDockTopmost());
     await Promise.all([orb.loadFile(path.join(__dirname,'index.html'),{hash:'orb'}),panel.loadFile(path.join(__dirname,'index.html'))]);
     // 渲染层加载 index.html 时会把窗口标题改写成文档标题（与主窗口同名）。
     // Dock 是"被浏览器压到下层"这类线上问题的第一个排查对象，必须能按标题认出来，

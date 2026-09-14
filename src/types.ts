@@ -55,7 +55,9 @@ export interface DesktopAPI {
   /** hover 收起的兜底确认：系统光标此刻是否还在桌宠 / 状态牌窗口内。 */
   cursorInside():Promise<boolean>;
   onLive(callback:(value:import('./live.ts').LiveSnapshot)=>void):()=>void;
-  window(action:'minimize'|'maximize'|'close'|'open'|'mini'|'menu'|'settings'):Promise<void>;
+  // 'mini' = 切换详情（Dock 模式共用同一个窗口，桌宠模式用独立浮层）；
+  // 'detail-close' = 明确收起详情（点击 Dock / ESC 用，避免与 toggle 抢语义）。
+  window(action:'minimize'|'maximize'|'close'|'open'|'mini'|'detail-close'|'menu'|'settings'):Promise<void>;
   // 自绘桌宠右键菜单：主进程投递菜单模型，渲染层回传被点中的行。
   menuAction(id:string):Promise<void>;
   onMenu(callback:(items:import('./companion-menu.ts').CompanionMenuItem[])=>void):()=>void;

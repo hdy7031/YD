@@ -241,6 +241,17 @@ function trayMatches(file) {
 
 const windowOf = (hash) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#' + hash));
 
+/**
+ * 采样区域 = 窗口里**真正可见的那一块**（状态牌 / 详情卡），而不是整个透明画布。
+ * Dock 画布按设计大部分是透明的，用整窗矩形采样会把桌面像素算成 Dock 的一部分。
+ */
+async function visibleBounds(win, selector) {
+  const rect = await win.webContents.executeJavaScript(`(()=>{const el=document.querySelector('${selector}');if(!el)return null;const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()`);
+  if (!rect) return win.getBounds();
+  const b = win.getBounds();
+  return { x: b.x + rect.x, y: b.y + rect.y, width: rect.width, height: rect.height };
+}
+
 function coverPage(color, label) {
   return `data:text/html;charset=utf-8,${encodeURIComponent(
     `<!doctype html><html><head><style>html,body{margin:0;height:100%;background:${color};color:#111;font:14px "Segoe UI"}</style></head><body><h1 style="padding:24px">${label}</h1></body></html>`
@@ -328,7 +339,7 @@ async function run(dataDir) {
 
   const overCover = await record('普通窗口铺满并聚焦后');
   check('普通窗口聚焦后 Dock 仍是 WS_EX_TOPMOST（未被降级）', !!overCover.state?.topmost, JSON.stringify(overCover.state));
-  const lightSample = await sampleWindow(dock.getBounds(), 14);
+  const lightSample = await sampleWindow(await visibleBounds(dock, '.dock-surface'), 14);
   // 被白色网页盖住时：窗口矩形内只会是纯白（min ≈ 255）；Dock 真的在渲染时，
   // 一定同时存在 mist 底面（中位亮度高）与深色状态文字（最暗像素低）。
   check('浅色网页上 Dock 像素仍然可见（不是被盖住 / 没有停止绘制）', lightSample.inner.median > 200 && lightSample.inner.min < 150, JSON.stringify({ inner: lightSample.inner, ring: lightSample.ring }));
@@ -366,23 +377,33 @@ async function run(dataDir) {
   await pet("document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('click',{bubbles:true}))");
   await wait(420);
   const mini = windowOf('mini');
-  const withMini = await record('详情面板打开后');
-  check('详情面板（Mini）显示时 Dock 仍是 WS_EX_TOPMOST', !!withMini.state?.topmost, JSON.stringify(withMini.state));
+  const withDetail = await record('详情打开后');
+  const detailState = await pet("(()=>{const panel=document.querySelector('.mini-panel');return {view:document.querySelector('.pet-dock').dataset.dockView,panel:!!panel,icons:panel?panel.querySelectorAll('.detail-icon').length:0}})()");
+  // 详情是**同一个** floating 窗口的第三种画布：没有第二个窗口去抢层级，
+  // Dock 的 topmost 语义自动覆盖详情。
+  check('详情打开后 Dock 仍是 WS_EX_TOPMOST', !!withDetail.state?.topmost, JSON.stringify(withDetail.state));
+  check('详情渲染在 Dock 自己的窗口里（没有第二个 BrowserWindow）', detailState.view === 'detail' && detailState.panel === true && mini.isVisible() === false, JSON.stringify({ detailState, miniVisible: mini.isVisible() }));
+  check('详情真正使用素材图 4 的原素材插图', detailState.icons >= 1, JSON.stringify(detailState));
+  check('详情打开后 Dock 窗口仍然在屏幕上（没有被浏览器盖住）', dock.isVisible() && withDetail.state?.visible === true, JSON.stringify(withDetail.state));
   {
-    const miniAlpha = await edgeAlpha(mini);
-    check('详情面板的 CSS 阴影在窗口边界前收敛（边缘 alpha ≤ 6/255）', miniAlpha.top <= 6 && miniAlpha.bottom <= 6 && miniAlpha.left <= 6 && miniAlpha.right <= 6, JSON.stringify(miniAlpha));
-    fs.writeFileSync(path.join(output, 'mini-edge-alpha.json'), JSON.stringify(miniAlpha, null, 2));
+    const detailAlpha = await edgeAlpha(dock);
+    check('详情画布的 CSS 阴影在窗口边界前收敛（边缘 alpha ≤ 6/255）', detailAlpha.top <= 6 && detailAlpha.bottom <= 6 && detailAlpha.left <= 6 && detailAlpha.right <= 6, JSON.stringify(detailAlpha));
+    fs.writeFileSync(path.join(output, 'detail-edge-alpha.json'), JSON.stringify(detailAlpha, null, 2));
   }
-  {
-    const list = probeWindows();
-    const miniEntry = findWindow(list, mini);
-    check('详情面板位于 Dock 之上（z-order）', !!miniEntry && !!withMini.entry && miniEntry.z < withMini.entry.z, JSON.stringify({ miniZ: miniEntry?.z, dockZ: withMini.entry?.z }));
-  }
-  if (mini.isVisible()) mini.blur();
+  // 详情展开期间，普通窗口依旧铺满屏幕（但没有焦点）：详情像素必须还在。
+  // 注意不能去 focus 那个普通窗口 —— 点击外部 = 收起详情，那是产品定义的行为，
+  // 这里要验证的是"详情不会被盖住"，不是"详情不理会点击外部"。
   await wait(420);
-  const afterMini = await record('详情面板关闭后');
-  check('详情面板关闭后 Dock 仍是 WS_EX_TOPMOST', !!afterMini.state?.topmost, JSON.stringify(afterMini.state));
-  check('详情面板关闭后 Dock 仍可见', dock.isVisible());
+  const detailUnderCover = await record('详情打开且普通窗口聚焦后');
+  const detailSample = await sampleWindow(await visibleBounds(dock, '.mini-panel'), 14);
+  check('详情打开时普通窗口聚焦，Dock 仍是 WS_EX_TOPMOST', !!detailUnderCover.state?.topmost, JSON.stringify(detailUnderCover.state));
+  check('详情打开且被普通窗口覆盖时，详情像素仍然可见', detailSample.inner.median > 200 && detailSample.inner.min < 150, JSON.stringify({ inner: detailSample.inner, ring: detailSample.ring }));
+  fs.writeFileSync(path.join(output, 'detail-over-cover.png'), detailSample.crop.toPNG());
+  await pet("window.dayhub.window('detail-close')");
+  await wait(420);
+  const afterDetail = await record('详情关闭后');
+  check('详情关闭后 Dock 仍是 WS_EX_TOPMOST', !!afterDetail.state?.topmost, JSON.stringify(afterDetail.state));
+  check('详情关闭后 Dock 仍可见且回到状态牌画布', dock.isVisible() && (await pet("document.querySelector('.pet-dock').dataset.dockView")) !== 'detail');
 
   await pet("document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true}))");
   await wait(420);
@@ -417,7 +438,7 @@ async function run(dataDir) {
   await cover.loadURL(coverPage('#111418', 'cover · dark'));
   cover.focus();
   await wait(600);
-  const darkSample = await sampleWindow(dock.getBounds(), 14);
+  const darkSample = await sampleWindow(await visibleBounds(dock, '.dock-surface'), 14);
   check('深色网页上 Dock 像素仍然可见', darkSample.inner.median > 200 && darkSample.inner.min < 150, JSON.stringify({ inner: darkSample.inner, ring: darkSample.ring }));
   fs.writeFileSync(path.join(output, 'over-dark-cover.png'), darkSample.crop.toPNG());
   check('深色网页上 Dock 外圈没有明显亮边 / 脏灰 halo（ring 中位亮度 ≤ 45）', darkSample.ring.median <= 45, JSON.stringify(darkSample.ring));
@@ -452,7 +473,7 @@ async function run(dataDir) {
     await wait(1500);
     const overEdge = await record('Edge 最大化并聚焦后');
     check('Edge 最大化聚焦后 Dock 仍是 WS_EX_TOPMOST', !!overEdge.state?.topmost, JSON.stringify(overEdge.state));
-    const edgeSample = await sampleWindow(dock.getBounds(), 14);
+    const edgeSample = await sampleWindow(await visibleBounds(dock, '.dock-surface'), 14);
     check('Edge 白页上 Dock 像素仍然可见（真实浏览器场景）', edgeSample.inner.median > 200 && edgeSample.inner.min < 150, JSON.stringify({ inner: edgeSample.inner, ring: edgeSample.ring }));
     check('Edge 白页上 Dock 外圈没有明显暗环（ring p05 ≥ 215）', edgeSample.ring.p05 >= 215, JSON.stringify(edgeSample.ring));
     {
@@ -461,6 +482,28 @@ async function run(dataDir) {
       check('Dock 在 z-order 上高于 Edge 窗口', !!currentEdge && !!overEdge.entry && overEdge.entry.z < currentEdge.z, JSON.stringify({ dockZ: overEdge.entry?.z, edgeZ: currentEdge?.z }));
     }
     fs.writeFileSync(path.join(output, 'over-edge-white.png'), edgeSample.crop.toPNG());
+    // 用户报告的原始场景：浏览器最大化时点开 Dock 详情，详情必须出现在 Edge 之上
+    // （点击 Dock 会让 Dock 取得焦点、Edge 失去焦点，但 Edge 仍然铺满整个屏幕）。
+    await pet("document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('click',{bubbles:true}))");
+    await wait(620);
+    const detailOverEdge = await record('Edge 最大化 + 详情打开后');
+    const edgeDetailSample = await sampleWindow(await visibleBounds(dock, '.mini-panel'), 14);
+    check('Edge 最大化时打开详情：Dock 仍是 WS_EX_TOPMOST', !!detailOverEdge.state?.topmost, JSON.stringify(detailOverEdge.state));
+    check('Edge 最大化时打开详情：详情像素出现在 Edge 之上', edgeDetailSample.inner.median > 200 && edgeDetailSample.inner.min < 150, JSON.stringify({ inner: edgeDetailSample.inner, ring: edgeDetailSample.ring }));
+    {
+      const list = probeWindows();
+      const currentEdge = list.find((item) => item.hwnd === edgeWindow.hwnd);
+      check('Edge 最大化时打开详情：Dock 的 z-order 仍在 Edge 之上', !!currentEdge && !!detailOverEdge.entry && detailOverEdge.entry.z < currentEdge.z, JSON.stringify({ dockZ: detailOverEdge.entry?.z, edgeZ: currentEdge?.z }));
+    }
+    fs.writeFileSync(path.join(output, 'detail-over-edge.png'), edgeDetailSample.crop.toPNG());
+    // 点击浏览器（= Dock 失去焦点）应当收起详情。跨进程 SetForegroundWindow 会被
+    // Windows 前台锁拒绝，所以这里用同一个应用里的普通窗口取得焦点：效果完全一致
+    // （Dock 收到 blur，走的就是"点击外部"那条产品路径）。
+    cover.focus();
+    await wait(900);
+    const afterBlurView = await pet("document.querySelector('.pet-dock').dataset.dockView");
+    const afterBlur = await record('详情自动收起后');
+    check('普通窗口取得焦点后详情自动收起（点击外部 = collapsed）', afterBlurView !== 'detail' && afterBlur.state?.topmost === true, JSON.stringify({ afterBlurView, dockFocused: dock.isFocused(), state: afterBlur.state }));
     // 切到桌面（等价于用户"回到桌面"的动作）后再确认一次层级没有变化。
     showDesktop();
     await wait(1200);

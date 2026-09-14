@@ -488,27 +488,32 @@ body {
 .mini-gear { display:grid; place-items:center; width:16px; height:16px; padding:0; border:0; background:none; color:#ADB8B5; cursor:pointer; }
 .mini-gear:hover,.mini-gear:focus-visible { color:#5F706E; }
 
-/* 每人的一栏：状态行 → 上下文 → 下一项。Together 两栏等宽，中线严格落在几何中心。 */
-.mini-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; min-width:0; margin-top:5px; }
+/* 每人一张 person context card：谁 + 此刻状态 + 还剩多久 → 当前内容 → 下一次变化。
+   不再用一条长竖线把面板切成两半，也不做 SaaS 描边；两栏之间只有 10–12px 间距。
+   这些是"桌宠浮层"这一档的紧凑尺寸，Dock 画布里的同款卡片在下面单独放大。 */
+.mini-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; min-width:0; margin-top:6px; }
 .mini-panel.solo .mini-grid { grid-template-columns:1fr; margin-top:6px; }
-.detail-person { display:flex; flex-direction:column; gap:2px; min-width:0; }
-.mini-panel:not(.solo) .detail-person:first-child { padding-right:11px; }
-.mini-panel:not(.solo) .detail-person + .detail-person { border-left:1px solid rgba(79,119,115,.12); padding-left:11px; }
-.detail-line { display:flex; align-items:center; gap:5px; min-width:0; }
-.detail-alias { flex:none; color:#22302F; font:600 16px/1 "Segoe UI Variable Display","Segoe UI","Microsoft YaHei UI",sans-serif; }
-.detail-state { overflow:hidden; color:#26383A; font:600 13px/1.1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
-.detail-context { overflow:hidden; color:#8A9A97; font:450 11px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
+.detail-person { position:relative; display:flex; flex-direction:column; min-width:0; padding:8px 9px 7px; border:1px solid rgba(79,119,115,.10); border-radius:14px; background:rgba(244,248,247,.66); }
+.detail-head { display:flex; align-items:flex-start; justify-content:space-between; gap:6px; min-width:0; }
+.detail-alias { flex:none; color:#5C6D6A; font:600 12px/1.1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; letter-spacing:.05em; }
+/* Asset 03（素材图 4）的原素材插图：不改色、不重画，只控制尺寸与呼吸。 */
+.detail-icon { flex:none; width:34px; height:34px; margin:-4px -2px -6px 0; object-fit:contain; }
+.detail-state { overflow:hidden; margin-top:4px; color:#22302F; font:600 16px/1.15 "Segoe UI Variable Display","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
+.detail-context { overflow:hidden; margin-top:2px; color:#85948F; font:450 11px/1.25 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
 
-/* 下一项：紧凑的一小块信息，不是大型 card。 */
-.detail-next { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 7px; margin-top:3px; padding:0; border:0; background:none; text-align:left; cursor:pointer; }
+/* 下一项：课程 / 安排名在前，下一项的时间关系在后。
+   margin-top:auto 让"下一项"贴在卡片底部：卡片撑满画布高度时不会在中间留下一段空白。 */
+.detail-next { display:flex; flex-direction:column; gap:2px; margin:auto 0 0; padding:6px 0 0; border:0; background:none; text-align:left; cursor:pointer; min-width:0; }
 .detail-next:focus-visible { outline:2px solid rgba(85,169,149,.55); outline-offset:3px; border-radius:8px; }
 div.detail-next { cursor:default; }
-.detail-next-label { color:#9AA7A4; font:500 10px/1.1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; letter-spacing:.08em; }
-.detail-next-when { color:#5F706E; font:500 11px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; font-variant-numeric:tabular-nums; }
-.detail-next-title { grid-column:1/3; display:-webkit-box; overflow:hidden; color:#33423F; font:500 12px/1.2 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
-.detail-place { grid-column:1/3; overflow:hidden; color:#9AA7A4; font:400 11px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
-.detail-foot { display:flex; align-items:center; gap:7px; margin:auto 0 0; padding-top:5px; border-top:1px solid rgba(79,119,115,.10); color:#9AA7A4; font:450 10px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; }
-.detail-foot i { flex:none; width:4px; height:4px; border-radius:50%; background:rgba(79,119,115,.32); }
+.detail-next-title { overflow:hidden; color:#33423F; font:500 12.5px/1.3 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; }
+.detail-next-when { display:flex; align-items:center; gap:5px; color:#8A9A97; font:450 11px/1.2 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; font-variant-numeric:tabular-nums; }
+.detail-next-label { flex:none; letter-spacing:.02em; }
+.detail-next-sep { flex:none; width:3px; height:3px; border-radius:50%; background:rgba(79,119,115,.30); }
+.detail-place { overflow:hidden; color:#9AA7A4; font:400 10.5px/1.25 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
+/* 底部只有一条真正共享的上下文，没有就不显示（不再放每次点开都出现的文案）。 */
+.detail-foot { display:flex; align-items:center; gap:7px; margin:auto 0 0; padding-top:6px; border-top:1px solid rgba(79,119,115,.10); color:#93A19D; font:450 10.5px/1.2 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; }
+.detail-foot i { flex:none; width:4px; height:4px; border-radius:50%; background:rgba(79,119,115,.30); }
 
 /* V0.2.10 — compact, explicit partner schedule status */
 .partner-status-card {
