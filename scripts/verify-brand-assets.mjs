@@ -86,6 +86,69 @@ for (const file of sources) {
   }
 }
 
+// 6) App ICO 必须是"两个母版合成的九层"：≤48 来自 Asset 08，≥64 来自 Asset 05。
+//    直接比对已提交的 PNG 导出字节，因此能抓住"ICO 忘记重新生成"或
+//    "某个尺寸回退到另一张母版"这类回归。
+const icoSizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
+const smallMax = 48;
+if (existsSync(at(BRAND.appIcon))) {
+  const ico = readFileSync(at(BRAND.appIcon));
+  const layers = ico.readUInt16LE(4);
+  check('App ICO 层数正确（9 层，含 20/40 供 125% DPI）', layers === icoSizes.length, `实际 ${layers}`);
+  const frames = new Map();
+  for (let index = 0; index < layers; index++) {
+    const base = 6 + index * 16;
+    const size = ico[base] === 0 ? 256 : ico[base];
+    const length = ico.readUInt32LE(base + 8);
+    const offset = ico.readUInt32LE(base + 12);
+    frames.set(size, ico.subarray(offset, offset + length));
+  }
+  for (const size of icoSizes) {
+    const png = at(`brand/exports/png/yd-${size}.png`);
+    if (!existsSync(png)) {
+      check(`ICO ${size}px 对应的 PNG 导出存在`, false, `缺失 ${png}`);
+      continue;
+    }
+    const source = size <= smallMax ? 'Asset 08' : 'Asset 05';
+    const frame = frames.get(size);
+    check(`ICO ${size}px 来自 ${source}`, !!frame && frame.equals(readFileSync(png)), `与 brand/exports/png/yd-${size}.png 不一致`);
+  }
+}
+
+// 7) 托盘资源：每个主题三档尺寸，必须是带 alpha 的 RGBA PNG。
+const pngInfo = (file) => {
+  const head = readFileSync(file).subarray(0, 26);
+  return {
+    signature: head.subarray(1, 4).toString() === 'PNG',
+    width: head.readUInt32BE(16),
+    height: head.readUInt32BE(20),
+    colorType: head[25],
+  };
+};
+for (const [theme, sizes] of [['dark', [16, 24, 32]], ['light', [16, 24, 32]]]) {
+  for (const size of sizes) {
+    const rel = `brand/exports/tray/${theme}-${size}.png`;
+    if (!existsSync(at(rel))) {
+      check(`托盘图标存在：${rel}`, false, '缺失');
+      continue;
+    }
+    const info = pngInfo(at(rel));
+    check(`托盘图标 ${rel} 是 ${size}×${size} RGBA`, info.signature && info.width === size && info.height === size && info.colorType === 6, JSON.stringify(info));
+  }
+}
+
+// 8) Dock 语义图标：七枚独立生产资源，必须带 alpha 且尺寸一致。
+const dockIcons = ['calendar', 'meeting', 'task', 'reading', 'commute', 'meal', 'sleep'];
+for (const name of dockIcons) {
+  const rel = `src/ui/assets/dock-icons/${name}.png`;
+  if (!existsSync(at(rel))) {
+    check(`Dock 语义图标存在：${name}`, false, rel);
+    continue;
+  }
+  const info = pngInfo(at(rel));
+  check(`Dock 语义图标 ${name} 是 64×64 RGBA`, info.signature && info.width === 64 && info.height === 64 && info.colorType === 6, JSON.stringify(info));
+}
+
 if (problems.length) {
   console.error('品牌资源契约校验未通过：');
   for (const p of problems) console.error('  - ' + p);

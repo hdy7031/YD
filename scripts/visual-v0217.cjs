@@ -74,7 +74,8 @@ app.whenReady().then(async () => {
     await run("window.dayhub.change({type:'settings',pet:{mode:'custom',size:'medium'}})");
     await orbShot('10-companion');
     const ico = path.join(root, 'brand', 'exports', 'yd.ico');
-    const tray = path.join(root, 'brand', 'exports', 'tray-32.png');
+    // 托盘资源自 2026-09-14 起是 Asset 06/07 导出的 dark-*/light-* 三档尺寸。
+    const tray = path.join(root, 'brand', 'exports', 'tray', 'dark-32.png');
     const metrics = {
       output,
       icon: { exists: fs.existsSync(ico), size: fs.statSync(ico).size },

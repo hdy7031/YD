@@ -1,7 +1,7 @@
 import { InboxService } from './inbox-service.ts';
 import { LocalRuleParser } from './parser.ts';
 import { DesktopDelivery } from './delivery.ts';
-import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen, dialog, Notification, clipboard, powerMonitor, globalShortcut } from 'electron';
+import { app, BrowserWindow, Tray, Menu, nativeImage, nativeTheme, ipcMain, screen, dialog, Notification, clipboard, powerMonitor, globalShortcut } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +19,7 @@ import { Store } from './store.ts';
 import type { DB } from './store.ts';
 import { pack, unpack } from './backup.ts';
 import { clampToArea, resolveDragStep, type DragAnchor } from './geometry.ts';
-import { PANEL_ICON_FILE, TRAY_ICON_FILE, PRODUCT_VERSION } from './brand-assets.ts';
+import { PANEL_ICON_FILE, TRAY_ICON_FILES, PRODUCT_VERSION } from './brand-assets.ts';
 import { configureLogging, installStreamGuards, logError, logLine } from './logging.ts';
 import { DOMAIN_VERSION, domainVersion, migrationSteps, runMigrations } from './migration.ts';
 import type { Command, PersonId, SchedulePackage } from './types.ts';
@@ -71,6 +71,23 @@ function togglePetWindow(){
   else{orb.showInactive();refreshTrayMenu(true);}
 }
 let trayMenuPaused:boolean|undefined;
+// 托盘图标 = Asset 06 / 07（同一枚字标的深灰青 / 近白两版）。
+// 主题只换图标、绝不重建 Tray：菜单、事件监听与句柄都保持不变。
+let trayTheme:'light'|'dark'|undefined;
+function trayImage(theme:'light'|'dark'){
+  const files=TRAY_ICON_FILES[theme];
+  const image=nativeImage.createFromPath(path.join(__dirname,files[0].file));
+  for(const entry of files.slice(1))image.addRepresentation({scaleFactor:entry.scaleFactor,buffer:fs.readFileSync(path.join(__dirname,entry.file))});
+  return image;
+}
+function applyTrayTheme(){
+  if(!tray||tray.isDestroyed())return;
+  const theme:'light'|'dark'=nativeTheme.shouldUseDarkColors?'dark':'light';
+  if(theme===trayTheme)return;
+  const previous=trayTheme;trayTheme=theme;
+  tray.setImage(trayImage(theme));
+  if(previous!==undefined)runtimeLog('info',`系统主题切换：托盘图标（${theme==='dark'?'深色任务栏 → 近白字标':'浅色任务栏 → 深灰青字标'}）`);
+}
 function refreshTrayMenu(force=false){
   const paused=(store.state.settings.pet?.pausedUntil??0)>Date.now();
   if(!force&&paused===trayMenuPaused)return;
@@ -344,10 +361,12 @@ else{
     await Promise.all([orb.loadFile(path.join(__dirname,'index.html'),{hash:'orb'}),panel.loadFile(path.join(__dirname,'index.html'))]);
     await companion.load();
     runtimeLog('info','主界面、桌宠与气泡页面已加载');
-    // 托盘图标是独立资源（单色鼠尾草字标），不继承 app icon：
-    // 来源 brand/exports/tray-32.png，见 docs/brand-assets.md。
-    const icon=nativeImage.createFromPath(path.join(__dirname,TRAY_ICON_FILE));
-    tray=new Tray(icon);tray.setToolTip('YD · 本地运行');
+    // 托盘图标是独立资源（Asset 06 / 07 字标），不继承 app icon：
+    // 首次启动就按当前系统主题选正确的一版，之后跟随 nativeTheme 变化更新。
+    // 来源 brand/exports/tray/，见 docs/brand-assets.md。
+    trayTheme=nativeTheme.shouldUseDarkColors?'dark':'light';
+    tray=new Tray(trayImage(trayTheme));tray.setToolTip('YD · 本地运行');
+    nativeTheme.on('updated',applyTrayTheme);
     refreshTrayMenu(true);tray.on('double-click',showPanel);
     const reposition=()=>{void savePosition().catch(error=>logError(error,'保存桌宠位置失败'));};screen.on('display-removed',reposition);screen.on('display-metrics-changed',reposition);
     const resume=()=>{void processReminders(true).then(()=>companion?.pulse(true));};powerMonitor.on('resume',resume);powerMonitor.on('unlock-screen',resume);

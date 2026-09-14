@@ -3,16 +3,20 @@
 // ## 边界说明（重要）
 //
 // **应用图标不在这里生成。** 程序图标（`brand/exports/yd.ico`、`icon-256.png`、
-// `icon-512.png`、`png/yd-*.png`）由 `scripts/prepare-app-icon.py` 从定稿母版
-// `brand/source/app-icon-master-v3.png` 导出。矢量化重绘会得到另一套（历史绿色）
-// 图标，曾经覆盖过定稿资源；用途映射见 `docs/brand-assets.md`。
+// `icon-512.png`、`png/yd-*..png`）由 `scripts/prepare-app-icon.py` 从定稿母版
+// （Asset 05 / 08，见 `scripts/brand-paths.mjs`）导出。矢量化重绘会得到另一套
+// （历史绿色）图标，曾经覆盖过定稿资源；用途映射见 `docs/brand-assets.md`。
 //
-// 本脚本只负责"字标域"的资源：
+// 本脚本只负责"界面字标域"的资源：
 //
-//   brand/exports/tray-32.png          托盘 / 任务栏主用尺寸
-//   brand/exports/png/tray-16/24.png   托盘小尺寸
-//   brand/exports/png/tray-white-*.png 深色任务栏备用
-//   brand/explore/directions.png       尺寸自检与方向留档
+//   brand/exports/png/yd-mono-*.png    界面侧单色字标（标题栏 / 小尺寸）
+//   brand/exports/svg/yd-mark-*.svg    可维护的矢量源文件
+//   brand/explore/directions.png       界面字标的尺寸自检与方向留档
+//
+// 托盘图标不在这里生成：自 2026-09-14 收口起，Windows 托盘使用用户确认的
+// Asset 06 / 07 字标母版（深灰青 / 近白），由 scripts/prepare-tray-icons.py
+// 导出到 brand/exports/tray/。旧的矢量 tray-*/tray-white-* 已移入
+// brand/legacy/tray-vector/ 留档，不要再产出。
 //
 // 运行：npx electron scripts/brand-render.cjs
 const { app, BrowserWindow } = require('electron');
@@ -99,7 +103,7 @@ async function main() {
   write(path.join(root, 'brand', 'exports', 'svg', 'yd-mark-glyph.svg'), brand.markSvg({ tile: false, glyphColor: MONO }));
   write(path.join(root, 'brand', 'exports', 'svg', 'yd-mark-glyph-porcelain.svg'), brand.markSvg({ tile: false, glyphColor: MONO_WHITE }));
 
-  // 2) 托盘字标：小尺寸用加粗字面，否则 16px 下笔画会糊
+  // 2) 界面字标：小尺寸用加粗字面，否则 16px 下笔画会糊
   const mono = {};
   for (const size of [16, 24, 32, 64, 128, 256, 512]) {
     const scale = size <= 24 ? 'small' : 'large';
@@ -110,18 +114,10 @@ async function main() {
       size
     );
     write(path.join(outPng, `yd-mono-${size}.png`), mono[size]);
-    if (size <= 32) write(path.join(outPng, `tray-${size}.png`), mono[size]);
-  }
-  write(path.join(root, 'brand', 'exports', 'tray-32.png'), mono[32]);
-  for (const size of [16, 24, 32]) {
-    write(
-      path.join(outPng, `tray-white-${size}.png`),
-      await makeShot(win, page(brand.markMonoSvg({ scale: size <= 24 ? 'small' : 'large', color: MONO_WHITE }), size, size), size, size)
-    );
   }
   write(path.join(outPng, 'yd-glyph-256.png'), await makeShot(win, page(brand.markSvg({ tile: false, glyphColor: MONO }), 256, 256), 256, 256));
 
-  // 3) 尺寸自检图：托盘在浅底 / 深底上的真实观感
+  // 3) 尺寸自检图：界面字标在浅底 / 深底上的真实观感
   const sheet = `<!doctype html><html><head><meta charset="utf-8"><style>
   body{margin:0;background:#EFEDE7;font-family:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;color:#20261F}
   .wrap{display:grid;grid-template-columns:1fr 1fr;gap:22px;padding:26px}
@@ -132,11 +128,11 @@ async function main() {
   .sizes figure{margin:0;text-align:center;color:#8A9089;font-size:10px}
   .pixel{image-rendering:pixelated}
   </style></head><body><div class="wrap">
-  <div class="card"><div class="t">托盘字标 · 浅色任务栏</div>
+  <div class="card"><div class="t">界面字标 · 浅底</div>
     <div class="row"><div class="swatch" style="background:#F5F3EE">
       ${[16, 24, 32].map((s) => `<figure><img class="pixel" src="${dataUri(mono[s])}" width="${s * 6}" height="${s * 6}"><figcaption>${s}px</figcaption></figure>`).join('')}
     </div></div></div>
-  <div class="card"><div class="t">托盘字标 · 深色任务栏</div>
+  <div class="card"><div class="t">界面字标 · 深底</div>
     <div class="row"><div class="swatch" style="background:#20272B">
       ${[16, 24, 32].map((s) => `<figure><img class="pixel" src="${dataUri(mono[s])}" width="${s * 6}" height="${s * 6}"><figcaption style="color:#9AA5A5">${s}px</figcaption></figure>`).join('')}
     </div></div></div>
@@ -150,8 +146,9 @@ async function main() {
   write(path.join(outExplore, 'directions.png'), await makeShot(win, sheet, 1000, 700));
 
   win.destroy();
-  console.log('字标资源已生成：tray-32/tray-16/tray-24、tray-white-*、yd-mono-*、brand/explore/directions.png');
+  console.log('界面字标已生成：yd-mono-*、yd-glyph-256、svg/yd-mark-*、brand/explore/directions.png');
   console.log('应用图标请运行：python scripts/prepare-app-icon.py');
+  console.log('托盘图标请运行：python scripts/prepare-tray-icons.py');
   app.quit();
 }
 

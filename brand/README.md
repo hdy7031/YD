@@ -25,16 +25,24 @@ YD / Your Day —— `your day, quietly organized.`
 
 | 文件 | 用途 |
 | --- | --- |
-| `source/app-icon-master-v3.png` | **程序图标定稿母版**（瓷白软方瓦片 + 玻璃高光 + 灰 / 鼠尾草 YD 字标，自带 alpha 圆角） |
-| `exports/yd.ico` | Windows 程序图标（16/20/24/32/40/48/64/128/256 九层，含 125% DPI 档） |
+| `source/app-icon-master-v4.png` | **程序图标定稿母版**（Asset 05：玻璃 / Mist & Sage squircle + YD 字标，自带 alpha 圆角） |
+| `source/app-icon-small-master-v4.png` | **小尺寸光学变体**（Asset 08：≤48px frame 专用，主体更饱满） |
+| `exports/yd.ico` | Windows 程序图标（九层：≤48 来自 Asset 08，64/128/256 来自 Asset 05） |
 | `exports/icon-256.png` / `icon-512.png` | 窗口图标与商店 / 文档用大图 |
 | `exports/png/yd-16…512.png` | 程序图标多尺寸 PNG（≤24 用硬边圆角，≥32 带投影） |
 | `exports/svg/yd-mark-glyph.svg` / `-porcelain.svg` | 纯字标，用于水印与标题栏 |
 | `exports/svg/yd-mark-mono.svg` | 单色字标（字标挖空，只需一种颜色） |
-| `exports/tray-32.png`、`exports/png/tray-16/24.png` | 托盘 / 任务栏单色字标 |
-| `exports/png/tray-white-*.png` | 深色任务栏备用白色字标 |
+| `source/tray-monogram-dark-master.png` | 托盘字标母版（Asset 06，深灰青：浅色任务栏） |
+| `source/tray-monogram-light-master.png` | 托盘字标母版（Asset 07，近白：深色任务栏） |
+| `exports/tray/{dark,light}-16/24/32.png` | 托盘图标产物（按 Windows 主题选择，见 `docs/brand-assets.md`） |
 | `exports/png/yd-mono-*.png` | 界面侧单色字标 PNG |
-| `explore/directions.png` | 托盘字标的尺寸自检图（浅底 / 深底） |
+| `source/dock-icons-master.png` | Dock / 详情面板语义图标母版（Asset 03，七枚） |
+| `src/ui/assets/dock-icons/*.png` | 切分后的语义图标生产资源（calendar / meeting / task / reading / commute / meal / sleep） |
+| `source/installer-header-master.png`、`source/installer-sidebar-master.png` | 安装器品牌素材母版（Asset 01 / 02） |
+| `installer/header.bmp`、`installer/sidebar.bmp` | NSIS 向导位图产物（24 位 BMP，150×57 / 164×314） |
+| `source/dock-reference.png` | Dock 视觉参考稿（Asset 04，仅设计参考，不进入运行时） |
+| `explore/directions.png` | 界面字标的尺寸自检图（浅底 / 深底） |
+| `explore/dock-icons.png`、`explore/installer-branding.png` | 语义图标与安装器品牌图的目检图 |
 
 ### 图标导出链路
 
@@ -42,11 +50,14 @@ YD / Your Day —— `your day, quietly organized.`
 
 | 链路 | 入口脚本 | 产物 |
 | --- | --- | --- |
-| 程序图标 | `python scripts/prepare-app-icon.py` | `yd.ico`、`icon-256/512.png`、`png/yd-*.png` |
-| 字标 / 托盘 | `npx electron scripts/brand-render.cjs` | `tray-*.png`、`yd-mono-*.png`、`svg/yd-mark-*.svg` |
+| 程序图标（Asset 05 + 08） | `python scripts/prepare-app-icon.py` | `yd.ico`、`icon-256/512.png`、`png/yd-*.png` |
+| 托盘图标（Asset 06 / 07） | `python scripts/prepare-tray-icons.py` | `exports/tray/{dark,light}-{16,24,32}.png` |
+| 安装器品牌图（Asset 01 / 02） | `python scripts/installer-brand-assets.py` | `installer/header.bmp`、`installer/sidebar.bmp` |
+| Dock 语义图标（Asset 03） | `python scripts/prepare-dock-icons.py` | `src/ui/assets/dock-icons/*.png` |
+| 界面字标 | `npx electron scripts/brand-render.cjs` | `yd-mono-*.png`、`svg/yd-mark-*.svg`、`explore/directions.png` |
 | 界面字标 PNG | `python scripts/prepare-visual-assets.py` | `src/ui/assets/gen/yd-logo-*.png` |
 
-**程序图标必须从 `app-icon-master-v3.png` 导出，且该母版必须自带 alpha。**
+**程序图标必须从 Asset 05 / 08 母版导出，且两份母版都必须自带 alpha。**
 历史上 0.2.21 用过一版完全不透明的浅雾白母版：Windows 会把整块方画布当成图标
 实体，浅白近白底在桌面 / 任务栏 / Alt+Tab 上表现为"白方块 + 白边"。
 `prepare-app-icon.py` 会在导出前自检"四角是否透明 / 内容占比是否合理"，不通过就

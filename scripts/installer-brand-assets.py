@@ -1,17 +1,21 @@
-"""为 NSIS 助手式安装向导生成品牌位图（header / sidebar）。
+"""从用户确认的安装器品牌素材生成 NSIS 助手式向导位图（header / sidebar）。
 
-风格：暖雾白底 + 深灰青 YD 字标 + 鼠尾草细线，安静、克制、留白。
-与程序图标、托盘、界面标题栏同属一套视觉，不使用旧版金 / 绿素材。
+素材 → 用途（用户已指定，脚本不做二次设计）：
 
-输出（24 位未压缩 BMP，NSIS 2 不支持 alpha，带 alpha 会渲染成黑块）：
+    Asset 01  brand/source/installer-header-master.png
+              → brand/installer/header.bmp   150 x 57   页眉横幅（所有带页眉的向导页）
+    Asset 02  brand/source/installer-sidebar-master.png
+              → brand/installer/sidebar.bmp  164 x 314  Welcome / Finish 左侧竖幅
 
-    brand/installer/header.bmp   150 x 57   页眉条
-    brand/installer/sidebar.bmp  164 x 314  左侧竖幅
+只做 crop + scale（保持宽高比），不拉伸、不重绘、不重新排版。
+源图原样保存在 brand/source，本脚本只产出 build-ready 的 24 位 BMP。
 
-字标来自品牌资源单一来源：``brand/exports/png/yd-mono-128.png``（单色深灰青），
-由 ``scripts/brand-render.cjs`` 从 ``brand/source/yd-logo-mist-master.png`` 生成。
-安装器图标（installerIcon / uninstallerIcon）与程序图标共用 ``brand/exports/yd.ico``，
-配置见 package.json 的 nsis 段。
+尺寸来自当前工具链的真实规格，见：
+  * node_modules/app-builder-lib/out/targets/nsis/NsisTarget.js
+      nsis.installerHeader  → MUI_HEADERIMAGE_BITMAP       (150 x 57)
+      nsis.installerSidebar → MUI_WELCOMEFINISHPAGE_BITMAP (164 x 314)
+  * NSIS MUI2：向导位图不支持 alpha，必须是 24 位未压缩 BMP，
+    带透明通道会被渲染成黑块（脚本会校验位深）。
 
 运行：python scripts/installer-brand-assets.py
 """
@@ -21,101 +25,84 @@ import os
 import struct
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
+import numpy as np
+from PIL import Image, ImageFilter
 
 import brand_paths as bp
 
-FONT_CANDIDATES = {
-    "regular": ["segoeui.ttf", "SegUIVar.ttf", "arial.ttf"],
-    "semibold": ["seguisb.ttf", "SegUIVar.ttf", "segoeuib.ttf", "arialbd.ttf"],
-}
+# MUI2 的向导位图固定尺寸（100% DPI 下的真实规格）。
+HEADER_SIZE = (150, 57)
+SIDEBAR_SIZE = (164, 314)
+
+# 内容判定：低于该亮度的像素算"画面内容"（母版底色是 246–252 的雾白）。
+CONTENT_LUMA = 232
+# 页眉内边距（目标位图像素），保证缩到 150x57 后仍有呼吸感。
+HEADER_PAD = 3
 
 
-def load_font(style: str, size: int) -> ImageFont.FreeTypeFont:
-    for name in FONT_CANDIDATES[style]:
-        path = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", name)
-        if os.path.exists(path):
-            try:
-                return ImageFont.truetype(path, size)
-            except OSError:
-                continue
-    return ImageFont.load_default()
+def load_master(path) -> Image.Image:
+    if not path.exists():
+        raise SystemExit(f"缺少安装器品牌素材：{path}")
+    return Image.open(path).convert("RGB")
 
 
-def verify_mark() -> Image.Image:
-    """字标必须存在、带 alpha、且是单色深灰青（防止误用旧的金 / 绿素材）。"""
-    if not bp.TRAY_MONO_128.exists():
-        raise SystemExit(
-            f"缺少字标 {bp.TRAY_MONO_128}；先运行 npx electron scripts/brand-render.cjs"
-        )
-    mark = Image.open(bp.TRAY_MONO_128).convert("RGBA")
-    alpha = mark.getchannel("A")
-    if alpha.getextrema()[1] < 200:
-        raise SystemExit(f"{bp.TRAY_MONO_128} 没有可用 alpha，无法用于品牌图")
-    return mark
+def content_box(image: Image.Image) -> tuple[int, int, int, int]:
+    """画面内容（字标 / 文字）的外接矩形。"""
+    luma = np.asarray(image.convert("L")).astype(int)
+    mask = luma < CONTENT_LUMA
+    ys, xs = np.where(mask)
+    if not len(xs):
+        raise SystemExit("素材中找不到可识别的内容，请检查输入文件")
+    return int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
 
 
-def vertical_gradient(size: tuple[int, int], top, bottom) -> Image.Image:
-    """很轻的明度渐变，避免 dashboard 式的重渐变。"""
-    width, height = size
-    image = Image.new("RGB", size, top)
-    draw = ImageDraw.Draw(image)
-    for y in range(height):
-        ratio = y / max(height - 1, 1)
-        draw.line(
-            [(0, y), (width, y)],
-            fill=tuple(round(top[i] + (bottom[i] - top[i]) * ratio) for i in range(3)),
-        )
-    return image
+def background_patch(image: Image.Image) -> Image.Image:
+    """从母版的空白区取一小块底色，用于补足页眉条两侧的留白。
+
+    母版底色是非常轻的冷调渐变；直接填纯色会在内容边缘留下一条可见的接缝。
+    """
+    width, height = image.size
+    return image.crop((0, int(height * 0.30), max(1, width // 10), int(height * 0.70)))
 
 
-def paste_mark(image: Image.Image, mark: Image.Image, size: int, left: int, top: int) -> None:
-    scaled = mark.resize((size, size), Image.LANCZOS) if mark.size != (size, size) else mark
-    image.paste(scaled, (left, top), scaled)
+def fit(image: Image.Image, box: tuple[int, int, int, int], size: tuple[int, int], pad: int) -> Image.Image:
+    """等比缩放到目标尺寸内部（contain），不做任何拉伸。"""
+    crop = image.crop(box)
+    scale = min((size[0] - pad * 2) / crop.width, (size[1] - pad * 2) / crop.height)
+    return crop.resize((max(1, round(crop.width * scale)), max(1, round(crop.height * scale))), Image.LANCZOS)
 
 
-def centered_text(draw: ImageDraw.ImageDraw, text: str, font, top: int, width: int, fill) -> None:
-    left, _, right, _ = draw.textbbox((0, 0), text, font=font)
-    draw.text(((width - (right - left)) / 2 - left, top), text, font=font, fill=fill)
+def aspect_crop(image: Image.Image, center: tuple[float, float], aspect: float) -> tuple[int, int, int, int]:
+    """以给定中心取一块比例等于目标位图的窗口（crop，不是 stretch）。"""
+    width, height = image.size
+    crop_height = min(height, max(1, round(min(width / aspect, height))))
+    crop_width = max(1, min(width, round(crop_height * aspect)))
+    if crop_width > width:
+        crop_width = width
+        crop_height = max(1, round(crop_width / aspect))
+    left = min(max(0, round(center[0] - crop_width / 2)), width - crop_width)
+    top = min(max(0, round(center[1] - crop_height / 2)), height - crop_height)
+    return left, top, left + crop_width, top + crop_height
 
 
-def build_header(mark: Image.Image) -> Image.Image:
-    """150 x 57：左侧字标 + YD / Your Day，右侧留白给向导标题。"""
-    width, height = 150, 57
-    image = vertical_gradient((width, height), bp.MIST_LIGHT, bp.MIST)
-    draw = ImageDraw.Draw(image)
-    draw.line([(0, height - 1), (width, height - 1)], fill=bp.LINE)
-
-    paste_mark(image, mark, 30, 14, (height - 30) // 2)
-    draw = ImageDraw.Draw(image)
-    wordmark = load_font("semibold", 17)
-    caption = load_font("regular", 9)
-    draw.text((52, 13), "YD", font=wordmark, fill=bp.MONO_INK)
-    draw.line([(52, 37), (74, 37)], fill=bp.SAGE, width=2)
-    draw.text((79, 31), "Your Day", font=caption, fill=bp.MUTED)
-    return image
+def build_header(master: Image.Image) -> Image.Image:
+    """150 x 57：Asset 01 的横向品牌构图等比缩到页眉条内，留白取自素材本身。"""
+    content = fit(master, content_box(master), HEADER_SIZE, HEADER_PAD)
+    canvas = background_patch(master).resize(HEADER_SIZE, Image.LANCZOS).filter(ImageFilter.GaussianBlur(1.4))
+    canvas.paste(content, ((HEADER_SIZE[0] - content.width) // 2, (HEADER_SIZE[1] - content.height) // 2))
+    return canvas
 
 
-def build_sidebar(mark: Image.Image) -> Image.Image:
-    """164 x 314：字标 + YD + Your Day + 秩序线 + tagline。"""
-    width, height = 164, 314
-    image = vertical_gradient((width, height), bp.MIST_LIGHT, bp.MIST)
-    draw = ImageDraw.Draw(image)
-    draw.line([(width - 1, 0), (width - 1, height)], fill=bp.LINE)
-
-    paste_mark(image, mark, 56, (width - 56) // 2, 72)
-    draw = ImageDraw.Draw(image)
-    wordmark = load_font("semibold", 20)
-    caption = load_font("regular", 10)
-    footer = load_font("regular", 10)
-    centered_text(draw, "YD", wordmark, 146, width, bp.MONO_INK)
-    centered_text(draw, "Your Day", caption, 176, width, bp.MUTED)
-    draw.line([((width - 44) // 2, 205), ((width + 44) // 2, 205)], fill=bp.SAGE, width=2)
-    centered_text(draw, "your day, quietly organized.", footer, 224, width, bp.MUTED)
-    return image
+def build_sidebar(master: Image.Image) -> Image.Image:
+    """164 x 314：Asset 02 的纵向构图按目标比例裁切后等比缩放。"""
+    box = content_box(master)
+    center = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+    return master.crop(aspect_crop(master, center, SIDEBAR_SIZE[0] / SIDEBAR_SIZE[1])).resize(SIDEBAR_SIZE, Image.LANCZOS)
 
 
-def save_bmp(image: Image.Image, path) -> int:
+def save_bmp(image: Image.Image, size: tuple[int, int], path) -> int:
+    if image.size != size:
+        raise SystemExit(f"{path} 尺寸为 {image.size}，期望 {size}")
     image.convert("RGB").save(path, "BMP")
     with open(path, "rb") as handle:
         header = handle.read(30)
@@ -127,20 +114,33 @@ def save_bmp(image: Image.Image, path) -> int:
     return os.path.getsize(path)
 
 
+def write_preview(header: Image.Image, sidebar: Image.Image) -> None:
+    """人工目检用：页眉条 + 竖幅在助手式向导里的落地形态（2x 最近邻放大）。"""
+    scale = 2
+    width = HEADER_SIZE[0] * scale + SIDEBAR_SIZE[0] * scale + 60
+    height = max(HEADER_SIZE[1], SIDEBAR_SIZE[1]) * scale + 40
+    sheet = Image.new("RGB", (width, height), (241, 243, 240))
+    sheet.paste(header.resize((HEADER_SIZE[0] * scale, HEADER_SIZE[1] * scale), Image.NEAREST), (20, 20))
+    sheet.paste(sidebar.resize((SIDEBAR_SIZE[0] * scale, SIDEBAR_SIZE[1] * scale), Image.NEAREST), (HEADER_SIZE[0] * scale + 40, 20))
+    bp.EXPLORE.mkdir(parents=True, exist_ok=True)
+    sheet.save(bp.EXPLORE / "installer-branding.png")
+
+
 def main() -> int:
-    mark = verify_mark()
+    header_master = load_master(bp.INSTALLER_HEADER_MASTER)
+    sidebar_master = load_master(bp.INSTALLER_SIDEBAR_MASTER)
+    header = build_header(header_master)
+    sidebar = build_sidebar(sidebar_master)
+
     bp.INSTALLER.mkdir(parents=True, exist_ok=True)
-    header = build_header(mark)
-    sidebar = build_sidebar(mark)
-    assert header.size == (150, 57), header.size
-    assert sidebar.size == (164, 314), sidebar.size
-    header_bytes = save_bmp(header, bp.INSTALLER_HEADER)
-    sidebar_bytes = save_bmp(sidebar, bp.INSTALLER_SIDEBAR)
+    header_bytes = save_bmp(header, HEADER_SIZE, bp.INSTALLER_HEADER)
+    sidebar_bytes = save_bmp(sidebar, SIDEBAR_SIZE, bp.INSTALLER_SIDEBAR)
+    write_preview(header, sidebar)
     print(
-        "安装器品牌位图已生成：\n"
-        f"  {bp.INSTALLER_HEADER.relative_to(bp.ROOT)}  150x57  {header_bytes} bytes\n"
-        f"  {bp.INSTALLER_SIDEBAR.relative_to(bp.ROOT)} 164x314 {sidebar_bytes} bytes\n"
-        "  字标来源：brand/exports/png/yd-mono-128.png（单色深灰青）"
+        "安装器品牌位图已生成（crop + scale，无拉伸）：\n"
+        f"  {bp.INSTALLER_HEADER.relative_to(bp.ROOT)}  {HEADER_SIZE[0]}x{HEADER_SIZE[1]}  {header_bytes} bytes  ← {bp.INSTALLER_HEADER_MASTER.name}\n"
+        f"  {bp.INSTALLER_SIDEBAR.relative_to(bp.ROOT)} {SIDEBAR_SIZE[0]}x{SIDEBAR_SIZE[1]} {sidebar_bytes} bytes  ← {bp.INSTALLER_SIDEBAR_MASTER.name}\n"
+        "  目检图 brand/explore/installer-branding.png"
     )
     return 0
 

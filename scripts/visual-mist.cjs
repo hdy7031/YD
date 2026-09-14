@@ -80,7 +80,8 @@ app.whenReady().then(async () => {
       };
     })()`);
     const icon = nativeImage.createFromPath(path.join(root, 'brand', 'exports', 'icon-256.png'));
-    const tray = nativeImage.createFromPath(path.join(root, 'brand', 'exports', 'tray-32.png'));
+    // 托盘资源自 2026-09-14 起是 Asset 06/07 导出的 dark-*/light-* 三档尺寸。
+    const tray = nativeImage.createFromPath(path.join(root, 'brand', 'exports', 'tray', 'dark-32.png'));
     report.assets = { icon: icon.getSize(), tray: tray.getSize(), iconEmpty: icon.isEmpty(), trayEmpty: tray.isEmpty() };
     report.companion = orb ? await orb.webContents.executeJavaScript(`({bodyClass:document.body.className, mainTheme:document.body.classList.contains('main-body')})`) : null;
     fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(report, null, 2));

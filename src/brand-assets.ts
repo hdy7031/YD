@@ -7,8 +7,25 @@
 /** 主窗口图标（构建时从 brand/exports/icon-256.png 复制而来）。 */
 export const PANEL_ICON_FILE = 'icon.png';
 
-/** 系统托盘图标（构建时从 brand/exports/tray-32.png 复制而来）。 */
-export const TRAY_ICON_FILE = 'tray.png';
+/**
+ * 系统托盘图标：Asset 06（深灰青字标）/ Asset 07（近白字标）各三档尺寸。
+ *
+ * key 是 **Windows 系统主题**，不是字标颜色：
+ *   light（浅色任务栏）→ 深灰青字标   dark（深色任务栏）→ 近白字标
+ * 文件由 scripts/prepare-tray-icons.py 导出，构建时复制进 dist/。
+ */
+export const TRAY_ICON_FILES: Record<'light' | 'dark', { scaleFactor: number; file: string }[]> = {
+  light: [
+    { scaleFactor: 1, file: 'tray-dark-16.png' },
+    { scaleFactor: 1.5, file: 'tray-dark-24.png' },
+    { scaleFactor: 2, file: 'tray-dark-32.png' },
+  ],
+  dark: [
+    { scaleFactor: 1, file: 'tray-light-16.png' },
+    { scaleFactor: 1.5, file: 'tray-light-24.png' },
+    { scaleFactor: 2, file: 'tray-light-32.png' },
+  ],
+};
 
 /**
  * 产品版本，由 esbuild 在构建时注入（见 scripts/build.mjs 的 define）。

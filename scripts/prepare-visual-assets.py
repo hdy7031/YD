@@ -5,7 +5,8 @@ redraw the YD geometry. The largest connected alpha component is retained so
 isolated extraction specks do not become part of the production mark.
 
 程序图标（Windows .ico / 窗口图标 / 安装包图标）不在这里导出：它必须来自定稿母版
-``brand/source/app-icon-master-v3.png``，由 ``scripts/prepare-app-icon.py`` 导出。
+``brand/source/app-icon-master-v4.png`` / ``app-icon-small-master-v4.png``
+（Asset 05 / 08），由 ``scripts/prepare-app-icon.py`` 导出。
 把字标直接缩放的旧做法会让不透明浅底在 Windows 上渲染成"白方块 + 白边"，
 历史上曾经覆盖过一次定稿资源。用途映射见 ``docs/brand-assets.md``。
 """
@@ -72,7 +73,7 @@ def main() -> None:
     #
     # 另外两类品牌资源各有唯一写者，不要在这里重复生成，否则会出现
     # "同一路径被两个脚本写成不同视觉"的历史问题（0.2.17 金 / 绿托盘混用）：
-    #   程序图标  → scripts/prepare-app-icon.py（母版 brand/source/app-icon-master-v3.png）
+    #   程序图标  → scripts/prepare-app-icon.py（母版 Asset 05 / 08，见 scripts/brand-paths.mjs）
     #   托盘字标  → scripts/brand-render.cjs   （母版 brand/source/yd-logo-mist-master.png）
     # 路径统一见 scripts/brand_paths.py 与 docs/brand-assets.md。
 

@@ -17,7 +17,7 @@ await mkdir(at('.build-cache'), { recursive: true });
 for (const [from,to] of DIST_COPIES) {
   await copyFile(at(from),at(join('dist',to)));
 }
-if (!BRAND.tray || !BRAND.appIconPng) throw new Error('品牌资源路径缺失');
+if (!BRAND.trayDark16 || !BRAND.trayLight32 || !BRAND.appIconPng) throw new Error('品牌资源路径缺失');
 const stage=at('.build-cache/dayhub-build');
 try {
   await rm(stage,{recursive:true,force:true});

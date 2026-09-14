@@ -1,3 +1,20 @@
+## 未发布 · 品牌 / 安装器 / 托盘 / Dock 收口
+
+### 品牌资源单一来源（`fix: centralize current YD production brand assets`）
+
+- 用户确认的 8 张正式素材全部落在 `brand/source/`，用途映射写进 `docs/brand-assets.md`：
+  Asset 01 安装器页眉、Asset 02 安装器竖幅、Asset 03 Dock 语义图标、Asset 04 Dock 参考稿、
+  Asset 05/08 程序图标（大尺寸母版 + 小尺寸光学变体）、Asset 06/07 托盘字标（深 / 浅色主题）。
+- 程序图标改为 **一个** 九层 `brand/exports/yd.ico`：≤48px 用 Asset 08、64/128/256 用 Asset 05；
+  窗口图标 / 安装器 / 卸载器 / 快捷方式共用同一文件，不再存在第二套 competing app icon。
+- 托盘图标改为 Asset 06 / 07 导出的 `brand/exports/tray/{dark,light}-{16,24,32}.png`，
+  由 `nativeTheme` 决定浅色 / 深色任务栏版本；旧的矢量 `tray-*` / `tray-white-*`
+  与上一代 `app-icon-master-v3.png` 移入 legacy 目录留档，production 不再引用。
+- `npm run assets:check` 增加契约：ICO 九层且能对应到正确母版、托盘 16/24/32 为 RGBA、
+  Dock 七枚语义图标齐备、安装器位图必须是 24 位 BMP。
+- 安装器页眉 / 竖幅不再由脚本"重绘"品牌构图，而是由 Asset 01 / 02 直接 crop + scale
+  出 150×57 与 164×314 的 24 位 BMP。
+
 ## 未发布 · UI convergence（Phase 1 / Phase 2）
 
 ### Phase 2 · Dual Status Dock（`ui: replace legacy orb with dual status dock`）

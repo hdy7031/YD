@@ -26,7 +26,7 @@ INPUTS = {
     "hero-whisper": Path(r"C:\Users\hdy\AppData\Local\Temp\codex-clipboard-a79d8559-7826-4a6e-807b-d6090f97d88a.png"),
     "about-brand-whisper": Path(r"C:\Users\hdy\AppData\Local\Temp\codex-clipboard-7271ccf8-f8d9-439c-9c61-61e83a9c8cce.png"),
     # 程序图标不在这里准备：唯一入口是 scripts/prepare-app-icon.py
-    # （母版 brand/source/app-icon-master-v3.png）。见 docs/brand-assets.md。
+    # （母版 Asset 05 / 08，见 scripts/brand-paths.mjs）。见 docs/brand-assets.md。
 }
 
 
