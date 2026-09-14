@@ -26,9 +26,12 @@ export class Companion {
   private actions:{settings:()=>void;status:()=>void;quit:()=>void;toggleVisible:()=>void}={settings:()=>{},status:()=>{},quit:()=>{},toggleVisible:()=>{}};
   constructor(private store:Store,readonly orb:BrowserWindow,private panel:BrowserWindow,options:Electron.BrowserWindowConstructorOptions,private file:string,lock:(w:BrowserWindow)=>void){
     this.activeAvatar=this.avatarIdentity();
-    this.bubble=new BrowserWindow({...options,width:330,height:180,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false});
+    // Windows 会给"透明窗口"按窗口矩形画一圈原生 DWM 阴影：透明窗口 + CSS 阴影
+    // 就会叠成明显的黑框（详情面板与提醒气泡都属于这一层）。这里统一关掉原生阴影，
+    // 阴影只由 renderer 的 CSS 在窗口内绘制。
+    this.bubble=new BrowserWindow({...options,width:330,height:180,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false,hasShadow:false,roundedCorners:false});
     const soloMini=this.store.state.profiles.length<=1;
-    this.mini=new BrowserWindow({...options,width:soloMini?288:300,height:soloMini?216:236,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false});
+    this.mini=new BrowserWindow({...options,width:soloMini?288:300,height:soloMini?216:236,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,hasShadow:false,roundedCorners:false});
     this.tip=new BrowserWindow({...options,width:150,height:32,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false,hasShadow:false,roundedCorners:false});
     // 右键菜单是自绘窗口：原生菜单无法沿用 YD 的字体、间距与品牌层级。
     // 它需要真正的焦点才能“点外面自动收起”，所以不加入点击穿透名单。

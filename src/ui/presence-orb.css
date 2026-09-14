@@ -62,14 +62,16 @@
   border:1px solid var(--dock-edge);
   border-radius:15px;
   background:rgba(250,252,251,.92);
-  box-shadow:0 8px 24px rgba(31,43,44,.075),0 1px 3px rgba(31,43,44,.045),inset 0 1px rgba(255,255,255,.82);
+  /* 阴影必须在这块 4px 透明画布内收敛：窗口边界处的合成 alpha 直接决定它会不会
+     变成"被切断的黑边"。0 2px 5px ≈ 在 4px 处 alpha < 2%，边缘不再有硬台阶。 */
+  box-shadow:0 2px 5px rgba(31,43,44,.06),0 1px 2px rgba(31,43,44,.04),inset 0 1px rgba(255,255,255,.82);
   -webkit-backdrop-filter:blur(18px) saturate(108%);
   backdrop-filter:blur(18px) saturate(108%);
   transition:border-color 150ms ease,box-shadow 150ms ease,background-color 150ms ease;
 }
 
-.pet-handle:hover .dock-surface { border-color:rgba(79,119,115,.28); background:rgba(252,253,253,.95); box-shadow:0 10px 27px rgba(31,43,44,.09),0 1px 3px rgba(31,43,44,.05),inset 0 1px rgba(255,255,255,.9); }
-.pet-handle:active .dock-surface,.pet-dock.is-dragging .dock-surface { border-color:rgba(79,119,115,.23); box-shadow:0 5px 16px rgba(31,43,44,.075); }
+.pet-handle:hover .dock-surface { border-color:rgba(79,119,115,.28); background:rgba(252,253,253,.95); box-shadow:0 2px 6px rgba(31,43,44,.07),0 1px 2px rgba(31,43,44,.05),inset 0 1px rgba(255,255,255,.9); }
+.pet-handle:active .dock-surface,.pet-dock.is-dragging .dock-surface { border-color:rgba(79,119,115,.23); box-shadow:0 2px 5px rgba(31,43,44,.055),0 1px 2px rgba(31,43,44,.04); }
 
 /* 拖动期间冻结一切视觉变化：桌面看到的位移只来自窗口本身。 */
 .pet-dock.is-dragging .dock-surface,

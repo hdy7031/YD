@@ -359,6 +359,10 @@ else{
     panel.on('close',e=>{if(quitting)return;if(store.state.settings.trayResident===false){quitting=true;app.quit();return;}e.preventDefault();panel.hide();});
     orb.on('close',e=>{if(!quitting){e.preventDefault();orb.hide();}});
     await Promise.all([orb.loadFile(path.join(__dirname,'index.html'),{hash:'orb'}),panel.loadFile(path.join(__dirname,'index.html'))]);
+    // 渲染层加载 index.html 时会把窗口标题改写成文档标题（与主窗口同名）。
+    // Dock 是"被浏览器压到下层"这类线上问题的第一个排查对象，必须能按标题认出来，
+    // 因此在加载完成后重新设置一次，和主窗口区分开。
+    orb.setTitle('YD · 状态 Dock');
     await companion.load();
     runtimeLog('info','主界面、桌宠与气泡页面已加载');
     // 托盘图标是独立资源（Asset 06 / 07 字标），不继承 app icon：

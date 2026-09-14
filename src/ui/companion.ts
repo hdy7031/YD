@@ -215,6 +215,8 @@ export function PetMenu(){
 export function Bubble(){const live=useLive();useSurface('bubble-body');return live?.bubble?h('section',{'data-interactive':true,className:'speech-cloud'+(live.bubble.below?' cloud-below':''),role:'status',onMouseEnter:()=>void api.bubble('hold'),onMouseLeave:()=>void api.bubble('release')},h('button',{className:'cloud-close',title:'收起气泡',onClick:()=>void api.bubble('close')},'×'),h('small',null,'时间小提醒'),h('div',{className:'cloud-text'},live.bubble.text),h('button',{className:'text-button',onClick:()=>void api.window('mini')},'查看状态 →')):null;}
 export function Mini(){
   const live=useLive();
+  // 详情面板的窗口比卡片大 8px 一圈，这圈透明画布留给 CSS 阴影（见 style.css）。
+  useEffect(()=>{document.documentElement.classList.add('companion-root');document.body.classList.add('mini-body');return()=>{document.body.classList.remove('mini-body');document.documentElement.classList.remove('companion-root');};},[]);
   const solo=(live?.people.length??1)<=1;
   const card=(status:PersonStatus)=>{
     const current=status.current;
