@@ -10,8 +10,9 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
 
 const output = path.join(__dirname, 'test-data', `v030-solo-${Date.now()}`);
 fs.mkdirSync(output, { recursive: true });
-process.env.DAYHUB_TEST_DATA = output;
-fs.copyFileSync(path.join(__dirname, 'tests', 'fixtures', 'v3-solo-synthetic.sqlite'), path.join(output, 'dayhub.sqlite'));
+const { configureIsolatedUserData } = require('./scripts/electron-test-profile.cjs');
+const userData = configureIsolatedUserData('runtime-solo');
+fs.copyFileSync(path.join(__dirname, 'tests', 'fixtures', 'v3-solo-synthetic.sqlite'), path.join(userData, 'dayhub.sqlite'));
 
 // 受控虚拟时钟：把"现在"平移到 fixture 的学期内（2027-03-01 周一 10:10，本人正在上
 // Machine Learning），并继续正常走动。日期必须与 tests/fixtures/v3-solo-synthetic.ts 一致。
@@ -141,9 +142,9 @@ app.whenReady().then(async () => {
     const tooltip = tooltips.at(-1) ?? '';
     check('托盘 tooltip 只有本人一行且无幽灵/undefined', tooltip.split('\n').length === 1 && tooltip.includes('·') && !/Ta|undefined/.test(tooltip), tooltip);
     check('渲染层没有报错', errors.length === 0, errors.join(' | '));
-    check('没有产生损坏数据库副本', !fs.readdirSync(output).some(name => name.includes('.damaged-')));
+    check('没有产生损坏数据库副本', !fs.readdirSync(userData).some(name => name.includes('.damaged-')));
 
-    fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ passed }, null, 2));
+    fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ passed, userData }, null, 2));
     console.log(JSON.stringify({ output, passed }, null, 2));
     clearTimeout(deadline);
     app.quit();

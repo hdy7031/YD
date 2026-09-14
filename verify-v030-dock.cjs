@@ -10,8 +10,10 @@
 //   npx electron verify-v030-dock.cjs restart <dataDir>
 const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { configureIsolatedUserData } = require('./scripts/electron-test-profile.cjs');
 
 const root = __dirname;
 const output = path.join(root, 'test-data', 'v030-dock');
@@ -20,8 +22,7 @@ const report = [];
 const check = (name, value, detail = '') => report.push({ name, ok: !!value, detail });
 
 async function boot(dataDir) {
-  fs.mkdirSync(dataDir, { recursive: true });
-  process.env.DAYHUB_TEST_DATA = dataDir;
+  configureIsolatedUserData('dock', dataDir);
   app.setAppPath(root);
   require('./dist/main.cjs');
   let panel, dock;
@@ -38,7 +39,8 @@ async function boot(dataDir) {
 const windowOf = hash => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('#' + hash));
 
 async function runTogether() {
-  const dataDir = path.join(output, 'together');
+  const dataDir = process.argv[3];
+  if (!dataDir) throw new Error('Dock verifier requires an isolated userData directory');
   const { panel, dock } = await boot(dataDir);
   const run = code => panel.webContents.executeJavaScript(code);
   const pet = code => dock.webContents.executeJavaScript(code);
@@ -180,9 +182,10 @@ function spawnStep(args) {
 
 if (!process.argv[2]) {
   fs.mkdirSync(output, { recursive: true });
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yd-dock-'));
   const code = [
-    spawnStep(['together']),
-    spawnStep(['restart', path.join(output, 'together')]),
+    spawnStep(['together', dataDir]),
+    spawnStep(['restart', dataDir]),
   ].reduce((worst, current) => current !== 0 ? current : worst, 0);
   process.exit(code);
 } else {

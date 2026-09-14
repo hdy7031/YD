@@ -7,7 +7,8 @@ const root = path.join(__dirname, '..');
 const output = path.join(root, 'test-data', 'visual-mist-' + Date.now());
 fs.mkdirSync(output, { recursive: true });
 app.setAppPath(root);
-process.env.DAYHUB_TEST_DATA = output;
+const { configureIsolatedUserData } = require('./electron-test-profile.cjs');
+const userData = configureIsolatedUserData('visual-mist');
 require('../dist/main.cjs');
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -83,7 +84,7 @@ app.whenReady().then(async () => {
     report.assets = { icon: icon.getSize(), tray: tray.getSize(), iconEmpty: icon.isEmpty(), trayEmpty: tray.isEmpty() };
     report.companion = orb ? await orb.webContents.executeJavaScript(`({bodyClass:document.body.className, mainTheme:document.body.classList.contains('main-body')})`) : null;
     fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(report, null, 2));
-    console.log(JSON.stringify({ output, report }, null, 2));
+    console.log(JSON.stringify({ output, userData, report }, null, 2));
   } catch (error) {
     console.error(error);
     process.exitCode = 1;

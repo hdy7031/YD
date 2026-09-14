@@ -2,7 +2,8 @@
 const {app,BrowserWindow,Menu}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const output=path.join(__dirname,'test-data','v02-runtime-'+Date.now());fs.mkdirSync(output,{recursive:true});
-process.env.DAYHUB_TEST_DATA=output;
+const {configureIsolatedUserData}=require('./scripts/electron-test-profile.cjs');
+const userData=configureIsolatedUserData('runtime-together');
 require('./dist/main.cjs');
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const report=[];
@@ -141,7 +142,7 @@ app.whenReady().then(async()=>{
   // 这里提醒已确认，但验收待办的截止时间已过，因此处理区只应保留逾期待办。
   check('返回首页提醒数为0且处理区只保留逾期待办',await run("(()=>{const t=document.querySelector('.attention-panel')?.textContent??'';return t.includes('1 个待办已逾期')&&!t.includes('个提醒已到时间')})()"));
   check('气泡去重记录已落盘',await run("window.dayhub.get().then(s=>s.bubbleHistory.some(r=>r.id.includes('runtime-due')))"));
-  check('迁移自动备份已保存',fs.existsSync(path.join(output,'backups')));
-  fs.writeFileSync(path.join(output,'report.json'),JSON.stringify({passed:report},null,2));console.log(JSON.stringify({output,passed:report},null,2));app.quit();
+  check('迁移自动备份已保存',fs.existsSync(path.join(userData,'backups')));
+  fs.writeFileSync(path.join(output,'report.json'),JSON.stringify({passed:report,userData},null,2));console.log(JSON.stringify({output,userData,passed:report},null,2));app.quit();
  }catch(e){console.error(e);fs.writeFileSync(path.join(output,'failure.txt'),e.stack);app.exit(1);}
 });
