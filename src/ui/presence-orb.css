@@ -55,7 +55,8 @@
      绿 = 空闲；红 = 忙碌（上课 / 会议 / 教研 / 专注 / 用餐 / 通勤）；
      灰 = 下线（睡眠，与桌宠夜间睡眠同源）。 */
   --dock-edge:rgba(79,119,115,.16);
-  --dock-ink:#22302F;
+  /* 状态词比首字母浅一档：D / Y 是视觉锚点，状态词和它形成层级但不失可读性。 */
+  --dock-status-ink:#465A54;
   --dock-muted:#5F706E;
   --dock-idle:#66A37F;
   --dock-active:#C2726A;
@@ -149,7 +150,7 @@
 }
 
 .status-text {
-  color:#33423F;
+  color:var(--dock-status-ink);
   font:600 var(--dock-status,16px)/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
   font-variant-numeric:tabular-nums;
   letter-spacing:.005em;
