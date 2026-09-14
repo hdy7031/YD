@@ -55,7 +55,9 @@ app.whenReady().then(async()=>{
     /* ---------- B. 小猫已删除 ---------- */
     check('桌宠窗口没有任何猫形象或猫标签',await pet("!document.querySelector('.pet-art')&&!document.querySelector('.pet-labels')&&!document.querySelector('.teacher-prop')"));
     await run("window.dayhub.window('settings')");await wait(400);
-    check('设置页只剩专属角色与状态浮标',await run("(()=>{const t=document.querySelector('.pet-settings')?.textContent??'';return !!t&&!t.includes('小猫')&&t.includes('专属角色桌宠')&&t.includes('状态浮标')})()"));
+    // Phase 2 把显示方式收敛为「角色陪伴 / 状态 Dock」两个选项，这里同步断言当前
+    // 文案：设置页只剩专属角色与状态 Dock，且不再出现任何猫的表述。
+    check('设置页只剩专属角色与状态 Dock',await run("(()=>{const t=document.querySelector('.pet-settings')?.textContent??'';return !!t&&!t.includes('小猫')&&t.includes('角色陪伴')&&t.includes('状态 Dock')})()"));
     check('源码与文案里不再回退到猫',!fs.readFileSync(path.join(__dirname,'src','companion-assets.ts'),'utf8').includes('小猫'));
 
     /* ---------- C. 时间状态（默认迁移作息，左闭右开） ---------- */
@@ -164,7 +166,9 @@ app.whenReady().then(async()=>{
     await menu("[...document.querySelectorAll('.pet-menu-item')].find(b=>b.querySelector('.pet-menu-label').textContent.trim()==='显示为状态浮标').click()");
     await wait(600);
     const dockSize=orb.getSize();
-    check('从菜单切到状态浮标（Dual Status Dock）',!menuWindow.isVisible()&&dockSize[0]>dockSize[1]&&dockSize[0]>=150&&dockSize[0]<=190&&await pet("!!document.querySelector('.dock-surface')&&document.querySelectorAll('.dock-row').length===2"),dockSize.join('x'));
+    // Together 的两个 person item 使用布局常量宽 276；Windows 会把透明无边框窗口的
+    // 客户区对齐到物理像素，150% DPI 下取整到 277，因此按物理像素取整给容差。
+    check('从菜单切到状态浮标（Dual Status Dock）',!menuWindow.isVisible()&&dockSize[0]>dockSize[1]&&Math.abs(dockSize[0]-276)<=8&&dockSize[1]===58&&await pet("!!document.querySelector('.dock-surface')&&document.querySelectorAll('.dock-row').length===2"),dockSize.join('x'));
     await pet("window.dayhub.window('menu')");await wait(400);
     await menu("[...document.querySelectorAll('.pet-menu-item')].find(b=>b.querySelector('.pet-menu-label').textContent.trim()==='显示为桌宠').click()");
     await wait(600);
@@ -186,8 +190,10 @@ app.whenReady().then(async()=>{
 
     /* ---------- F. 版本 ---------- */
     const version=require('./package.json').version;
-    check('版本号已升级到 0.2.20',version==='0.2.20');
-    check('锁文件版本同步',require('./package-lock.json').version==='0.2.20'&&require('./package-lock.json').packages[''].version==='0.2.20');
+    // 只校验"版本已经离开 0.2.19 基线且三处元数据一致"，不要在验收脚本里钉死具体补丁号，
+    // 否则每次发版都要回来改断言。
+    check('版本号已离开 0.2.19 基线',/^0\.2\.\d+$/.test(version)&&version!=='0.2.19',version);
+    check('锁文件版本同步',require('./package-lock.json').version===version&&require('./package-lock.json').packages[''].version===version,require('./package-lock.json').version);
     check('构建产物里的桌宠素材同步',fs.existsSync(path.join(__dirname,'dist','assets','companion','custom','manifest.json')));
     const log=fs.readFileSync(path.join(output,'dayhub.log'),'utf8');
     // 以脚本方式启动 Electron 时 app.getVersion() 返回 Electron 版本，
