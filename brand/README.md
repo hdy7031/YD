@@ -25,7 +25,7 @@ YD / Your Day —— `your day, quietly organized.`
 
 | 文件 | 用途 |
 | --- | --- |
-| `source/app-icon-master-v2.png` | **程序图标定稿母版**（瓷白软方瓦片 + 灰 / 鼠尾草 YD 字标） |
+| `source/app-icon-master-v3.png` | **程序图标定稿母版**（瓷白软方瓦片 + 玻璃高光 + 灰 / 鼠尾草 YD 字标，自带 alpha 圆角） |
 | `exports/yd.ico` | Windows 程序图标（16/20/24/32/40/48/64/128/256 九层，含 125% DPI 档） |
 | `exports/icon-256.png` / `icon-512.png` | 窗口图标与商店 / 文档用大图 |
 | `exports/png/yd-16…512.png` | 程序图标多尺寸 PNG（≤24 用硬边圆角，≥32 带投影） |
@@ -46,11 +46,11 @@ YD / Your Day —— `your day, quietly organized.`
 | 字标 / 托盘 | `npx electron scripts/brand-render.cjs` | `tray-*.png`、`yd-mono-*.png`、`svg/yd-mark-*.svg` |
 | 界面字标 PNG | `python scripts/prepare-visual-assets.py` | `src/ui/assets/gen/yd-logo-*.png` |
 
-**程序图标必须从 `app-icon-master-v2.png` 导出。** 该母版是**完全不透明**的位图：
-瓦片之外仍有一圈浅色垫底与右下投影。若把整张画布直接缩放成图标，Windows 会把整块
-方形当成图标实体，浅白近白底在桌面 / 任务栏 / Alt+Tab 上表现为"白方块 + 白边"
-（0.2.21 的实际缺陷）。`prepare-app-icon.py` 因此按瓦片真实几何（占画布 88%、
-圆角约边长 27%）重建 alpha：≥32px 保留投影，≤24px 只保留硬边圆角。
+**程序图标必须从 `app-icon-master-v3.png` 导出，且该母版必须自带 alpha。**
+历史上 0.2.21 用过一版完全不透明的浅雾白母版：Windows 会把整块方画布当成图标
+实体，浅白近白底在桌面 / 任务栏 / Alt+Tab 上表现为"白方块 + 白边"。
+`prepare-app-icon.py` 会在导出前自检"四角是否透明 / 内容占比是否合理"，不通过就
+直接报错，避免再次生成带白边的图标。
 
 ### 尺寸与底色
 

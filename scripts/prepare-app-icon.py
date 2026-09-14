@@ -1,21 +1,18 @@
 """从定稿主图标导出 Windows 应用图标资源（PNG 多尺寸 + ICO）。
 
-主图标定稿：``brand/source/app-icon-master-v2.png``
-    —— 瓷白软方瓦片 + 灰/鼠尾草 YD 联结字标。
+主图标定稿：``brand/source/app-icon-master-v3.png``
+    —— 瓷白软方瓦片 + 灰/鼠尾草 YD 联结字标（自带 alpha 圆角与玻璃质感）。
 
-## 为什么需要这个脚本
+## 关键约束
 
-主图标是**完全不透明**的 RGB 位图：瓦片之外还有一圈浅灰绿垫底与右下方向的柔和
-投影。如果直接把整张画布缩放成图标，Windows 会把整块方形都当成图标实体，浅白
-近白底在桌面 / 任务栏 / Alt+Tab 上就表现为一枚"白方块 + 白边"（0.2.21 的实际
-表现）。
+母版**必须自带 alpha**：瓦片之外是透明，四角是透明。
 
-因此导出时必须按瓦片的真实几何重建 alpha 通道：
+历史教训：0.2.21 用过一版完全不透明的浅雾白母版（alpha 全 255），Windows 会把
+整块方画布都当成图标实体，浅白近白底在桌面 / 任务栏 / Alt+Tab 上表现为"白方块 +
+白边"。因此脚本会先自检 alpha，不满足就直接报错，不会悄悄生成带白边的图标。
 
-* 瓦片占画布 88%（母版实测值），圆角半径约为瓦片边长的 27%；
-* 圆角遮罩用 4 倍超采样后降采样，边缘抗锯齿但不发虚；
-* 32px 及以上保留母版投影（右下淡影）以获得立体感；
-* 24px 及以下只保留硬边圆角 —— 小尺寸下投影会糊成灰框，反而制造"脏边"。
+母版已经是最终设计（圆角、玻璃高光、投影都在画布内），导出只做等比缩放 +
+可选的整体安全边距，不再重建形状。
 
 托盘图标用的是单色字标，不在这里生成，见 ``scripts/brand-render.cjs``；
 ``scripts/prepare-visual-assets.py`` 仍负责界面侧的字标 PNG（含单色 / 白色 / 渐变）。
@@ -38,56 +35,38 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-MASTER = ROOT / "brand" / "source" / "app-icon-master-v2.png"
+MASTER = ROOT / "brand" / "source" / "app-icon-master-v3.png"
 EXPORTS = ROOT / "brand" / "exports"
 PNG_DIR = EXPORTS / "png"
 
 SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256, 512)
 ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 
-# 母版实测几何：瓦片占画布 88%，圆角约为瓦片边长 27%。
-TILE_FRACTION = 0.88
-RADIUS_FRACTION = 0.27
-SHADOW_MAX_SIZE = 24  # 该尺寸及以下不保留投影
+# 母版内容（不透明像素）占画布的比例下限：低于它说明图被裁得过小或导入错误。
+# 当前定稿 v3 的实测值约 0.66（瓷片 + 玻璃投影共同构成内容区）。
+MIN_CONTENT_FRACTION = 0.60
+# 四角必须透明，否则又是"白方块"那一类问题。
+MAX_CORNER_ALPHA = 8
 
 
-def build_icon(master: Image.Image, with_shadow: bool) -> Image.Image:
-    """按瓦片真实几何裁出圆角图标，可选保留母版投影。"""
-    canvas = master.convert("RGB")
-    side = round(canvas.width * TILE_FRACTION)
-    left = (canvas.width - side) // 2
-    top = (canvas.height - side) // 2
-    tile = canvas.crop((left, top, left + side, top + side))
-    radius = round(side * RADIUS_FRACTION)
-
-    supersample = 4
-    mask = Image.new("L", (side * supersample, side * supersample), 0)
-    ImageDraw.Draw(mask).rounded_rectangle(
-        [0, 0, side * supersample - 1, side * supersample - 1],
-        radius=radius * supersample,
-        fill=255,
-    )
-    hard = mask.resize((side, side), Image.LANCZOS)
-
-    if with_shadow:
-        shadow = Image.new("L", (side, side), 0)
-        shadow.paste(hard, (round(side * 0.008), round(side * 0.012)))
-        shadow = shadow.filter(ImageFilter.GaussianBlur(round(side * 0.016)))
-        alpha = Image.fromarray(np.maximum(np.asarray(shadow), np.asarray(hard)).astype("uint8"))
-    else:
-        alpha = hard
-
-    icon = tile.convert("RGBA")
-    icon.putalpha(alpha)
+def verify_master(master: Image.Image) -> Image.Image:
+    """自检母版：必须有透明通道、四角透明、内容占比合理。"""
+    icon = master.convert("RGBA")
+    alpha = np.asarray(icon)[..., 3]
+    corners = [int(alpha[0, 0]), int(alpha[0, -1]), int(alpha[-1, 0]), int(alpha[-1, -1])]
+    if max(corners) > MAX_CORNER_ALPHA:
+        raise SystemExit(f"母版四角不透明（{corners}）：会在 Windows 上渲染成白方块，请换用带透明圆角的版本")
+    content = float((alpha > 10).mean())
+    if content < MIN_CONTENT_FRACTION:
+        raise SystemExit(f"母版内容只占画布 {content:.2f}，图标会显得偏小；请检查裁切")
     return icon
 
 
-def frame_for(icon_shadow: Image.Image, icon_flat: Image.Image, size: int) -> Image.Image:
-    source = icon_flat if size <= SHADOW_MAX_SIZE else icon_shadow
-    return source.resize((size, size), Image.LANCZOS)
+def frame_for(icon: Image.Image, size: int) -> Image.Image:
+    return icon.resize((size, size), Image.LANCZOS)
 
 
 def save_bmp_icon(frames: dict[int, Image.Image], target: Path) -> None:
@@ -130,16 +109,15 @@ def main() -> int:
 
     master = Image.open(MASTER)
     print(f"主图标定稿：{MASTER.name} {master.mode} {master.size}")
-    icon_shadow = build_icon(master, with_shadow=True)
-    icon_flat = build_icon(master, with_shadow=False)
+    icon = verify_master(master)
+    print(f"母版自检：四角透明、内容占比 {float((np.asarray(icon)[..., 3] > 10).mean()):.3f}")
 
     PNG_DIR.mkdir(parents=True, exist_ok=True)
     frames: dict[int, Image.Image] = {}
     for size in SIZES:
-        frame = frame_for(icon_shadow, icon_flat, size)
+        frame = frame_for(icon, size)
         frames[size] = frame
         frame.save(PNG_DIR / f"yd-{size}.png", optimize=True)
-        frames[size] = frame
 
     frames[256].save(EXPORTS / "icon-256.png", optimize=True)
     frames[512].save(EXPORTS / "icon-512.png", optimize=True)
