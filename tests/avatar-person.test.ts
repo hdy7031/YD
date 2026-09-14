@@ -43,6 +43,18 @@ test('generic Profile save cannot bypass Avatar command registry validation', ()
   assert.deepEqual(saved.profiles.find(profile => profile.id === self.id)!.avatar, self.avatar);
 });
 
+test('Solo can add a companion with the registered default Avatar', () => {
+  const state = initial(now);
+  const self = state.profiles.find(profile => profile.role === 'self')!;
+  state.profiles = [self];
+  const added = apply(state, { type: 'save', entity: 'profiles', value: {
+    ...self, id: 'guest', role: 'companion', name: 'Guest', shortAlias: 'D', avatar: { packId: 'missing-pack', source: 'user' },
+  } }, now + 1);
+  assert.equal(added.profiles.length, 2);
+  assert.deepEqual(added.profiles.find(profile => profile.id === 'guest')!.avatar, { packId: DEFAULT_AVATAR_PACK_ID, source: 'default' });
+  assert.doesNotThrow(() => validateState(added));
+});
+
 test('PetInstance uses role-based subject selection and survives profile reordering', () => {
   const together = initial(now);
   const self = together.profiles.find(profile => profile.role === 'self')!;

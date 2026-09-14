@@ -105,7 +105,7 @@ function moveOrb(x:number,y:number,width?:number,height?:number){
   orb.setBounds({x:Math.round(x),y:Math.round(y),width:targetWidth,height:targetHeight},false);
   if(!wasResizable)orb.setResizable(false);
 }
-async function savePosition(){const [x,y]=orb.getPosition(),[width,height]=orb.getSize(),pos=clampPosition(x,y,true);moveOrb(pos.x,pos.y,width,height);if(store.state.settings.pet?.rememberPosition===false)return;await store.update(s=>{s.settings.orb=pos;return s;});}
+async function savePosition(){const [x,y]=orb.getPosition(),pos=clampPosition(x,y,true);moveOrb(pos.x,pos.y);if(store.state.settings.pet?.rememberPosition===false)return;await store.update(s=>{s.settings.orb=pos;return s;});}
 async function processReminders(forceSummary=false){
   if(busy)return;busy=true;
   try{
@@ -210,9 +210,11 @@ function setupHandlers(){
       dragAnchor={...dragAnchor,cursorMode:true,windowX:now.x,windowY:now.y,cursorX:cursor.x,cursorY:cursor.y,pointerX,pointerY};
     }
     const pos=clampPosition(dragAnchor.windowX+step.delta.x,dragAnchor.windowY+step.delta.y);
-    moveOrb(pos.x,pos.y,dragAnchor.width,dragAnchor.height);
+    // 拖动只移动位置。把 getBounds() 经过 DPI 物理像素取整后的宽高再写回
+    // setBounds，会在每次拖动后把透明 Dock 累积放大 1–2px。
+    moveOrb(pos.x,pos.y);
   });
-  handler('endDrag',async()=>{try{if(dragAnchor)await savePosition();}finally{dragAnchor=undefined;companion?.dragEnd();}});
+  handler('endDrag',async()=>{try{companion?.dragEnd();if(dragAnchor)await savePosition();}finally{dragAnchor=undefined;}});
   handler('importImage',async()=>{const r=await dialog.showOpenDialog(panel,{title:'选择课表或通知图片',properties:['openFile'],filters:[{name:'PNG / JPEG 图片',extensions:['png','jpg','jpeg']}]});if(r.canceled)return null;const file=r.filePaths[0];if(!/\.(png|jpe?g)$/i.test(file)||fs.statSync(file).size>20*1024*1024)throw new Error('请选择不超过 20 MB 的 PNG 或 JPEG 图片');return storeImage(nativeImage.createFromPath(file));});
   handler('chooseSchedule',async()=>{
     const r=await dialog.showOpenDialog(panel,{title:'选择整理后的课表',properties:['openFile'],filters:[{name:'YD 课表',extensions:['dayhub-schedule.json','json']}]});
@@ -310,7 +312,7 @@ else{
     const companionAssets=resolveCompanionAssets(__dirname,initialPet.avatarPackId);
     runtimeLog('info',`桌宠素材 ${companionAssets.reason}`);
     Menu.setApplicationMenu(null);
-    const initial=companionGeometry(store.state.settings.pet?.mode??'custom','medium',companionAssets.aspect);
+    const initial=companionGeometry(store.state.settings.pet?.mode??'custom','medium',companionAssets.aspect,store.state.profiles.length,false);
     // 首次启动（没有保存位置）落在右下角：用当前模式的真实画布尺寸留 24px 边距，
     // 这样 Dock（很扁）与桌宠（较高）都不会把窗口放在工作区之外。
     const area=screen.getPrimaryDisplay().workArea,pos=clampPosition(store.state.settings.orb?.x??area.x+area.width-initial.width-24,store.state.settings.orb?.y??area.y+area.height-initial.height-24,false,initial);

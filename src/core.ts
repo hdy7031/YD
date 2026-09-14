@@ -138,8 +138,15 @@ export function apply(state: State, cmd: Command, now=Date.now()): State {
   if(cmd.type==='save'){
     const entity=cmd.entity; const v=structuredClone(cmd.value) as any; if(entity==='events'&&v&&v.end==='')v.end=null;
     // Avatar 有独立 command；通用 Profile 编辑只能原样携带已有选择，不能绕过
-    // Registry 校验写入任意 packId。历史数据缺字段时也保持缺失，交给 v6 migration。
-    if(entity==='profiles'&&v){const stored=s.profiles.find(profile=>profile.id===v.id);if(stored)v.avatar=stored.avatar;}
+    // Registry 校验写入任意 packId。新建档案只允许获得注册的默认 Pack。
+    if(entity==='profiles'&&v){
+      const stored=s.profiles.find(profile=>profile.id===v.id);
+      // Existing selections are immutable through generic Profile editing.
+      // A newly-added companion receives the registered default Pack so the
+      // Solo -> Together flow satisfies the v6 invariant without accepting an
+      // arbitrary pack id from the form payload.
+      v.avatar=stored?.avatar??{packId:DEFAULT_AVATAR_PACK_ID,source:'default'};
+    }
     // 会议默认归属工作区本人：界面尚无归属人选择器（Phase 1C 再开放），
     // 但归属必须由身份层解析，而不是写死 'me'。
     if(entity==='events'&&v&&v.person===undefined)v.person=requireSelfProfile(s).id;

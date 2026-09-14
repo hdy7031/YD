@@ -46,9 +46,24 @@ export const companionCharacter = {
  */
 export const companionDock = {
   collapsed: {
-    small: { width: 150, height: 56 },
-    medium: { width: 166, height: 62 },
-    large: { width: 182, height: 70 },
+    small: { width: 180, height: 48 },
+    medium: { width: 196, height: 50 },
+    large: { width: 212, height: 54 },
+  } as Record<CompanionSize, CompanionGeometry>,
+  solo: {
+    small: { width: 122, height: 46 },
+    medium: { width: 136, height: 48 },
+    large: { width: 150, height: 52 },
+  } as Record<CompanionSize, CompanionGeometry>,
+  expanded: {
+    small: { width: 214, height: 58 },
+    medium: { width: 230, height: 62 },
+    large: { width: 246, height: 66 },
+  } as Record<CompanionSize, CompanionGeometry>,
+  soloExpanded: {
+    small: { width: 170, height: 56 },
+    medium: { width: 188, height: 60 },
+    large: { width: 204, height: 64 },
   } as Record<CompanionSize, CompanionGeometry>,
 };
 
@@ -60,9 +75,12 @@ export interface CompanionGeometry {
 }
 
 // Single source of truth for every companion window size.
-export function companionGeometry(mode: CompanionMode, size: CompanionSize, aspect: number): CompanionGeometry {
+export function companionGeometry(mode: CompanionMode, size: CompanionSize, aspect: number, people = 2, expanded = false): CompanionGeometry {
   if (mode === 'orb') {
-    const { width, height } = companionDock.collapsed[size];
+    const family = people <= 1
+      ? (expanded ? companionDock.soloExpanded : companionDock.solo)
+      : (expanded ? companionDock.expanded : companionDock.collapsed);
+    const { width, height } = family[size];
     return { width, height, shape: 'rounded' };
   }
   // Avatar Pack supplies the canvas ratio; window policy stays generic.

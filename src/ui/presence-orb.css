@@ -2,8 +2,8 @@
  *
  * Phase 2 起，'orb' 显示模式渲染的是常驻状态牌（Dock），不再是 legacy 黄色悬浮球：
  *   - mist 表面 + 极淡边框 + 极轻阴影，不使用玻璃渐变 / 发光 / 大面积 blur；
- *   - 每行 = 状态点 + 人物 label（来自档案）+ 状态（来自 CurrentState）；
- *   - 单人工作区自动折成一行，不保留空的同行者行。
+ *   - 每项 = 短标签（来自档案）+ 状态点 + 状态（来自 CurrentState）；
+ *   - 单人工作区使用重新配比的 Solo 几何，不保留空的同行者槽。
  * 旧的 .presence-orb / .presence-surface / .identity-mark 结构已在本阶段移除。
  */
 .pet-body.pet-body,
@@ -46,44 +46,30 @@
 .pet-dock.orb-mode .pet-handle:focus-visible { outline:0; box-shadow:none; }
 
 .dock-surface {
-  --dock-edge:rgba(36,50,59,.10);
+  --dock-edge:rgba(79,119,115,.18);
   --dock-ink:#24323B;
-  --dock-muted:#6B7B85;
+  --dock-muted:#657473;
+  isolation:isolate;
   position:relative;
   display:flex;
-  flex-direction:column;
-  justify-content:center;
-  gap:2px;
-  width:100%;
-  height:100%;
+  align-items:stretch;
+  width:calc(100% - 8px);
+  height:calc(100% - 8px);
+  margin:4px;
   box-sizing:border-box;
-  padding:7px 12px;
+  overflow:hidden;
+  padding:0 8px;
   border:1px solid var(--dock-edge);
-  border-radius:12px;
-  background:rgba(255,255,255,.94);
-  box-shadow:0 6px 18px rgba(36,50,59,.06),0 1px 2px rgba(36,50,59,.04);
-  transform:translateZ(0) scale(1);
-  transform-origin:center;
-  transition:transform 170ms ease-out,border-color 170ms ease-out,box-shadow 170ms ease-out;
+  border-radius:15px;
+  background:rgba(250,252,251,.92);
+  box-shadow:0 8px 24px rgba(31,43,44,.075),0 1px 3px rgba(31,43,44,.045),inset 0 1px rgba(255,255,255,.82);
+  -webkit-backdrop-filter:blur(18px) saturate(108%);
+  backdrop-filter:blur(18px) saturate(108%);
+  transition:border-color 150ms ease,box-shadow 150ms ease,background-color 150ms ease;
 }
 
-/* Dock 窗口比内容略大一圈（阴影 / 圆角安全区），表面按 4px 内缩，
-   热区仍然覆盖整个窗口；可见表面尺寸落在产品建议区间内。 */
-.dock-surface { margin:4px; width:calc(100% - 8px); height:calc(100% - 8px); padding:0 12px; }
-
-.pet-handle:hover .dock-surface {
-  border-color:rgba(70,108,106,.22);
-  box-shadow:0 8px 22px rgba(36,50,59,.08),0 1px 2px rgba(36,50,59,.04);
-  transform:translateZ(0) scale(1.012);
-}
-
-.pet-handle:active .dock-surface,
-.pet-dock.is-dragging .dock-surface {
-  border-color:rgba(70,108,106,.20);
-  box-shadow:0 5px 14px rgba(36,50,59,.08);
-  transform:translateZ(0) scale(.994);
-  transition-duration:120ms;
-}
+.pet-handle:hover .dock-surface { border-color:rgba(79,119,115,.28); background:rgba(252,253,253,.95); box-shadow:0 10px 27px rgba(31,43,44,.09),0 1px 3px rgba(31,43,44,.05),inset 0 1px rgba(255,255,255,.9); }
+.pet-handle:active .dock-surface,.pet-dock.is-dragging .dock-surface { border-color:rgba(79,119,115,.23); box-shadow:0 5px 16px rgba(31,43,44,.075); }
 
 /* 拖动期间冻结一切视觉变化：桌面看到的位移只来自窗口本身。 */
 .pet-dock.is-dragging .dock-surface,
@@ -96,45 +82,55 @@
 }
 
 .dock-row {
-  --status:#70dcc0;
-  --status-rgb:112,220,192;
+  --status:#7C9E99;
+  --status-rgb:124,158,153;
   position:relative;
   display:grid;
-  grid-template-columns:12px minmax(0,auto) minmax(0,1fr);
+  grid-template-columns:14px 14px minmax(0,1fr);
   align-items:center;
-  gap:8px;
+  column-gap:4px;
   min-width:0;
-  min-height:20px;
-  padding:1px 2px;
-  transition:background-color 180ms ease-out;
+  flex:1 1 0;
+  padding:0 4px;
+  transition:background-color 150ms ease,padding 150ms ease;
 }
-
-.dock-row:hover { background:rgba(70,108,106,.055); border-radius:7px; }
-/* 状态色与状态栏 / Mini / Tip 同源：空闲绿、即将琥珀、忙碌橙、专注蓝、冲突红。 */
+.dock-row + .dock-row::before { content:""; position:absolute; left:-1px; top:12px; bottom:12px; width:1px; background:rgba(79,119,115,.14); }
+.dock-row:hover { background:rgba(79,119,115,.045); }
+.dock-row.is-hovered { padding-bottom:14px; background:rgba(79,119,115,.055); }
+.dock-surface.solo { justify-content:center; padding:0 12px; }
+.dock-surface.solo .dock-row { flex:0 1 auto; width:100%; padding-left:6px; padding-right:6px; }
+.dock-surface.solo .dock-row::before { display:none; }
+/* 状态色只落在小圆点：空闲 sage、忙碌 muted teal、专注 deep teal、冲突 dusty red。 */
 .dock-row.state-upcoming { --status:#D6AE6A; --status-rgb:214,174,106; }
-.dock-row.state-busy { --status:#DE9A63; --status-rgb:222,154,99; }
-.dock-row.state-focus { --status:#8FAED2; --status-rgb:143,174,210; }
+.dock-row.state-busy { --status:#6F9895; --status-rgb:111,152,149; }
+.dock-row.state-focus { --status:#3F7774; --status-rgb:63,119,116; }
 .dock-row.state-dnd { --status:#C2726A; --status-rgb:194,114,106; }
 .dock-row.state-offline { --status:#A3ACB0; --status-rgb:163,172,176; }
+/* CurrentState.kind 只决定微小 indicator 的语义色，不染整块 surface。 */
+.dock-row.kind-meal { --status:#C7A775; --status-rgb:199,167,117; }
+.dock-row.kind-commute { --status:#738791; --status-rgb:115,135,145; }
+.dock-row.kind-nap,.dock-row.kind-sleep,.dock-row.kind-rest { --status:#8E91AE; --status-rgb:142,145,174; }
+.dock-row.source-manual { --status:#748B89; --status-rgb:116,139,137; }
 
-.dock-label {
+.dock-alias {
   color:var(--dock-ink);
-  font:560 11.5px/1.25 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
-  letter-spacing:.01em;
+  font:600 12px/1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
+  letter-spacing:.035em;
   white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
 }
 
 .dock-status {
   color:var(--dock-muted);
-  font:450 11px/1.25 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
+  font:560 11.5px/1.2 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
   font-variant-numeric:tabular-nums;
-  text-align:right;
+  text-align:left;
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
 }
+
+.dock-extra { position:absolute; left:36px; right:5px; bottom:7px; overflow:hidden; color:#899795; font:450 9.5px/1.1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-align:left; text-overflow:ellipsis; white-space:nowrap; opacity:0; transform:translateY(-1px); transition:opacity 140ms ease,transform 140ms ease; }
+.dock-row.is-hovered .dock-extra { opacity:1; transform:none; }
 
 .status-core {
   position:relative;
@@ -158,17 +154,6 @@
   background:var(--status);
   box-shadow:0 0 3px rgba(var(--status-rgb),.25);
 }
-
-.motion .state-idle .status-dot { animation:presence-breathe 2.9s ease-in-out infinite; }
-.motion .state-idle .status-ring { animation:presence-ring 2.9s ease-in-out infinite; }
-.motion .state-focus .status-dot { animation:presence-breathe 3.1s ease-in-out infinite; }
-.motion .state-focus .status-ring { animation:presence-ring 3.1s ease-in-out infinite; }
-
-@keyframes presence-breathe {
-  0%,100% { opacity:.78; box-shadow:0 0 2px rgba(var(--status-rgb),.18); }
-  50% { opacity:1; box-shadow:0 0 4px rgba(var(--status-rgb),.30); }
-}
-@keyframes presence-ring { 0%,100% { opacity:.48; } 50% { opacity:.74; } }
 
 .tip-body,
 .tip-body #root {

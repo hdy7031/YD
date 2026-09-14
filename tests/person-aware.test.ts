@@ -31,7 +31,7 @@ test('Solo 课程：单人工作区的课程照常产生 occurrence 与状态', 
   assert.equal(today[0].person, 'alex');
   const status = personStatus(s, at('2027-03-01T08:10'), 'alex');
   assert.equal(status.code, 'BUSY_CLASS');
-  assert.equal(status.alias, 'D');
+  assert.equal(status.alias, 'Y');
   assert.equal(status.todayCount, 1);
   assert.deepEqual(scheduleDays(s, '2027-03-01', 'alex').map(day => day.day), ['2027-03-01']);
 });
@@ -87,7 +87,7 @@ test('Solo 快照：只投影一个档案，没有幽灵同行者与空代号', 
   assert.equal(live.people.length, 1);
   assert.deepEqual(live.people.map(status => status.person), ['alex']);
   assert.equal(live.people[0].code, 'BUSY_CLASS');
-  assert.equal(live.people[0].alias, 'D');
+  assert.equal(live.people[0].alias, 'Y');
   assert.ok(live.people.every(status => typeof status.alias === 'string' && status.alias.length > 0));
   assert.equal(personStatus(s, at('2027-03-01T08:10'), 'partner').code, 'UNKNOWN', '不存在的同行者不抛错');
 });

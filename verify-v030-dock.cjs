@@ -56,18 +56,18 @@ async function runTogether() {
     const rect=surface?.getBoundingClientRect();
     const style=surface?getComputedStyle(surface):null;
     return {
-      rows:rows.map(r=>({person:r.dataset.person,label:r.querySelector('.dock-label')?.textContent.trim(),status:r.querySelector('.dock-status')?.textContent.trim(),dot:!!r.querySelector('.status-dot')})),
+      rows:rows.map(r=>({person:r.dataset.person,label:r.querySelector('.dock-alias')?.textContent.trim(),status:r.querySelector('.dock-status')?.textContent.trim(),kind:r.dataset.stateKind,dot:!!r.querySelector('.status-dot')})),
       radius:style?.borderRadius,background:style?.backgroundColor,backdrop:style?.backdropFilter,
       rect:rect?{width:rect.width,height:rect.height}:null,
       legacy:!!document.querySelector('.presence-orb,.presence-surface,.identity-mark,.orb-shell,.split-orb')
     };
   })()`);
   check('两行状态：人物 label 与状态都来自档案 / CurrentState', structure.rows.length === 2 && structure.rows.every(r => r.label && r.status && r.dot), JSON.stringify(structure.rows));
-  check('Dock 是固定圆角状态牌（非单球体）', structure.rect && structure.rect.width > structure.rect.height && parseFloat(structure.radius) >= 10 && parseFloat(structure.radius) <= 14, JSON.stringify({ rect: structure.rect, radius: structure.radius }));
-  check('Dock 表面为 mist 白底且没有厚玻璃 blur', /rgba?\(\s*255\s*,\s*255\s*,\s*255/.test(String(structure.background)) && !/blur\(1[0-9]/.test(String(structure.backdrop)), JSON.stringify({ background: structure.background, backdrop: structure.backdrop }));
+  check('Dock 是固定圆角状态牌（非单球体）', structure.rect && structure.rect.width > structure.rect.height && parseFloat(structure.radius) >= 14 && parseFloat(structure.radius) <= 16, JSON.stringify({ rect: structure.rect, radius: structure.radius }));
+  check('Dock 表面为 mist 白底与轻玻璃层', /rgba?\(\s*250\s*,\s*252\s*,\s*251/.test(String(structure.background)) && /blur\(18px\)/.test(String(structure.backdrop)), JSON.stringify({ background: structure.background, backdrop: structure.backdrop }));
   check('legacy orb 结构已不在 DOM 中', structure.legacy === false);
   const dockSize = dock.getSize();
-  check('窗口尺寸与布局常量一致（中档 166×62）', Math.abs(dockSize[0] - 166) <= 2 && Math.abs(dockSize[1] - 62) <= 2, dockSize.join('x'));
+  check('Together 默认窗口尺寸与布局常量一致（中档 196×50）', Math.abs(dockSize[0] - 196) <= 2 && Math.abs(dockSize[1] - 50) <= 2, dockSize.join('x'));
   const dotColor = await pet("getComputedStyle(document.querySelector('.dock-row .status-dot')).backgroundColor");
   check('状态点颜色来自统一语义色板', /rgba?\(\d+, \d+, \d+/.test(dotColor), dotColor);
 
@@ -75,13 +75,19 @@ async function runTogether() {
   await pet("window.dayhub.presence('enter','partner')");
   await wait(340);
   const tip = windowOf('tip');
-  check('hover 显示轻量状态提示且无 undefined', !!tip && tip.isVisible() && await tip.webContents.executeJavaScript("!/undefined/.test(document.querySelector('.presence-tip')?.textContent??'undefined')"));
+  const expanded=dock.getSize();
+  check('hover 只在 Dock 内部展开，不再显示外置 tooltip', !!tip&&!tip.isVisible()&&expanded[0]>=228&&expanded[1]>=60,expanded.join('x'));
+  check('hover 侧显示一条 CurrentState 派生的补充信息',await pet("document.querySelectorAll('.dock-row.is-hovered').length===1&&!!document.querySelector('.dock-row.is-hovered .dock-extra')&&!document.body.textContent.includes('undefined')"));
+  fs.writeFileSync(path.join(output,'dock-together-hover.png'),(await dock.capturePage()).toPNG());
   await pet("window.dayhub.presence('leave')");
   await wait(240);
+  check('离开后收回默认几何且无幽灵 tooltip',Math.abs(dock.getSize()[0]-196)<=2&&Math.abs(dock.getSize()[1]-50)<=2&&!tip.isVisible(),dock.getSize().join('x'));
   const mini = windowOf('mini');
   await pet("document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('click',{bubbles:true}))");
   await wait(360);
   check('click 展开轻量详情面板（当前状态 / 下一项）', mini.isVisible() && await mini.webContents.executeJavaScript("document.body.textContent.includes('当前')||document.body.textContent.includes('下一项')"));
+  check('Together Mini 使用两个平级状态卡且无冗余操作',await mini.webContents.executeJavaScript("document.querySelectorAll('.mini-status-card').length===2&&document.querySelectorAll('.mini-next').length===2&&document.querySelectorAll('.mini-actions button').length===2"));
+  fs.writeFileSync(path.join(output,'dock-together-mini.png'),(await mini.capturePage()).toPNG());
   if (mini.isVisible()) await mini.hide();
   await wait(220);
 
@@ -89,7 +95,7 @@ async function runTogether() {
   const start = dock.getBounds();
   // Windows 在 100%–150% DPI 下会把透明窗口的客户区重新对齐到物理像素（±1–7px），
   // 因此这里锁定的是"固定画布"契约：高度恒为布局常量，宽度只在常量附近小幅取整。
-  check('Dock 窗口尺寸稳定（高度等于布局常量，宽度仅物理像素取整）', start.height === 62 && Math.abs(start.width - 166) <= 7, JSON.stringify(start));
+  check('Dock 窗口尺寸稳定（高度等于布局常量，宽度仅物理像素取整）', start.height === 50 && Math.abs(start.width - 196) <= 7, JSON.stringify(start));
   const drag = async (fromX, fromY, points) => {
     await pet(`window.dayhub.beginDrag(${fromX},${fromY})`);
     for (const [x, y] of points) await pet(`window.dayhub.drag(${x},${y})`);
@@ -98,14 +104,14 @@ async function runTogether() {
   await drag(start.x + 40, start.y + 30, [[start.x + 60, start.y + 50], [start.x + 120, start.y + 90], [start.x + 150, start.y + 120]]);
   await wait(600);
   const afterDrag = dock.getBounds();
-  check('拖动改变窗口位置且尺寸不变', (afterDrag.x !== start.x || afterDrag.y !== start.y) && Math.abs(afterDrag.width - start.width) <= 7 && afterDrag.height === start.height, JSON.stringify({ start, afterDrag }));
+  check('拖动改变窗口位置且恢复 collapsed 尺寸', (afterDrag.x !== start.x || afterDrag.y !== start.y) && Math.abs(afterDrag.width - 196) <= 7 && afterDrag.height === 50, JSON.stringify({ start, afterDrag }));
   check('拖动结束后没有遗留悬停提示', !windowOf('tip').isVisible());
   check('拖动结束后 DOM 不残留 is-dragging', await pet("!document.querySelector('.pet-dock').classList.contains('is-dragging')"));
   // 快速拖动：两次坐标内完成，不残留状态。
   await drag(afterDrag.x + 30, afterDrag.y + 20, [[afterDrag.x + 150, afterDrag.y + 100], [afterDrag.x + 230, afterDrag.y + 60]]);
   await wait(520);
   const rapid = dock.getBounds();
-  check('快速拖动只移动窗口、不残留提示与形变', Math.abs(rapid.width - start.width) <= 7 && rapid.height === start.height && !windowOf('tip').isVisible() && await pet("!document.querySelector('.pet-dock').classList.contains('is-dragging')"), JSON.stringify(rapid));
+  check('快速拖动只移动窗口、不残留提示与形变', Math.abs(rapid.width - 196) <= 7 && rapid.height === 50 && !windowOf('tip').isVisible() && await pet("!document.querySelector('.pet-dock').classList.contains('is-dragging')&&!document.querySelector('.dock-row.is-hovered')"), JSON.stringify(rapid));
   // drag → mouse leave：拖动中离开不产生提示。
   await pet(`window.dayhub.beginDrag(${rapid.x + 40},${rapid.y + 30})`);
   await pet("document.querySelector('.pet-handle').dispatchEvent(new PointerEvent('pointerleave',{bubbles:true}))");

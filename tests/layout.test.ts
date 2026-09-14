@@ -18,18 +18,23 @@ test('0.2.20 桌宠画布是固定尺寸：状态与素材内容无法改变窗�
     // 角色宽度按画布比例缩放，不变形。
     const fromAspect=Math.max(companionCharacter.minWidth,Math.round(companionCharacter.height[size]*aspect)+companionFrame.padX*2);
     assert.ok(Math.abs(custom.width-fromAspect)<=1);
-    // Phase 2：'orb' 模式已经是 Dual Status Dock（圆角状态牌），不再是正方形悬浮球。
-    const dock=companionGeometry('orb',size,aspect);
+    // Visual System 2.0：Together / Solo 各自有完整 default + internal-hover 几何。
+    const dock=companionGeometry('orb',size,aspect,2,false);
     assert.deepEqual(dock,{...companionDock.collapsed[size],shape:'rounded'});
-    // collapsed 尺寸按产品定义落在 120–170 × 52–68；大档只在此之上放宽一档呼吸感。
-    assert.ok(dock.width>=120&&dock.width<=190,`${size} Dock 宽度落在建议区间`);
-    assert.ok(dock.height>=52&&dock.height<=74,`${size} Dock 高度落在建议区间`);
-    if(size!=='large'){
-      assert.ok(dock.width<=170&&dock.height<=68,`${size} Dock 落在 collapsed 建议区间`);
-    }
+    assert.ok(dock.width>=180&&dock.width<=212,`${size} Together Dock 宽度落在校正区间`);
+    assert.ok(dock.height>=48&&dock.height<=54,`${size} Together Dock 高度落在校正区间`);
     assert.ok(dock.width>dock.height,'Dock 是横向状态牌，不是球体');
     assert.equal(dock.shape,'rounded','Dock 使用圆角矩形窗口裁剪');
     assert.notEqual(dock.width,dock.height,'不再保留单球体设计');
+    const togetherExpanded=companionGeometry('orb',size,aspect,2,true);
+    assert.deepEqual(togetherExpanded,{...companionDock.expanded[size],shape:'rounded'});
+    assert.ok(togetherExpanded.width>dock.width&&togetherExpanded.height>dock.height,'Together hover 在组件内部扩出第二信息层');
+    const solo=companionGeometry('orb',size,aspect,1,false);
+    const soloExpanded=companionGeometry('orb',size,aspect,1,true);
+    assert.deepEqual(solo,{...companionDock.solo[size],shape:'rounded'});
+    assert.deepEqual(soloExpanded,{...companionDock.soloExpanded[size],shape:'rounded'});
+    assert.ok(solo.width<dock.width&&solo.width>solo.height,'Solo 是重新配比的独立横向形态');
+    assert.ok(soloExpanded.width>solo.width&&soloExpanded.height>solo.height,'Solo 保留完整 hover 交互');
   }
   // 素材比例异常时退回安全比例而不是生成 0 宽窗口。
   assert.deepEqual(companionGeometry('custom','medium',0),companionGeometry('custom','medium',0.68));
@@ -61,11 +66,13 @@ test('Phase 2 Dual Status Dock：legacy 黄色单球体与 gold/amber 残留已�
   assert.doesNotMatch(mainCss,/^[\s,>+~]*\.identity-mark\b/m,'旧的 identity-mark 选择器必须移除');
   // Dock 表面：mist 白底 + 圆角矩形，没有暗金色渐变。
   assert.match(orbCss,/\.dock-surface\b/);
-  assert.match(orbCss,/border-radius:12px/);
+  assert.match(orbCss,/\.dock-surface[\s\S]*?border-radius:15px/);
   assert.doesNotMatch(orbCss,/#(?:e0b234|b88a16|7e5c0c|e4c87c)/i,'Dock 路径不得保留 legacy 暗金配色');
   assert.doesNotMatch(orbCss,/linear-gradient\([^)]*rgba\(\s*2[0-9]{2}\s*,/,'Dock 不使用暖色大色块渐变');
-  // 状态色仍来自 companion-colors 的六色语义，不在 CSS 里重新发明。
-  for(const tone of ['#D6AE6A','#DE9A63','#8FAED2','#C2726A','#A3ACB0']) assert.match(orbCss,new RegExp(tone,'i'),`缺少 ${tone}`);
+  // 暖色只允许作为极小 upcoming / meal indicator；默认、忙碌与专注都回到 sage / teal。
+  for(const tone of ['#7C9E99','#6F9895','#3F7774','#C2726A','#A3ACB0']) assert.match(orbCss,new RegExp(tone,'i'),`缺少 ${tone}`);
+  assert.match(orbCss,/\.dock-row\.kind-meal/,'meal 使用独立的小范围 soft-sand indicator');
+  assert.match(orbCss,/\.dock-row\.kind-(?:nap|sleep)/,'休息状态使用 dusty blue-gray indicator');
 });
 
 test('0.2.16 窗口回收：拖到屏幕边缘、显示器被拔掉都不会留在屏幕外',()=>{

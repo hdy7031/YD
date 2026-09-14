@@ -89,22 +89,29 @@ app.whenReady().then(async () => {
     await wait(500);
     check('状态浮标单人模式只有一行', await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row').length===1"));
     check('状态浮标没有第二个（幽灵）同行者行', await orb.webContents.executeJavaScript("!document.querySelector('.dock-row[data-person=\"partner\"]')"));
-    check('状态浮标单人行的 label 来自本人档案', await orb.webContents.executeJavaScript("document.querySelector('.dock-row .dock-label')?.textContent.trim()==='Alex'"), await orb.webContents.executeJavaScript("document.querySelector('.dock-row .dock-label')?.textContent.trim()"));
-    // Dock 尺寸固定：单人折成一行，但窗口仍是同一个圆角状态牌尺寸。
-    check('状态浮标几何是固定圆角状态牌', (() => { const [width, height] = orb.getSize(); return width>height && width>=120&&width<=170&&height>=52&&height<=68; })(), JSON.stringify(orb.getSize()));
+    check('状态浮标单人行的短标签来自本人档案', await orb.webContents.executeJavaScript("document.querySelector('.dock-row .dock-alias')?.textContent.trim()==='A'"), await orb.webContents.executeJavaScript("document.querySelector('.dock-row .dock-alias')?.textContent.trim()"));
+    check('Solo 没有 divider 或空白第二槽位',await orb.webContents.executeJavaScript("getComputedStyle(document.querySelector('.dock-row'),'::before').display==='none'&&!document.querySelector('.dock-row+.dock-row')"));
+    // Solo 是重新配比的完整一等形态，不沿用 Together 的宽度。
+    check('Solo 默认几何独立、短而利落（中档 136×48）', (() => { const [width, height] = orb.getSize(); return Math.abs(width-136)<=2&&Math.abs(height-48)<=2; })(), JSON.stringify(orb.getSize()));
+    fs.writeFileSync(path.join(output,'dock-solo-default.png'),(await orb.capturePage()).toPNG());
     await orb.webContents.executeJavaScript("window.dayhub.presence('enter','alex')");
     await wait(250);
-    check('悬停提示显示本人状态', tip.isVisible() && await tip.webContents.executeJavaScript("(document.querySelector('.presence-tip')?.textContent??'').trim().length>0"));
-    check('悬停提示不含 undefined', await tip.webContents.executeJavaScript("!(document.querySelector('.presence-tip')?.textContent??'').includes('undefined')"));
+    check('Solo hover 在组件内部展开为 188×60，外置 tooltip 保持隐藏', !tip.isVisible()&&Math.abs(orb.getSize()[0]-188)<=2&&Math.abs(orb.getSize()[1]-60)<=2,JSON.stringify(orb.getSize()));
+    check('Solo hover 补充信息短而完整',await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row.is-hovered').length===1&&!!document.querySelector('.dock-extra')&&!document.body.textContent.includes('undefined')"));
+    fs.writeFileSync(path.join(output,'dock-solo-hover.png'),(await orb.capturePage()).toPNG());
     check('不存在的状态区域被拒绝而不是崩溃', await orb.webContents.executeJavaScript("window.dayhub.presence('enter','partner').then(()=>false).catch(()=>true)"));
     await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");
+    await wait(180);
+    check('Solo hover 离开后稳定收回且无残留',!tip.isVisible()&&Math.abs(orb.getSize()[0]-136)<=2&&Math.abs(orb.getSize()[1]-48)<=2&&await orb.webContents.executeJavaScript("!document.querySelector('.dock-row.is-hovered')"));
 
     /* ---------- Mini / Menu ---------- */
     await orb.webContents.executeJavaScript("window.dayhub.window('mini')");
     await wait(300);
-    check('mini 面板打开且只有一条状态', mini.isVisible() && await mini.webContents.executeJavaScript("document.querySelectorAll('.person-status').length===1"));
-    check('mini 标题不假设"我们"', await mini.webContents.executeJavaScript("document.querySelector('h2')?.textContent==='此刻'"));
+    check('mini 面板打开且只有一条状态', mini.isVisible() && await mini.webContents.executeJavaScript("document.querySelectorAll('.mini-status-card').length===1"));
+    check('mini 标题与结构是专门的 Solo 详情态', await mini.webContents.executeJavaScript("document.querySelector('h2')?.textContent==='我的 · 此刻'&&document.querySelectorAll('.mini-status-card').length===1&&document.querySelectorAll('.mini-next').length===1"));
+    check('mini 尺寸更精练且没有空白第二列',Math.abs(mini.getSize()[0]-288)<=2&&Math.abs(mini.getSize()[1]-216)<=2&&await mini.webContents.executeJavaScript("getComputedStyle(document.querySelector('.mini-status-grid')).gridTemplateColumns.split(' ').length===1"),JSON.stringify(mini.getSize()));
     check('mini 没有 undefined', await mini.webContents.executeJavaScript("!document.body.textContent.includes('undefined')"));
+    fs.writeFileSync(path.join(output,'dock-solo-mini.png'),(await mini.capturePage()).toPNG());
     await orb.webContents.executeJavaScript("window.dayhub.window('menu')");
     await wait(300);
     check('桌宠菜单正常且不含固定 Ta', sheet.isVisible() && await sheet.webContents.executeJavaScript("(()=>{const t=document.body.textContent;return t.includes('打开 YD')&&t.includes('退出 YD')&&!t.includes('Ta')&&!t.includes('undefined')})()"));

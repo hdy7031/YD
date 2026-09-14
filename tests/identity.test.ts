@@ -105,16 +105,16 @@ test('课表导入按工作区现有档案校验人员：自定义 id 可导入�
   assert.equal(Object.keys(workspace.profiles).some(key => !/^\d+$/.test(key)), false);
 });
 
-test('短代号默认值跟随角色：本人 D、同行者 Y，显式设置优先', () => {
-  assert.equal(profileAlias(profile('alex', 'self')), 'D');
-  assert.equal(profileAlias(profile('sam', 'companion')), 'Y');
-  assert.equal(profileAlias(profile('me')), 'D');
-  assert.equal(profileAlias(profile('partner')), 'Y');
+test('短代号默认值跟随角色：本人 Y、同行者 D，显式设置优先', () => {
+  assert.equal(profileAlias(profile('alex', 'self')), 'Y');
+  assert.equal(profileAlias(profile('sam', 'companion')), 'D');
+  assert.equal(profileAlias(profile('me')), 'Y');
+  assert.equal(profileAlias(profile('partner')), 'D');
   assert.equal(profileAlias({ ...profile('sam', 'companion'), shortAlias: 'S' }), 'S');
   const reversed = stateWith([profile('partner', 'companion'), profile('me', 'self')], { domainVersion: 2 });
-  assert.equal(personAlias(reversed, 'me'), 'D');
-  assert.equal(personAlias(reversed, 'partner'), 'Y');
-  assert.equal(personAlias(reversed, 'ghost'), 'D');
+  assert.equal(personAlias(reversed, 'me'), 'Y');
+  assert.equal(personAlias(reversed, 'partner'), 'D');
+  assert.equal(personAlias(reversed, 'ghost'), 'Y');
 });
 
 // 投影按档案数量输出：单人一条、双人两条；顺序取 profiles 顺序，身份语义来自 role。

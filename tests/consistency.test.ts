@@ -67,7 +67,7 @@ test('合成 v0.2 旧备份升级迁移不丢业务、提醒、设置或扩展�
   delete pet.nightRest;delete pet.miniPanel;delete pet.rememberPosition;
   validateState(legacy);const before=structuredClone(legacy);const next=migrateLive(structuredClone(legacy));validateState(next);
   for(const key of ['courses','tasks','events','notices','exceptions','reminders'] as const)assert.deepEqual((next as unknown as Record<string,unknown>)[key],(before as unknown as Record<string,unknown>)[key]);
-  assert.equal(next.settings.liveVersion,5);assert.deepEqual(next.profiles.map(p=>p.shortAlias),['D','Y']);assert.equal(next.profiles[1].name,'Sam');
+  assert.equal(next.settings.liveVersion,5);assert.deepEqual(next.profiles.map(p=>p.shortAlias),['Y','D']);assert.equal(next.profiles[1].name,'Sam');
   assert.equal(next.settings.pet?.nightRest,true);assert.equal(next.settings.trayResident,true);
   assert.deepEqual(migrateLive(structuredClone(next)),next);
   const profile={...next.profiles[0],shortAlias:'自定义'};const edited=apply(next,{type:'save',entity:'profiles',value:profile},start);assert.equal(snapshot(edited,start).people[0].alias,'自定义');

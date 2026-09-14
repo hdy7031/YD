@@ -45,12 +45,13 @@ export class Companion {
   constructor(private store:Store,readonly orb:BrowserWindow,private panel:BrowserWindow,options:Electron.BrowserWindowConstructorOptions,private file:string,lock:(w:BrowserWindow)=>void){
     this.activeAvatar=this.avatarIdentity();
     this.bubble=new BrowserWindow({...options,width:330,height:180,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false});
-    this.mini=new BrowserWindow({...options,width:326,height:270,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false});
+    const soloMini=this.store.state.profiles.length<=1;
+    this.mini=new BrowserWindow({...options,width:soloMini?288:300,height:soloMini?216:236,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false});
     this.tip=new BrowserWindow({...options,width:150,height:32,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false,hasShadow:false,roundedCorners:false});
-    // 右键菜单是自绘窗口：原生菜单无法沿用 YD 的字体、间距与金色点缀。
+    // 右键菜单是自绘窗口：原生菜单无法沿用 YD 的字体、间距与品牌层级。
     // 它需要真正的焦点才能“点外面自动收起”，所以不加入点击穿透名单。
     this.sheet=new BrowserWindow({...options,width:companionMenuMetrics.width,height:220,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,hasShadow:false,roundedCorners:false});
-    this.bubble.setTitle('YD · 提醒气泡');this.mini.setTitle('YD · 双方状态');this.tip.setTitle('YD · 状态');this.sheet.setTitle('YD · 桌宠菜单');
+    this.bubble.setTitle('YD · 提醒气泡');this.mini.setTitle('YD · 当前状态');this.tip.setTitle('YD · 状态');this.sheet.setTitle('YD · 桌宠菜单');
     lock(this.bubble);lock(this.mini);lock(this.tip);lock(this.sheet);
     this.mini.on('blur',()=>this.mini.hide());
     this.mini.on('close',e=>{if(!this.closing){e.preventDefault();this.mini.hide();}});
@@ -93,9 +94,20 @@ export class Companion {
     // frame, the business state or the character bounding box.
     const mode=p.mode==='orb'?'orb':'custom';
     const pack=resolveAvatarPack(this.activeAvatar.resolvedPackId);
-    const {width,height,shape}=companionGeometry(mode,p.size,pack.canvas.width/pack.canvas.height);
+    const people=this.store.state.profiles.length;
+    const expanded=mode==='orb'&&!!this.hoverTip;
+    const {width,height,shape}=companionGeometry(mode,p.size,pack.canvas.width/pack.canvas.height,people,expanded);
     // Dual Status Dock：圆角矩形窗口裁剪；桌宠画布保持方角，避免裁掉角色动作。
     return {width,height,shape:shape==='rounded'?roundedShape(width,height,12):undefined};
+  }
+  private resizeMini(){
+    const solo=this.store.state.profiles.length<=1;
+    const [width,height]=solo?[288,216]:[300,236];
+    if(this.mini.getSize()[0]!==width||this.mini.getSize()[1]!==height){
+      this.mini.setResizable(true);
+      this.mini.setSize(width,height,false);
+      this.mini.setResizable(false);
+    }
   }
   resize(){
     // Never resize while the window is being dragged: the move loop owns the
@@ -144,7 +156,7 @@ export class Companion {
     place(this.bubble);place(this.mini);
     if(this.hoverTip){const [width,height]=this.tip.getSize(),side=this.hoverTip.side;let x=b.x+b.width*side-width/2,y=b.y+b.height+3;if(y+height>a.y+a.height)y=b.y-height-3;x=Math.max(a.x,Math.min(x,a.x+a.width-width));y=Math.max(a.y,Math.min(y,a.y+a.height-height));this.tip.setPosition(Math.round(x),Math.round(y));}
   }
-  toggleMini(){const p={...petDefaults,...this.store.state.settings.pet};if(this.mini.isVisible()){this.mini.hide();return;}if(!p.miniPanel){this.panel.show();this.panel.focus();return;}this.position();this.broadcast();this.mini.show();}
+  toggleMini(){const p={...petDefaults,...this.store.state.settings.pet};if(this.mini.isVisible()){this.mini.hide();return;}this.clearPresence();if(!p.miniPanel){this.panel.show();this.panel.focus();return;}this.resizeMini();this.position();this.broadcast();this.mini.show();}
   // 主进程注册全局快捷键后把结果告诉桌宠：菜单右侧的提示文字与真实可用性一致。
   setShortcut(shortcut:{label:string;ready:boolean}){this.shortcut=shortcut;}
   // 打开设置 / 退出 / 显示隐藏桌宠由 main 负责，这里只负责转达。
@@ -203,14 +215,25 @@ export class Companion {
     // 提示条的水平位置由“这个人在当前投影里的位置”决定（单人工作区居中），与身份 id 无关。
     const side=people.length<2?.5:index===0?.29:.71;
     this.hoverTip={person:status.person,text:`${status.alias} · ${statusLabel(status)}`,state:presenceStateFor(status),side};
+    const dock=(this.store.state.settings.pet?.mode??petDefaults.mode)==='orb';
+    if(dock){this.tip.hide();this.resize();return;}
     this.position();this.broadcast();if(this.orb.isVisible())this.tip.showInactive();
   }
-  dragStart(){this.dragging=true;this.clearPresence();}
-  dragEnd(){this.dragging=false;this.clearPresence();if(this.pendingResize){this.pendingResize=false;this.resize();}}
-  private clearPresence(){const changed=!!this.hoverTip||this.tip.isVisible();this.hoverTip=undefined;this.tip.hide();if(changed)this.broadcast();}
+  dragStart(){this.dragging=true;this.mini.hide();this.hideMenu();this.clearPresence();}
+  dragEnd(){
+    this.dragging=false;
+    this.clearPresence();
+    // Windows + fractional DPI can report a shaped transparent window 1–3px wider
+    // after setPosition. Re-apply the canonical geometry once (never in the move
+    // loop) so repeated drags cannot accumulate that physical-pixel rounding.
+    this.pendingResize=false;
+    this.applied='';
+    this.resize();
+  }
+  private clearPresence(){const changed=!!this.hoverTip||this.tip.isVisible();this.hoverTip=undefined;this.tip.hide();if(changed){this.resize();this.broadcast();}}
   private next(){if(this.active||!this.queue.length)return;this.active=this.queue.shift();this.expires=Date.now()+(this.store.state.settings.pet?.duration??8)*1000;this.position();if(this.orb.isVisible())this.bubble.showInactive();}
   reset(){
-    this.queue=[];this.active=undefined;this.hoverTip=undefined;this.held=false;this.bubble.hide();this.tip.hide();this.last=Date.now();this.monotonic=performance.now();
+    this.queue=[];this.active=undefined;this.hoverTip=undefined;this.held=false;this.bubble.hide();this.mini.hide();this.tip.hide();this.hideMenu();this.last=Date.now();this.monotonic=performance.now();
     const requested=this.avatarIdentity();
     // Selection changes wait for renderer decode acknowledgement. All other
     // domain/display changes retain the current geometry behaviour.

@@ -73,28 +73,33 @@ export function StatusRows({live,compact=false,detailed=false,onSetStatus}:{live
 }
 export function Titlebar(){return h('header',{className:'titlebar'},h('span',{className:'titlebar-brand'},h(BrandGlyph,{className:'yd-glyph',title:''}),h('b',null,'YD'),h('em',null,'· Your Day')),h('div',{className:'window-controls'},...([['minimize','−','最小化'],['maximize','□','最大化或还原'],['close','×','收起到托盘']] as const).map(([action,label,title])=>h('button',{key:action,title,'aria-label':title,onClick:()=>void api.window(action)},label))));}
 function StatusCore({state}:{state:PresenceState}){return h('span',{className:'status-core','aria-hidden':true},h('i',{className:'status-ring'}),h('i',{className:'status-dot'}));}
+function dockStatusLabel(status:PersonStatus){
+  const byKind:Record<string,string>={class:'上课中',research:'教研中',meeting:'会议中',sleep:'睡眠中',wake:'已起床',meal:'用餐中',nap:'午休中',commute:'通勤中',focus:'专注中',custom:'自定义',busy:'忙碌中',rest:'休息中'};
+  if(status.current.kind!=='idle')return byKind[status.current.kind]??statusLabel(status);
+  const idle:Partial<Record<PersonStatus['code'],string>>={TERM_NOT_STARTED:'未开课',DAY_FINISHED:'今日结束',NO_SCHEDULE:'无课表',NO_CLASS_TODAY:'今天无课',TERM_ENDED:'学期结束',UPCOMING:'即将开始',UNKNOWN:'暂不可用'};
+  return idle[status.code]??'空闲';
+}
 /**
  * Dual Status Dock 的一行：人物 label（来自档案，不硬编码）+ 状态点 + 状态。
  * 文字过长时由 CSS 省略号接管；状态永远来自 CurrentState（见 live.statusLabel）。
  */
-function DockRow({status,onHover}:{status:PersonStatus;onHover?:(person:PersonId)=>void}){
+function DockRow({status,hovered,onHover}:{status:PersonStatus;hovered:boolean;onHover?:(person:PersonId)=>void}){
   const person=status.person;
   const state=presenceStateFor(status);
   const current=status.current;
-  // 进行中且有明确结束时刻时补一个低调的时间点；没有可靠数据就不显示。
-  const timing=current.kind!=='idle'&&current.endAt!==undefined?`至 ${clockText(current.endAt)}`:'';
-  const text=current.kind!=='idle'?statusLabel(status):timing||statusLabel(status);
-  return h('div',{className:`dock-row presence-${person} state-${state}`,'data-person':person,onPointerEnter:()=>onHover?.(person)},
+  const extra=current.kind!=='idle'&&current.endAt!==undefined?`${clockText(current.endAt)} 结束`:status.next?`下一项 ${clockText(status.next.start)}`:status.code==='DAY_FINISHED'?'今日已结束':current.kind==='idle'?'暂时可聊':'';
+  return h('div',{className:`dock-row presence-${person} state-${state} kind-${current.kind} source-${current.source}${hovered?' is-hovered':''}`,'data-person':person,'data-state-kind':current.kind,onPointerEnter:()=>onHover?.(person)},
+    h('span',{className:'dock-alias'},status.alias),
     h(StatusCore,{state}),
-    h('span',{className:'dock-label'},status.name),
-    h('span',{className:'dock-status'},text));
+    h('span',{className:'dock-status'},dockStatusLabel(status)),
+    extra?h('span',{className:'dock-extra'},extra):null);
 }
-// Dock 按实际档案渲染状态行：2 人两行，1 人自动折成一行，不保留空的同行者行。
-function CompanionDock({animate,people,onHover}:{animate:boolean;people:PersonStatus[];onHover?:(person:PersonId)=>void}){
+// Dock 按实际档案渲染平级 person item：2 人双项，1 人重排为独立 Solo，不保留空槽。
+function CompanionDock({animate,people,hovered,onHover}:{animate:boolean;people:PersonStatus[];hovered?:PersonId;onHover?:(person:PersonId)=>void}){
   // 无障碍文案与 Mini / Tip / Tray 同源（statusLabel），不再有第二套粗粒度状态词。
   const labels=people.map(status=>`${status.name} ${statusLabel(status)}`).join('、');
-  return h('div',{className:`dock-surface${people.length<2?' solo':''}${animate?' motion':''}`,'role':'status','aria-label':people.length>1?`双方状态：${labels}`:`当前状态：${labels}`},
-    ...people.map(status=>h(DockRow,{key:status.person,status,onHover})));
+  return h('div',{className:`dock-surface${people.length<2?' solo':''}${hovered?' is-expanded':''}${animate?' motion':''}`,'role':'status','aria-label':people.length>1?`当前状态：${labels}`:`当前状态：${labels}`},
+    ...people.map(status=>h(DockRow,{key:status.person,status,hovered:hovered===status.person,onHover})));
 }
 function useSurface(name:string){
   useEffect(()=>{
@@ -137,7 +142,7 @@ export function DesktopPet(){
   },[dragging]);
   const hover=(person:PersonId)=>{if(!draggingRef.current&&hoverArmed.current)void api.presence('enter',person);};
   const leave=()=>{hidePresence();if(!draggingRef.current)hoverArmed.current=true;};
-  const label=p.mode==='orb'?'拖动状态浮标，单击查看状态':'拖动桌宠，单击查看双方状态';
+  const label=p.mode==='orb'?'拖动状态浮标，单击查看状态':people.length>1?'拖动桌宠，单击查看双方状态':'拖动桌宠，单击查看当前状态';
   // 手势：pointerdown 立刻进入 is-dragging 并让主进程接管窗口位置，pointermove
   // 只转发坐标，pointerup / cancel / 失去捕获都会收尾。拖动期间不产生任何 CSS
   // 动画、transform 或滤镜，桌面看到的位移只来自窗口本身。
@@ -164,9 +169,9 @@ export function DesktopPet(){
       // 固定画布：stage 只负责角色本体与动作，rail 是它的兄弟节点，
       // 两者的 transform / 动画永远不会互相影响，拖动时也不会被裁掉。
       ?h('div',{className:'sprite-stage'},h('div',{className:'sprite-inner'},h('span',{className:'sprite-shadow','aria-hidden':true}),h(CustomCompanionArt,{assets,display:live?.display,frozen:dragging,...motion})))
-      :h(CompanionDock,{animate:motion.animate,people,onHover:hover}));
+      :h(CompanionDock,{animate:motion.animate,people,hovered:live?.hoverTip?.person,onHover:hover}));
   const side=custom
-    ?h('div',{className:'status-rail'},h('button',{'data-interactive':true,className:'companion-rail-button',title:'查看双方状态',onClick:()=>void api.window('mini')},h(CompanionRail,{live})))
+    ?h('div',{className:'status-rail'},h('button',{'data-interactive':true,className:'companion-rail-button',title:people.length>1?'查看双方状态':'查看当前状态',onClick:()=>void api.window('mini')},h(CompanionRail,{live})))
     :null;
   return h('div',{className:`pet-dock ${p.mode==='orb'?'orb-mode':'custom-mode'}${dragging?' is-dragging':''}`,style:{
     '--rail-height':companionRail.height+'px',
@@ -202,17 +207,29 @@ export function PetMenu(){
         h('span',{className:'pet-menu-label'},item.label),
         item.kind==='item'&&item.hint?h('span',{className:'pet-menu-hint'},item.hint):null)));
 }
-export function Bubble(){const live=useLive();useSurface('bubble-body');return live?.bubble?h('section',{'data-interactive':true,className:'speech-cloud'+(live.bubble.below?' cloud-below':''),role:'status',onMouseEnter:()=>void api.bubble('hold'),onMouseLeave:()=>void api.bubble('release')},h('button',{className:'cloud-close',title:'收起气泡',onClick:()=>void api.bubble('close')},'×'),h('small',null,'时间小提醒'),h('div',{className:'cloud-text'},live.bubble.text),h('button',{className:'text-button',onClick:()=>void api.window('mini')},'查看双方状态 →')):null;}
+export function Bubble(){const live=useLive();useSurface('bubble-body');return live?.bubble?h('section',{'data-interactive':true,className:'speech-cloud'+(live.bubble.below?' cloud-below':''),role:'status',onMouseEnter:()=>void api.bubble('hold'),onMouseLeave:()=>void api.bubble('release')},h('button',{className:'cloud-close',title:'收起气泡',onClick:()=>void api.bubble('close')},'×'),h('small',null,'时间小提醒'),h('div',{className:'cloud-text'},live.bubble.text),h('button',{className:'text-button',onClick:()=>void api.window('mini')},'查看状态 →')):null;}
 export function Mini(){
   const live=useLive();
-  return h('section',{className:'mini-panel'},
-    h('div',{className:'section-head'},h('h2',null,((live?.people.length??0)>1)?'此刻，我们':'此刻'),h('span',{className:'muted'},live?clockText(live.now):'…')),
-    h(StatusRows,{live,compact:true,detailed:true}),
-    h('p',{className:'mini-note'},live?.pending?`${live.pending} 条提醒已到时间，等待处理。`:'没有未处理的提醒。'),
+  const solo=(live?.people.length??1)<=1;
+  const card=(status:PersonStatus)=>{
+    const current=status.current;
+    const source=stateSourceLabel(current);
+    const timing=current.kind!=='idle'&&current.endAt?`${clockText(current.endAt)} 结束`:current.kind!=='idle'?(source||'进行中'):'当前没有进行中的安排';
+    const next=status.next?`${clockText(status.next.start)} · ${status.next.title}`:status.code==='DAY_FINISHED'?'今天的安排已经结束':'暂无下一项安排';
+    return h('article',{className:`mini-status-card state-${presenceStateFor(status)}`,key:status.person,'data-person':status.person},
+      h('div',{className:'mini-current'},
+        h(StatusCore,{state:presenceStateFor(status)}),
+        h('div',null,h('span',{className:'mini-person'},status.alias),h('strong',null,statusLabel(status)),h('small',null,timing))),
+      h('div',{className:'mini-next'},h('span',null,'下一项安排'),h('strong',null,next)));
+  };
+  return h('section',{className:`mini-panel${solo?' solo':''}`},
+    h('div',{className:'section-head'},h('h2',null,solo?'我的 · 此刻':'此刻'),h('span',{className:'mini-brand'},'YD'),h('span',{className:'muted'},live?clockText(live.now):'…')),
+    h('div',{className:'mini-status-grid'},...(live?.people??[]).map(card)),
+    live?.pending?h('p',{className:'mini-note'},`${live.pending} 条提醒已到时间，等待处理。`):null,
     live?.display.nightly?h('p',{className:'mini-note mini-night'},'夜间休息中 · 状态仍按已录入的安排显示。'):null,
     h('div',{className:'mini-actions'},
       h('button',{className:'primary',onClick:()=>void api.window('open')},live?.pending?`打开 YD · 处理 ${live.pending} 条提醒`:'打开 YD'),
-      h('button',{className:'ghost',onClick:()=>void api.window('settings')},'桌宠设置')));
+      h('button',{className:'ghost',onClick:()=>void api.window('settings')},'设置')));
 }
 const modeOptions:[PetPreferences['mode'],string,string][]=[
   ['custom','角色陪伴','使用当前角色素材，并随状态切换动作'],

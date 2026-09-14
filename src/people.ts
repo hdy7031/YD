@@ -56,9 +56,10 @@ export function resolvePetSubject(state: Pick<State, 'profiles'>): Profile {
   return getCompanionProfile(state) ?? requireSelfProfile(state);
 }
 
-// 状态短代号的默认值：本人 D、同行者 Y。用户显式设置过 shortAlias 时不会被覆盖。
+// Visual System 2.0 默认：本人 Y（Your）、同行者 D（Day）。显式 shortAlias 永远优先，
+// 因此升级不会改写用户已经设置好的代号。
 export function defaultAliasFor(profile: Pick<Profile, 'id' | 'role'>, index = 0): string {
-  return effectiveRole(profile, index) === PROFILE_COMPANION ? 'Y' : 'D';
+  return effectiveRole(profile, index) === PROFILE_COMPANION ? 'D' : 'Y';
 }
 
 export function profileAlias(profile: Pick<Profile, 'id' | 'role'> & { shortAlias?: string }, index = 0): string {
