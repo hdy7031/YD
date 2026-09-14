@@ -105,9 +105,9 @@ test('0.2.16 状态颜色只有一套：语义相同必然同色，空闲不会�
   assert.equal(companionTone('focus'),'focus');
   assert.equal(companionTone('dnd'),'alert');
   assert.equal(companionTone('offline'),'neutral');
-  // 2026-09-14（Asset 04）统一后的语义色板：空闲是低饱和 dusty rose，
-  // 即将开始是 amber（不是红），进行中 / 专注是 sage teal，只有真正的冲突才是红。
-  assert.deepEqual(companionToneColors,{calm:'#C18A9C',upcoming:'#D7AD59',busy:'#55A995',focus:'#60998F',alert:'#C2726A',neutral:'#A3ACB0'});
+  // 2026-09-14 指示灯口径：绿 = 空闲（含"即将有安排"），红 = 忙碌（上课 / 教研 /
+  // 专注 / 用餐 / 通勤），灰 = 下线（睡眠），深红只留给真正的冲突。
+  assert.deepEqual(companionToneColors,{calm:'#66A37F',upcoming:'#66A37F',busy:'#C2726A',focus:'#C2726A',alert:'#B4574E',neutral:'#A3ACB0'});
   assert.notEqual(companionToneColors.upcoming,companionToneColors.alert);
   assert.notEqual(companionTone('idle'),'alert');
   assert.notEqual(companionTone('offline'),'alert');
@@ -127,7 +127,7 @@ test('0.2.16 状态颜色只有一套：语义相同必然同色，空闲不会�
   assert.deepEqual(bothBusy,['busy','busy']);
   assert.equal(new Set(bothBusy.map(companionTone)).size,1);
   // 文案与颜色来自同一份语义：文案相同的状态必然同色（逐 kind + 空闲阶段穷举）。
-  const statusOf=(kind:PersonStateKind,code:StatusCode='FREE'):PersonStatus=>({person:'partner',alias:'Y',role:'companion',name:'Sam',conflict:false,routine:null,current:{personId:'partner',kind,label:kind==='custom'?'阅读':'x',source:kind==='idle'?'idle':'routine',startAt:0,priority:40},today:[],todayCount:0,termStart:'2027-02-22',tentative:false,code});
+  const statusOf=(kind:PersonStateKind,code:StatusCode='FREE'):PersonStatus=>({person:'partner',alias:'Y',role:'companion',name:'Sam',at:epoch('2027-02-23T10:00'),conflict:false,routine:null,current:{personId:'partner',kind,label:kind==='custom'?'阅读':'x',source:kind==='idle'?'idle':'routine',startAt:0,priority:40},today:[],todayCount:0,termStart:'2027-02-22',tentative:false,code});
   const byLabel=new Map<string,Set<string>>();
   const record=(status:PersonStatus)=>{const label=statusLabel(status);byLabel.set(label,new Set([...(byLabel.get(label)??[]),companionTone(presenceStateFor(status))]));};
   for(const kind of ['class','research','meeting','sleep','wake','meal','nap','commute','focus','custom','idle'] as PersonStateKind[])record(statusOf(kind));
@@ -136,9 +136,11 @@ test('0.2.16 状态颜色只有一套：语义相同必然同色，空闲不会�
   // 空闲语义（空闲 / 今天无课 / 今日课程已结束 / 课表尚未开始）全部是同一个绿色。
   assert.equal(companionTone(presenceStateFor(statusOf('idle','TERM_NOT_STARTED'))),'calm');
   assert.equal(companionTone(presenceStateFor(statusOf('idle','NO_CLASS_TODAY'))),'calm');
-  // 未知 / 未录入课表不会误显示成“红色空闲”。
+  // 未录入课表的人是"空闲"（绿），不是"下线"（灰）：灰只表示正在睡觉。
+  // 空闲阶段（含尚未录入课表）绝不允许落到红色。
   const empty=migrateLive(initial(epoch('2027-02-22T00:00')));
-  for(const status of people(empty,idleNow))assert.equal(companionTone(presenceStateFor(status)),'neutral');
+  for(const status of people(empty,idleNow))assert.equal(companionTone(presenceStateFor(status)),'calm');
+  for(const status of people(empty,idleNow))assert.notEqual(companionTone(presenceStateFor(status)),'busy');
   assert.equal(presenceStateFor(people(s,epoch('2027-02-23T16:10'))[1]),'upcoming');
   assert.equal(companionTone('upcoming'),'upcoming');
 });

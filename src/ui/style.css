@@ -338,9 +338,6 @@ h2,h3 { letter-spacing:0; }
 .speech-cloud>small { font-size:10px; color:#a18698; }
 .cloud-text { white-space:pre-wrap; font-size:13px; line-height:1.7; color:#526173; max-height:80px; overflow:auto; margin-top:6px; }
 .cloud-close { position:absolute; right:8px; top:4px; padding:0; width:25px; min-height:25px; background:transparent; font-size:18px; color:#a7adb5; }
-.mini-panel { padding:24px; height:100vh; background:linear-gradient(140deg,#fff,#f0f4f8); overflow:auto; }
-.mini-panel .dual-status { grid-template-columns:1fr; margin-bottom:12px; gap:20px; padding:15px 0; }
-.mini-panel button { margin-top:18px; margin-right:6px; }
 @media(max-width:850px) { .main {padding:24px;} .shell {grid-template-columns:165px minmax(0,1fr)} .dual-status {gap:12px;} }
 
 .cloud-below:after {bottom:auto;top:-10px;transform:rotate(180deg)}
@@ -462,79 +459,56 @@ body {
 .mini-panel {
   display:flex;
   flex-direction:column;
-  /* Asset 04 的卡片本体：520×350、26px 圆角。窗口比卡片大一圈（阴影 + 底部指示三角），
-     那圈透明画布是 CSS 阴影的落点，阴影在这里收敛，不会被窗口边界裁成黑边；
+  /* 轻量 popover 卡片：窗口 = 卡片 + 8px 阴影画布 + 底部 10px 指示三角。
+     Together 308×144 / Solo 268×128（见 companion-layout.detailGeometry）。
      原生窗口阴影已关闭（见 src/companion.ts），不会出现 native + CSS 双层阴影。 */
+  box-sizing:border-box;
   height:100%;
-  padding:30px 36px 10px;
+  padding:10px 11px 10px;
   overflow:hidden;
   border:1px solid rgba(79,119,115,.18);
-  border-radius:26px;
+  border-radius:20px;
   background:rgba(251,252,251,.965);
   box-shadow:0 4px 14px rgba(31,43,44,.10),inset 0 1px rgba(255,255,255,.92);
   backdrop-filter:blur(20px) saturate(108%);
+  color:#2F3E3C;
+  font:400 12px/1.35 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
 }
-.mini-body #root { position:relative; padding:12px 12px 29px; box-sizing:border-box; }
-/* 底部指示三角：与卡片同色，外圈留 1px 极淡描边（Asset 04 的对话尾巴）。 */
-.mini-tail { position:absolute; left:50%; bottom:4px; width:54px; height:27px; transform:translateX(-50%); }
+.mini-body #root { position:relative; padding:4px 4px 14px; box-sizing:border-box; }
+/* 底部指示三角：与卡片同色，外圈留 1px 极淡描边。 */
+.mini-tail { position:absolute; left:50%; bottom:4px; width:24px; height:10px; transform:translateX(-50%); }
 .mini-tail::before,.mini-tail::after { content:""; position:absolute; left:0; top:0; }
-.mini-tail::before { width:54px; height:27px; background:rgba(79,119,115,.20); clip-path:polygon(0 0,100% 0,50% 100%); }
-.mini-tail::after { left:1px; width:52px; height:25px; background:rgba(251,252,251,.97); clip-path:polygon(0 0,100% 0,50% 100%); }
-/* Asset 04 的详情面板（1:1 复刻）：520×350 卡片 + 底部指示三角。
-   标题区（38px 衬线 + 说明 + 右侧品牌块）→ 两块 person 区域 → 贯通分隔线 → 下一个。 */
-.mini-head { display:flex; align-items:flex-start; justify-content:space-between; gap:32px; }
-.mini-title h2 { margin:0; color:#22302F; font:600 36px/1.05 Georgia,"Songti SC","SimSun","Microsoft YaHei UI",serif; letter-spacing:.01em; }
-.mini-subtitle { margin:7px 0 0; color:#8A9A97; font:400 17px/1.3 Georgia,"Songti SC","SimSun","Microsoft YaHei UI",serif; }
-.mini-brand-block { display:flex; align-items:center; gap:18px; padding-top:8px; }
-.mini-brand-glyph { width:56px; height:56px; object-fit:contain; opacity:.95; }
-.mini-brand-words { display:grid; gap:6px; }
-.mini-brand-words b { color:#4A5B58; font:600 13px/1 "Segoe UI Variable Text","Segoe UI",sans-serif; letter-spacing:.3em; }
-.mini-brand-words i { display:block; height:1px; background:rgba(79,119,115,.28); }
-.mini-brand-words small { color:#9AA7A4; font:500 8.5px/1 "Segoe UI Variable Text","Segoe UI",sans-serif; letter-spacing:.1em; white-space:nowrap; }
-.mini-status-grid,.mini-next-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; min-width:0; }
-.mini-status-grid { margin-top:16px; }
-.mini-panel.solo .mini-status-grid,.mini-panel.solo .mini-next-grid { grid-template-columns:1fr; }
-.mini-status-card { --status:#C18A9C; --status-rgb:193,138,156; display:flex; flex-direction:column; min-width:0; }
-.mini-status-card.state-idle { --status:#C18A9C; --status-rgb:193,138,156; }
-.mini-status-card.state-busy { --status:#55A995; --status-rgb:85,169,149; }
-.mini-status-card.state-focus { --status:#60998F; --status-rgb:96,153,143; }
-.mini-status-card.state-upcoming { --status:#D7AD59; --status-rgb:215,173,89; }
-.mini-status-card.state-dnd { --status:#C2726A; --status-rgb:194,114,106; }
-.mini-status-card.state-offline { --status:#A3ACB0; --status-rgb:163,172,176; }
-.mini-status-card[data-code="DAY_FINISHED"],.mini-status-card[data-code="TERM_ENDED"] { --status:#9AA79F; --status-rgb:154,167,159; }
-/* 两块 person 区域等权：一条极淡的中线在状态行与「下一个」行之间贯通。 */
-/* 两块 person 区域等权：中线贯通「状态行 + 下一个」，分隔线两侧留同样的呼吸。 */
-.mini-panel:not(.solo) .mini-status-card,
-.mini-panel:not(.solo) .mini-next-grid > * { padding-right:14px; }
-.mini-panel:not(.solo) .mini-status-card + .mini-status-card,
-.mini-panel:not(.solo) .mini-next-grid > * + * { border-left:1px solid rgba(79,119,115,.12); padding-left:14px; padding-right:0; }
-.mini-person-head { display:grid; grid-template-columns:auto auto minmax(0,1fr); align-items:center; gap:14px; }
-.mini-alias { color:#22302F; font:600 36px/1 Georgia,"Songti SC","SimSun",serif; }
-.mini-person-state { overflow:hidden; color:#26383A; font:600 24px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
-.mini-row { display:grid; grid-template-columns:44px minmax(0,1fr); align-items:center; gap:14px; margin-top:12px; }
-.mini-icon-slot { display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; }
-.mini-icon { width:32px; height:32px; opacity:.94; }
-.mini-row-body { display:grid; gap:6px; min-width:0; }
-.mini-row-label { color:#93A19E; font:500 15px/1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; letter-spacing:.1em; }
-.mini-row b { overflow:hidden; color:#2F3E3C; font:500 21px/1.25 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
-.mini-divider { height:1px; margin:10px 0 0; background:rgba(79,119,115,.10); }
-.mini-next-grid { margin-top:10px; }
-/* 「下一个」整行在可跳转时是一个按钮：右侧箭头是真实的可点提示。 */
-.mini-next { display:grid; grid-template-columns:36px minmax(0,1fr) 16px; align-items:center; gap:10px; padding:0; border:0; background:none; text-align:left; cursor:pointer; }
-/* 「下一个」的图标比「当前」小一档（Asset 04 里两行图标的视觉重量不同）。 */
-.mini-next .mini-icon-slot { width:36px; height:36px; }
-.mini-next .mini-icon { width:30px; height:30px; }
-div.mini-next { cursor:default; }
-.mini-next:focus-visible { outline:2px solid rgba(85,169,149,.6); outline-offset:4px; border-radius:10px; }
-.mini-next strong { overflow:hidden; color:#33423F; font:500 19px/1.3 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; }
-.mini-place { color:#A2ADAB; font:400 17px/1.3 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; }
-.mini-next small { overflow:hidden; color:#93A19E; font:400 17px/1.25 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
-.mini-chevron { color:#C0CAC7; font:400 26px/1 "Segoe UI",sans-serif; text-align:right; }
-.mini-actions { display:flex; align-items:center; gap:18px; margin-top:auto; padding-top:4px; }
-.mini-panel .mini-actions button { min-height:0; margin:0; padding:0; border:0; background:none; border-radius:0; font:560 16px/1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; cursor:pointer; }
-.mini-panel .mini-actions .primary { color:#3C6E67; }
-.mini-panel .mini-actions .ghost { color:#93A19E; font-weight:500; }
-.mini-panel .mini-actions button:hover { text-decoration:underline; text-underline-offset:4px; }
+.mini-tail::before { width:24px; height:10px; background:rgba(79,119,115,.20); clip-path:polygon(0 0,100% 0,50% 100%); }
+.mini-tail::after { left:1px; width:22px; height:9px; background:rgba(251,252,251,.97); clip-path:polygon(0 0,100% 0,50% 100%); }
+
+.mini-head { display:flex; align-items:center; justify-content:space-between; gap:10px; height:18px; }
+.mini-head h2 { margin:0; color:#22302F; font:600 15px/1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; }
+.mini-brand { display:inline-flex; align-items:center; gap:6px; }
+.mini-brand b { color:#9AA7A4; font:600 9.5px/1 "Segoe UI Variable Text","Segoe UI",sans-serif; letter-spacing:.26em; }
+.mini-gear { display:grid; place-items:center; width:16px; height:16px; padding:0; border:0; background:none; color:#ADB8B5; cursor:pointer; }
+.mini-gear:hover,.mini-gear:focus-visible { color:#5F706E; }
+
+/* 每人的一栏：状态行 → 上下文 → 下一项。Together 两栏等宽，中线严格落在几何中心。 */
+.mini-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; min-width:0; margin-top:5px; }
+.mini-panel.solo .mini-grid { grid-template-columns:1fr; margin-top:6px; }
+.detail-person { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.mini-panel:not(.solo) .detail-person:first-child { padding-right:11px; }
+.mini-panel:not(.solo) .detail-person + .detail-person { border-left:1px solid rgba(79,119,115,.12); padding-left:11px; }
+.detail-line { display:flex; align-items:center; gap:5px; min-width:0; }
+.detail-alias { flex:none; color:#22302F; font:600 16px/1 "Segoe UI Variable Display","Segoe UI","Microsoft YaHei UI",sans-serif; }
+.detail-state { overflow:hidden; color:#26383A; font:600 13px/1.1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
+.detail-context { overflow:hidden; color:#8A9A97; font:450 11px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
+
+/* 下一项：紧凑的一小块信息，不是大型 card。 */
+.detail-next { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 7px; margin-top:3px; padding:0; border:0; background:none; text-align:left; cursor:pointer; }
+.detail-next:focus-visible { outline:2px solid rgba(85,169,149,.55); outline-offset:3px; border-radius:8px; }
+div.detail-next { cursor:default; }
+.detail-next-label { color:#9AA7A4; font:500 10px/1.1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; letter-spacing:.08em; }
+.detail-next-when { color:#5F706E; font:500 11px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; font-variant-numeric:tabular-nums; }
+.detail-next-title { grid-column:1/3; display:-webkit-box; overflow:hidden; color:#33423F; font:500 12px/1.2 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.detail-place { grid-column:1/3; overflow:hidden; color:#9AA7A4; font:400 11px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
+.detail-foot { display:flex; align-items:center; gap:7px; margin:auto 0 0; padding-top:5px; border-top:1px solid rgba(79,119,115,.10); color:#9AA7A4; font:450 10px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; }
+.detail-foot i { flex:none; width:4px; height:4px; border-radius:50%; background:rgba(79,119,115,.32); }
 
 /* V0.2.10 — compact, explicit partner schedule status */
 .partner-status-card {
@@ -943,7 +917,14 @@ button.attention-link { min-height:34px; color:#714d34; border-color:rgba(183,13
 .inbox-hub{grid-template-columns:minmax(252px,306px) minmax(0,1fr);gap:18px;scroll-margin-top:60px}
 .inbox-hub.is-hall{grid-template-columns:minmax(252px,306px) minmax(0,1fr)}
 .inbox-list{display:flex;flex-direction:column;gap:8px}
-.inbox-list-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:2px 6px 4px;color:#6f7c87;font-size:11.5px}
+/* 列表标题是真正的 section header（左标题 / 右数量），不再是又一行灰色注释。 */
+.inbox-list-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:2px 0 10px;padding:0 6px;color:#4d5a63}
+.inbox-list-title{font-size:12.5px;font-weight:650;letter-spacing:.02em}
+.inbox-list-count{font-size:11.5px;font-variant-numeric:tabular-nums}
+/* 数据确认机制：一行弱提示（11.5px muted + 轻 info 图标），不是正文段落。 */
+.trust-note{display:flex;align-items:center;gap:6px;margin:12px 0 20px;color:#8a969d;font-size:11.5px;line-height:1.4}
+.trust-note i{flex:none;display:grid;place-items:center;width:12px;height:12px;border:1px solid #b6c0c5;border-radius:50%;color:#8a969d;font-size:9px;font-style:normal;line-height:1}
+.trust-note i::before{content:'i'}
 .inbox-list-item{margin:0;min-height:0;padding:13px 15px;border:1px solid rgba(181,193,206,.52);border-left:3px solid var(--notice-color,#8c959c);border-radius:14px;background:rgba(255,255,255,.74);transition:border-color .15s,background .15s,box-shadow .15s}
 .inbox-list-item.kind-TODO{--notice-color:#b28a43}.inbox-list-item.kind-EVENT{--notice-color:#688fae}.inbox-list-item.kind-COURSE_CHANGE{--notice-color:#9482b0}.inbox-list-item.kind-GENERAL_NOTICE{--notice-color:#639b9a}
 .inbox-list-item strong{display:block;margin:8px 0 6px;font-size:13.5px}
@@ -1166,7 +1147,7 @@ button.attention-link { min-height:34px; color:#714d34; border-color:rgba(183,13
 .rail-chip b { color:#3c4b57; font-size:11px; font-weight:650; letter-spacing:.04em; }
 /* V0.2.16 修复：状态点颜色只由语义决定（companion-colors.ts）。
    这里没有“按人”的调色板，也没有红色兜底：空闲永远是绿色，红色只给安排冲突。 */
-.rail-dot { width:6px; height:6px; border-radius:50%; background:#C18A9C; box-shadow:0 0 0 2px rgba(193,138,156,.20); }
+.rail-dot { width:6px; height:6px; border-radius:50%; background:#66A37F; box-shadow:0 0 0 2px rgba(102,163,127,.20); }
 /* 夜间休息：状态条整体转柔和，但状态点仍然表达真实业务语义。 */
 .companion-rail.is-night { border-color:rgba(216,221,246,.92); background:rgba(246,247,255,.95); box-shadow:0 2px 8px rgba(52,58,96,.14); }
 .companion-rail.is-night .rail-chip b { color:#4a5170; }
@@ -1337,18 +1318,29 @@ button.attention-link { min-height:34px; color:#714d34; border-color:rgba(183,13
 
 /* V0.2.16 — 课表管理工具栏：先选课表再加课程，作息与导入降级为一行 */
 .course-toolbar {
-  display:flex;
-  flex-direction:column;
-  gap:8px;
+  /* 横向工具栏：selector | metadata | actions。三块各占一格，绝不居中堆成一团。 */
+  display:grid;
+  grid-template-columns:auto minmax(180px,1fr) auto;
+  align-items:center;
+  gap:10px 18px;
   margin:0 0 12px;
-  padding:12px 14px;
+  padding:14px 16px;
   border:1px solid rgba(181,193,206,.58);
   border-radius:16px;
   background:rgba(255,255,255,.70);
 }
-.course-toolbar-main { display:flex; align-items:center; gap:10px; }
-.course-toolbar-main select { min-width:158px; }
-.course-toolbar-main .primary { margin-left:auto; }
+.course-toolbar-main { display:flex; align-items:center; gap:10px; min-width:0; }
+/* 选择器 220–240px：够长到读得清课表名，也绝不被无限拉宽。 */
+.course-toolbar-main select { width:clamp(180px,220px,240px); min-width:0; }
+.course-toolbar-copy { display:grid; gap:2px; min-width:0; }
+.course-toolbar-copy strong { color:var(--yd-ink-2); font-size:13px; font-weight:600; }
+.course-toolbar-copy small { color:var(--yd-muted); font-size:11px; }
+.course-toolbar-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
+/* 收窄：第一行 selector + metadata，操作组换到第二行并保持右对齐。 */
+@media(max-width:1040px) {
+  .course-toolbar { grid-template-columns:minmax(0,auto) minmax(0,1fr); }
+  .course-toolbar-actions { grid-column:1/-1; }
+}
 .course-toolbar-meta { display:flex; align-items:center; flex-wrap:wrap; gap:8px; color:#78848f; font-size:11.5px; font-variant-numeric:tabular-nums; }
 .course-toolbar-dot { color:#c3ccd4; }
 .course-toolbar-meta .text-button,.course-toolbar-meta .ghost { min-height:26px; padding:2px 8px; font-size:11.5px; }
@@ -1724,17 +1716,17 @@ input:hover, select:hover, textarea:hover { border-color: #C3CDC8; }
 /* —— 状态语义色：主窗口、详情面板、状态 Dock、桌宠状态条共用同一套低饱和色 ——
    （唯一来源 src/companion-colors.ts；Asset 04 收口后：空闲 rose、即将 amber、
    进行中 sage teal、专注更深一层，只有真正的冲突才是红。） */
-.person-dot.tone-calm { background: #C18A9C; box-shadow: 0 0 0 3px rgba(193, 138, 156, .20); }
-.person-dot.tone-upcoming { background: #D7AD59; box-shadow: 0 0 0 3px rgba(215, 173, 89, .22); }
-.person-dot.tone-busy { background: #55A995; box-shadow: 0 0 0 3px rgba(85, 169, 149, .22); }
-.person-dot.tone-focus { background: #60998F; box-shadow: 0 0 0 3px rgba(96, 153, 143, .22); }
-.person-dot.tone-alert { background: #C2726A; box-shadow: 0 0 0 3px rgba(194, 114, 106, .22); }
+.person-dot.tone-calm { background: #66A37F; box-shadow: 0 0 0 3px rgba(102, 163, 127, .22); }
+.person-dot.tone-upcoming { background: #66A37F; box-shadow: 0 0 0 3px rgba(102, 163, 127, .22); }
+.person-dot.tone-busy { background: #C2726A; box-shadow: 0 0 0 3px rgba(194, 114, 106, .22); }
+.person-dot.tone-focus { background: #C2726A; box-shadow: 0 0 0 3px rgba(194, 114, 106, .22); }
+.person-dot.tone-alert { background: #B4574E; box-shadow: 0 0 0 3px rgba(180, 87, 78, .24); }
 .person-dot.tone-neutral { background: #A3ACB0; box-shadow: 0 0 0 3px rgba(163, 172, 176, .22); }
-.rail-dot.tone-calm { background: #C18A9C; box-shadow: 0 0 0 2px rgba(193, 138, 156, .22); }
-.rail-dot.tone-upcoming { background: #D7AD59; box-shadow: 0 0 0 2px rgba(215, 173, 89, .24); }
-.rail-dot.tone-busy { background: #55A995; box-shadow: 0 0 0 2px rgba(85, 169, 149, .24); }
-.rail-dot.tone-focus { background: #60998F; box-shadow: 0 0 0 2px rgba(96, 153, 143, .24); }
-.rail-dot.tone-alert { background: #C2726A; box-shadow: 0 0 0 2px rgba(194, 114, 106, .24); }
+.rail-dot.tone-calm { background: #66A37F; box-shadow: 0 0 0 2px rgba(102, 163, 127, .24); }
+.rail-dot.tone-upcoming { background: #66A37F; box-shadow: 0 0 0 2px rgba(102, 163, 127, .24); }
+.rail-dot.tone-busy { background: #C2726A; box-shadow: 0 0 0 2px rgba(194, 114, 106, .24); }
+.rail-dot.tone-focus { background: #C2726A; box-shadow: 0 0 0 2px rgba(194, 114, 106, .24); }
+.rail-dot.tone-alert { background: #B4574E; box-shadow: 0 0 0 2px rgba(180, 87, 78, .26); }
 .rail-dot.tone-neutral { background: #A3ACB0; box-shadow: 0 0 0 2px rgba(163, 172, 176, .24); }
 
 /* 状态浮标（Dual Status Dock）自己带完整配色，主样式表不再覆盖它的表面。 */
@@ -2713,12 +2705,8 @@ body.main-body .text-tabs button.active::after {
   border-radius:2px 2px 0 0; background:var(--yd-brand);
 }
 
-.course-toolbar { align-items:center; padding:16px 18px; }
+.course-toolbar { align-items:center; padding:14px 16px; }
 .course-toolbar-main { min-width:0; }
-.course-toolbar-copy { display:grid; gap:2px; min-width:0; }
-.course-toolbar-copy strong { color:var(--yd-ink-2); font-size:13px; font-weight:600; }
-.course-toolbar-copy small { color:var(--yd-muted); font-size:11px; }
-.course-toolbar-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
 .icon-action { display:inline-flex; align-items:center; gap:7px; }
 .icon-action .ui-icon { width:15px; height:15px; }
 .schedule-toolbar { margin-top:14px; border:0; background:transparent; box-shadow:none; backdrop-filter:none; }

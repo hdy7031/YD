@@ -52,6 +52,8 @@ export interface DesktopAPI {
   companionAssets(packId?:import('./avatar.ts').AvatarPackId):Promise<import('./companion-frame.ts').CompanionAssets>;
   avatarVisualReady(ready:import('./avatar-runtime.ts').AvatarVisualReady):Promise<boolean>;
   live():Promise<import('./live.ts').LiveSnapshot>;
+  /** hover 收起的兜底确认：系统光标此刻是否还在桌宠 / 状态牌窗口内。 */
+  cursorInside():Promise<boolean>;
   onLive(callback:(value:import('./live.ts').LiveSnapshot)=>void):()=>void;
   window(action:'minimize'|'maximize'|'close'|'open'|'mini'|'menu'|'settings'):Promise<void>;
   // 自绘桌宠右键菜单：主进程投递菜单模型，渲染层回传被点中的行。

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { companionGeometry, companionRail, companionSizes, companionCharacter, companionFrame, companionDock } from '../src/companion-layout.ts';
+import { companionGeometry, companionRail, companionSizes, companionCharacter, companionFrame, companionDock, detailGeometry, dockSurfaceMetrics } from '../src/companion-layout.ts';
 import { clampToArea, keepVisible, resolveDragStep, type DragAnchor } from '../src/geometry.ts';
 import { courseTone, courseTones } from '../src/selectors.ts';
 
@@ -20,23 +20,44 @@ test('0.2.20 桌宠画布是固定尺寸：状态与素材内容无法改变窗�
     assert.ok(Math.abs(custom.width-fromAspect)<=1);
     // Visual System 2.0：Together / Solo 各自有固定几何，hover 只能改变内部内容。
     const dock=companionGeometry('orb',size,aspect,2,false);
-    // 窗口高度 = 默认牌面 + hover 生长量（生长发生在固定画布内部，窗口本身不变）。
-    assert.deepEqual(dock,{...companionDock.collapsed[size],height:companionDock.collapsed[size].height+companionDock.grow[size],shape:'rounded'});
-    assert.ok(dock.width>=248&&dock.width<=304,`${size} Together Dock 宽度落在参考区间`);
-    assert.ok(dock.height>=72&&dock.height<=84,`${size} Together Dock 画布高度落在参考区间（含 hover 预留）`);
+    // 窗口 = 展开态足迹：默认牌面在画布内向右下收拢，hover 只在画布内向左上生长。
+    assert.deepEqual(dock,{...companionDock.expanded[size],shape:'rounded'});
+    assert.ok(dock.width>=200&&dock.width<=244,`${size} Together Dock 宽度落在参考区间（约 220）`);
+    assert.ok(dock.height>=52&&dock.height<=58,`${size} Together Dock 画布高度落在参考区间（约 54）`);
     assert.ok(dock.width>dock.height,'Dock 是横向状态牌，不是球体');
     assert.equal(dock.shape,'rounded','Dock 使用圆角矩形窗口裁剪');
     assert.notEqual(dock.width,dock.height,'不再保留单球体设计');
     const togetherExpanded=companionGeometry('orb',size,aspect,2,true);
-    assert.deepEqual(togetherExpanded,{...companionDock.expanded[size],height:companionDock.expanded[size].height+companionDock.grow[size],shape:'rounded'});
+    assert.deepEqual(togetherExpanded,{...companionDock.expanded[size],shape:'rounded'});
     assert.deepEqual(togetherExpanded,dock,'Together hover 不得改变窗口几何');
     const solo=companionGeometry('orb',size,aspect,1,false);
     const soloExpanded=companionGeometry('orb',size,aspect,1,true);
-    assert.deepEqual(solo,{...companionDock.solo[size],height:companionDock.solo[size].height+companionDock.soloGrow[size],shape:'rounded'});
-    assert.deepEqual(soloExpanded,{...companionDock.soloExpanded[size],height:companionDock.soloExpanded[size].height+companionDock.soloGrow[size],shape:'rounded'});
+    assert.deepEqual(solo,{...companionDock.soloExpanded[size],shape:'rounded'});
+    assert.deepEqual(soloExpanded,{...companionDock.soloExpanded[size],shape:'rounded'});
     assert.ok(solo.width<dock.width&&solo.width>solo.height,'Solo 是重新配比的独立横向形态');
     assert.deepEqual(soloExpanded,solo,'Solo hover 不得改变窗口几何');
+    // 可见牌面 = 窗口 − 阴影画布；默认牌面比展开牌面小，且都落在产品给的尺寸基准上。
+    const metrics=dockSurfaceMetrics('orb',size,2);
+    assert.equal(metrics.defaultWidth,companionDock.collapsed[size].width-companionDock.shadowCanvas);
+    assert.equal(metrics.defaultHeight,companionDock.collapsed[size].height-companionDock.shadowCanvas);
+    assert.equal(metrics.hoverWidth,dock.width-companionDock.shadowCanvas);
+    assert.ok(metrics.defaultWidth<metrics.hoverWidth&&metrics.defaultHeight<metrics.hoverHeight,'hover 只在画布内生长');
+    const soloMetrics=dockSurfaceMetrics('orb',size,1);
+    assert.equal(soloMetrics.defaultWidth,companionDock.solo[size].width-companionDock.shadowCanvas);
+    assert.equal(soloMetrics.hoverWidth,companionDock.soloExpanded[size].width-companionDock.shadowCanvas);
+    assert.ok(soloMetrics.defaultWidth<soloMetrics.hoverWidth,'Solo hover 同样向左上生长');
   }
+  // 中档 = 产品基准：Together 默认 176×44、Solo 默认 124×44（136 为窗口含阴影画布）。
+  assert.equal(companionDock.collapsed.medium.width-8,176);
+  assert.equal(companionDock.collapsed.medium.height-8,36);
+  assert.equal(companionDock.solo.medium.width-8,116);
+  assert.equal(companionDock.expanded.medium.width-8,212);
+  assert.equal(companionDock.expanded.medium.height-8,46);
+  assert.equal(companionDock.expanded.medium.height,54);
+  // 详情浮层是轻量 popover，不再是接近 800×500 的页面。
+  assert.deepEqual(detailGeometry(2),{width:316,height:162,shape:'rounded'});
+  assert.deepEqual(detailGeometry(1),{width:276,height:146,shape:'rounded'});
+  assert.ok(detailGeometry(2).width<400&&detailGeometry(2).height<200);
   // 素材比例异常时退回安全比例而不是生成 0 宽窗口。
   assert.deepEqual(companionGeometry('custom','medium',0),companionGeometry('custom','medium',0.68));
   assert.deepEqual(companionGeometry('custom','medium',Number.NaN),companionGeometry('custom','medium',0.68));
@@ -71,11 +92,14 @@ test('Phase 2 Dual Status Dock：legacy 黄色单球体与 gold/amber 残留已�
   assert.match(orbCss,/\.dock-surface[\s\S]*?border-radius:999px/);
   assert.doesNotMatch(orbCss,/#(?:e0b234|b88a16|7e5c0c|e4c87c)/i,'Dock 路径不得保留 legacy 暗金配色');
   assert.doesNotMatch(orbCss,/linear-gradient\([^)]*rgba\(\s*2[0-9]{2}\s*,/,'Dock 不使用暖色大色块渐变');
-  // 统一语义色（与 companion-colors.ts 一致）：空闲 rose、即将 amber、进行中 sage teal、
-  // 专注更深一层，只有真正的冲突才是红；meal / sleep 只作为极小 indicator 保留各自的柔和色。
-  for(const tone of ['#C18A9C','#D7AD59','#55A995','#60998F','#C2726A','#A3ACB0']) assert.match(orbCss,new RegExp(tone,'i'),`缺少 ${tone}`);
-  assert.match(orbCss,/\.dock-row\.kind-meal/,'meal 使用独立的小范围 soft-sand indicator');
-  assert.match(orbCss,/\.dock-row\.kind-(?:nap|sleep)/,'休息状态使用 dusty blue-gray indicator');
+  // 指示灯三态（与 companion-colors.ts 一致）：绿 = 空闲、红 = 忙碌、灰 = 下线（睡眠）、
+  // 深红只留给真正的冲突。Dock 不允许再给某个 kind 单独配色，否则状态点会自相矛盾。
+  for(const tone of ['#66A37F','#C2726A','#B4574E','#A3ACB0']) assert.match(orbCss,new RegExp(tone,'i'),`缺少 ${tone}`);
+  assert.doesNotMatch(orbCss,/\.dock-row\.kind-(?:meal|commute|nap|sleep|rest)\b/,'状态点只由三态指示灯决定，不再按 kind 单独染色');
+  // Dock 默认态不再用接近标题大小的衬线大字，也不再用 ellipsis 掩盖状态文字。
+  assert.doesNotMatch(orbCss,/\.dock-alias[\s\S]*?Georgia/,'Dock 的 Y / D 不再是衬线大字');
+  assert.match(orbCss,/\.dock-surface\.is-expanded[\s\S]*?width:var\(--dock-width-hover/,'展开只改宽 / 高，不做 scale');
+  assert.doesNotMatch(orbCss,/transform:scale\(/,'Dock 不使用整体缩放');
 });
 
 test('0.2.16 窗口回收：拖到屏幕边缘、显示器被拔掉都不会留在屏幕外',()=>{
