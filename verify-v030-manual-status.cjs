@@ -58,7 +58,15 @@ app.whenReady().then(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});
       el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return el.value})()`);
     const live = () => run('window.dayhub.live()');
-    const selfRow = () => run("(()=>{const row=[...document.querySelectorAll('.dual-status .person-status')].find(el=>el.querySelector('.person-status-label')?.textContent==='我的');return row?{label:row.querySelector('strong')?.textContent,detail:row.querySelector('small')?.textContent}:null})()");
+    // VS2 首页状态行的标签来自档案（短代号 / 展示名），不再是写死的「我的」；
+    // 因此先取本人档案再按标签定位他那一行。本人恒为第一条 person-status。
+    const selfRow = () => run(`window.dayhub.get().then(state=>{
+      const self=state.profiles.find(p=>p.role==='self');
+      const labels=[self?.shortAlias,self?.name].filter(Boolean);
+      const rows=[...document.querySelectorAll('.dual-status .person-status')];
+      const row=rows.find(el=>labels.includes(el.querySelector('.person-status-label')?.textContent?.trim()))??rows[0];
+      return row?{label:row.querySelector('strong')?.textContent,detail:row.querySelector('small')?.textContent}:null;
+    })`);
     await wait(600);
 
     /* ---------- 0. 准备：本人周一一节 10:00–11:40 的课 ---------- */
@@ -87,7 +95,12 @@ app.whenReady().then(async () => {
     const selfStatus = manualLive.people.find(p => p.person === 'me');
     check('引擎来源是 manual 且 confidence = 1', selfStatus.current.source === 'manual' && selfStatus.current.confidence === 1, JSON.stringify(selfStatus.current));
     check('手动状态压过课程', selfStatus.current.kind === 'focus' && selfStatus.current.endAt === Date.UTC(2027, 2, 1, 3, 30), JSON.stringify(selfStatus.current));
-    check('桌宠状态条显示「专注」', (await pet("[...document.querySelectorAll('.rail-chip')].map(e=>e.title)")).includes('D · 专注'));
+    // 同上：Dock 形态读 .dock-row，角色陪伴形态读 .rail-chip，取同一句话。
+    check('桌宠状态条显示「专注」', (await pet(`(()=>{
+      const chips=[...document.querySelectorAll('.rail-chip')].map(e=>e.title);
+      const rows=[...document.querySelectorAll('.dock-row')].map(r=>r.querySelector('.dock-status')?.textContent?.trim()??'');
+      return [...chips,...rows];
+    })()`)).includes('专注'));
     check('托盘 tooltip 同源', (tooltips.at(-1) ?? '').includes('D · 专注中'), tooltips.at(-1) ?? '');
     await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");
     await wait(150);
