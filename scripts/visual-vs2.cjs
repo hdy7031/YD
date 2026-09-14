@@ -348,7 +348,7 @@ const LEGACY_ORB = '.presence-orb,.presence-surface,.identity-mark,.orb-shell,.s
 // 主进程会直接以"无效状态区域"拒绝。因此从 Dock 自己的 data-person 读取。
 async function firstDockPerson(dock) {
   return dock.webContents.executeJavaScript(
-    `document.querySelector('.dock-row')?.dataset.person ?? null`
+    `document.querySelector('.person')?.dataset.person ?? null`
   );
 }
 
@@ -359,7 +359,7 @@ async function checkDockGeometry(dock, person) {
   await wait(340);
   const during = dock.getBounds();
   const hovered = await dock.webContents.executeJavaScript(
-    `({ rows: document.querySelectorAll('.dock-row.is-hovered').length, extra: !!document.querySelector('.dock-row.is-hovered .dock-extra') })`
+    `({ rows: document.querySelectorAll('.person.is-hovered').length, extra: !!document.querySelector('.person.is-hovered .person-meta') })`
   );
   await dock.webContents.executeJavaScript("window.dayhub.presence('leave')");
   await wait(300);
@@ -371,12 +371,12 @@ async function checkDockGeometry(dock, person) {
 async function checkDuoDock(panel, dock, mini) {
   const structure = await dock.webContents.executeJavaScript(`(() => {
     const surface = document.querySelector('.dock-surface');
-    const rows = [...document.querySelectorAll('.dock-row')].map(row => row.getBoundingClientRect());
+    const rows = [...document.querySelectorAll('.person')].map(row => row.getBoundingClientRect());
     const style = surface ? getComputedStyle(surface) : null;
     return {
       rows: rows.map(rect => ({ left: rect.left, top: rect.top, width: rect.width, height: rect.height })),
       solo: surface?.classList.contains('solo') ?? null,
-      people: [...document.querySelectorAll('.dock-row')].map(row => row.dataset.person),
+      people: [...document.querySelectorAll('.person')].map(row => row.dataset.person),
       hasLegacy: !!document.querySelector('${LEGACY_ORB}'),
       hasUndefined: /undefined/.test(document.body.innerText),
       surface: surface ? surface.getBoundingClientRect().width : 0,
@@ -437,7 +437,7 @@ async function checkDuoDock(panel, dock, mini) {
 async function checkSoloDock(dock, mini) {
   const structure = await dock.webContents.executeJavaScript(`(() => {
     const surface = document.querySelector('.dock-surface');
-    const rows = [...document.querySelectorAll('.dock-row')];
+    const rows = [...document.querySelectorAll('.person')];
     const rect = rows[0]?.getBoundingClientRect();
     const divider = rows[0] ? getComputedStyle(rows[0], '::before').display : '';
     return {

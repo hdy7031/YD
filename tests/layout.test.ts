@@ -18,45 +18,44 @@ test('0.2.20 桌宠画布是固定尺寸：状态与素材内容无法改变窗�
     // 角色宽度按画布比例缩放，不变形。
     const fromAspect=Math.max(companionCharacter.minWidth,Math.round(companionCharacter.height[size]*aspect)+companionFrame.padX*2);
     assert.ok(Math.abs(custom.width-fromAspect)<=1);
-    // Visual System 2.0：Together / Solo 各自有固定几何，hover 只能改变内部内容。
+    // Dock 几何：高度与最小宽度是契约，宽度由渲染层实测的内容宽度决定（内容完整优先）。
     const dock=companionGeometry('orb',size,aspect,2,false);
-    // 窗口 = 展开态足迹：默认牌面在画布内向右下收拢，hover 只在画布内向左上生长。
-    assert.deepEqual(dock,{...companionDock.expanded[size],shape:'rounded'});
-    // 展开态宽度由第二行辅助文案反推（"还有 1 小时 30 分"必须完整显示），
-    // 因此三档共用同一个 248px 画布；默认态仍然按尺寸档区分。
-    assert.ok(dock.width>=240&&dock.width<=268,`${size} Together Dock 宽度落在参考区间（约 248）`);
-    assert.ok(dock.height>=52&&dock.height<=58,`${size} Together Dock 画布高度落在参考区间（约 54）`);
-    assert.ok(dock.width>dock.height,'Dock 是横向状态牌，不是球体');
     assert.equal(dock.shape,'rounded','Dock 使用圆角矩形窗口裁剪');
+    assert.equal(dock.width,companionDock.minWidth[size]+companionDock.shadowCanvas);
+    assert.equal(dock.height,companionDock.height[size]+companionDock.shadowCanvas);
+    assert.ok(dock.height>=62&&dock.height<=66,`${size} Dock 画布高度 = 牌面 54–60 + 阴影画布`);
+    assert.ok(dock.width>dock.height,'Dock 是横向状态牌，不是球体');
     assert.notEqual(dock.width,dock.height,'不再保留单球体设计');
     const togetherExpanded=companionGeometry('orb',size,aspect,2,true);
-    assert.deepEqual(togetherExpanded,{...companionDock.expanded[size],shape:'rounded'});
     assert.deepEqual(togetherExpanded,dock,'Together hover 不得改变窗口几何');
     const solo=companionGeometry('orb',size,aspect,1,false);
     const soloExpanded=companionGeometry('orb',size,aspect,1,true);
-    assert.deepEqual(solo,{...companionDock.soloExpanded[size],shape:'rounded'});
-    assert.deepEqual(soloExpanded,{...companionDock.soloExpanded[size],shape:'rounded'});
-    assert.ok(solo.width<dock.width&&solo.width>solo.height,'Solo 是重新配比的独立横向形态');
+    assert.equal(solo.width,companionDock.soloMinWidth[size]+companionDock.shadowCanvas);
     assert.deepEqual(soloExpanded,solo,'Solo hover 不得改变窗口几何');
-    // 可见牌面 = 窗口 − 阴影画布；默认牌面比展开牌面小，且都落在产品给的尺寸基准上。
-    const metrics=dockSurfaceMetrics('orb',size,2);
-    assert.equal(metrics.defaultWidth,companionDock.collapsed[size].width-companionDock.shadowCanvas);
-    assert.equal(metrics.defaultHeight,companionDock.collapsed[size].height-companionDock.shadowCanvas);
-    assert.equal(metrics.hoverWidth,dock.width-companionDock.shadowCanvas);
-    assert.ok(metrics.defaultWidth<metrics.hoverWidth&&metrics.defaultHeight<metrics.hoverHeight,'hover 只在画布内生长');
-    const soloMetrics=dockSurfaceMetrics('orb',size,1);
-    assert.equal(soloMetrics.defaultWidth,companionDock.solo[size].width-companionDock.shadowCanvas);
-    assert.equal(soloMetrics.hoverWidth,companionDock.soloExpanded[size].width-companionDock.shadowCanvas);
-    assert.ok(soloMetrics.defaultWidth<soloMetrics.hoverWidth,'Solo hover 同样向左上生长');
+    assert.ok(solo.width<dock.width&&solo.width>solo.height,'Solo 是重新配比的独立横向形态');
+    // 内容驱动：测得的宽度更长时牌面与画布一起变宽，高度只由尺寸档决定。
+    const measured={collapsed:260,hover:300};
+    const wide=dockSurfaceMetrics(size,2,measured);
+    assert.equal(wide.defaultWidth,260);
+    assert.equal(wide.hoverWidth,300);
+    assert.equal(wide.canvasWidth,300+companionDock.shadowCanvas);
+    assert.equal(wide.defaultHeight,wide.hoverHeight);
+    assert.equal(companionGeometry('orb',size,aspect,2,false,measured).width,wide.canvasWidth);
+    // 兜底：只有自定义超长状态才会碰到上限，降级阈值必须留出余量。
+    assert.equal(dockSurfaceMetrics(size,2,{collapsed:4000,hover:4000}).defaultWidth,companionDock.maxWidth);
+    assert.ok(companionDock.compactAt<companionDock.maxWidth);
+    assert.ok(companionDock.compactStatus<companionDock.type.medium.status);
+    // 最小宽度：短状态也像一块状态牌。
+    const soloMetrics=dockSurfaceMetrics(size,1);
+    assert.equal(soloMetrics.defaultWidth,companionDock.soloMinWidth[size]);
+    assert.equal(soloMetrics.defaultHeight,companionDock.height[size]);
   }
-  // 中档 = 产品基准：Together 默认 176×44、Solo 默认 124×44（136 为窗口含阴影画布）。
-  assert.equal(companionDock.collapsed.medium.width-8,176);
-  assert.equal(companionDock.collapsed.medium.height-8,36);
-  assert.equal(companionDock.solo.medium.width-8,116);
-  // 牌面 240 = 11px 的第二行文案完整显示所需的宽度（见 companion-layout 的说明）。
-  assert.equal(companionDock.expanded.medium.width-8,240);
-  assert.equal(companionDock.expanded.medium.height-8,46);
-  assert.equal(companionDock.expanded.medium.height,54);
+  // 中档 = 产品基准：牌面高 56（54–60 口径），最小宽度 180 / Solo 158，首字母 22px。
+  assert.equal(companionDock.height.medium,56);
+  assert.equal(companionDock.minWidth.medium,180);
+  assert.equal(companionDock.soloMinWidth.medium,158);
+  assert.equal(companionDock.type.medium.letter,22);
+  assert.ok(companionDock.type.medium.padding>=18&&companionDock.type.medium.padding<=22);
   // 详情浮层是轻量 popover，不再是接近 800×500 的页面。
   assert.deepEqual(detailGeometry(2),{width:316,height:162,shape:'rounded'});
   assert.deepEqual(detailGeometry(1),{width:276,height:146,shape:'rounded'});
@@ -98,9 +97,16 @@ test('Phase 2 Dual Status Dock：legacy 黄色单球体与 gold/amber 残留已�
   // 指示灯三态（与 companion-colors.ts 一致）：绿 = 空闲、红 = 忙碌、灰 = 下线（睡眠）、
   // 深红只留给真正的冲突。Dock 不允许再给某个 kind 单独配色，否则状态点会自相矛盾。
   for(const tone of ['#66A37F','#C2726A','#B4574E','#A3ACB0']) assert.match(orbCss,new RegExp(tone,'i'),`缺少 ${tone}`);
-  assert.doesNotMatch(orbCss,/\.dock-row\.kind-(?:meal|commute|nap|sleep|rest)\b/,'状态点只由三态指示灯决定，不再按 kind 单独染色');
-  // Dock 默认态不再用接近标题大小的衬线大字，也不再用 ellipsis 掩盖状态文字。
-  assert.doesNotMatch(orbCss,/\.dock-alias[\s\S]*?Georgia/,'Dock 的 Y / D 不再是衬线大字');
+  assert.doesNotMatch(orbCss,/\.person\.kind-(?:meal|commute|nap|sleep|rest)\b/,'状态点只由三态指示灯决定，不再按 kind 单独染色');
+  // 2026-09-15：D / Y 是**受控 serif 锚点**（Georgia / Cambria / Times），视觉权重要高于
+  // 状态词；但不允许花体 / 手写体这类装饰性字体，也不允许状态文字默认省略。
+  assert.match(orbCss,/\.person-letter[\s\S]*?Georgia[\s\S]*?"Cambria"[\s\S]*?"Times New Roman"/,'D / Y 使用受控 serif 字体栈');
+  assert.doesNotMatch(orbCss,/\b(?:cursive|fantasy|Brush Script|Segoe Script|Ink Free|Comic Sans)\b/i,'不引入花体 / 手写体字体');
+  assert.match(orbCss,/\.person-letter[\s\S]*?--dock-letter/,'首字母字号由排版契约给出（20–24px）');
+  // 默认态不靠 ellipsis 兜底：宽度由内容测量决定，只有碰到 max-width 才允许省略。
+  const statusText=[...orbCss.matchAll(/\.status-text\s*\{([^}]*)\}/g)].map(match=>match[1]).join('\n');
+  assert.match(statusText,/white-space:nowrap/,'状态词始终单行完整显示');
+  assert.doesNotMatch(statusText,/max-width:/,'状态词自身不设 max-width');
   assert.match(orbCss,/\.dock-surface\.is-expanded[\s\S]*?width:var\(--dock-width-hover/,'展开只改宽 / 高，不做 scale');
   assert.doesNotMatch(orbCss,/transform:scale\(/,'Dock 不使用整体缩放');
 });

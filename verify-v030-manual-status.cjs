@@ -95,10 +95,10 @@ app.whenReady().then(async () => {
     const selfStatus = manualLive.people.find(p => p.person === 'me');
     check('引擎来源是 manual 且 confidence = 1', selfStatus.current.source === 'manual' && selfStatus.current.confidence === 1, JSON.stringify(selfStatus.current));
     check('手动状态压过课程', selfStatus.current.kind === 'focus' && selfStatus.current.endAt === Date.UTC(2027, 2, 1, 3, 30), JSON.stringify(selfStatus.current));
-    // 同上：Dock 形态读 .dock-row，角色陪伴形态读 .rail-chip，取同一句话。
+    // 同上：Dock 形态读 .person，角色陪伴形态读 .rail-chip，取同一句话。
     check('桌宠状态条显示「专注」', (await pet(`(()=>{
       const chips=[...document.querySelectorAll('.rail-chip')].map(e=>e.title);
-      const rows=[...document.querySelectorAll('.dock-row')].map(r=>r.querySelector('.dock-status')?.textContent?.trim()??'');
+      const rows=[...document.querySelectorAll('.person')].map(r=>r.querySelector('.status-text')?.textContent?.trim()??'');
       return [...chips,...rows];
     })()`)).includes('专注'));
     check('托盘 tooltip 同源', (tooltips.at(-1) ?? '').includes('D · 专注中'), tooltips.at(-1) ?? '');

@@ -65,15 +65,19 @@
   isolation:isolate;
   position:absolute;
   /* 只钉住右 / 下两条边：展开时向左上方长，桌面上的锚点（右下角）不动。 */
-  right:4px;
-  bottom:4px;
+  right:var(--dock-pad,4px);
+  bottom:var(--dock-pad,4px);
   display:flex;
-  align-items:stretch;
+  align-items:center;
+  justify-content:center;
+  gap:var(--dock-gap,16px);
+  /* 宽度 = 渲染层实测的内容宽度（见 DesktopPet 的量具），高度取产品口径 54–60。
+     内容完整优先：这里不做固定宽度，也不靠 ellipsis 兜底。 */
   width:var(--dock-width, 176px);
-  height:var(--dock-height, 36px);
+  height:var(--dock-height, 56px);
   box-sizing:border-box;
   overflow:hidden;
-  padding:0 6px;
+  padding:0 var(--dock-padding,20px);
   border:1px solid var(--dock-edge);
   border-radius:999px;
   background:rgba(250,252,251,.92);
@@ -83,14 +87,17 @@
   /* 展开是 layout transition（宽 / 高 / 透明度），不是 scale：文字不会跟着变糊变大。 */
   transition:width 150ms ease,height 150ms ease,border-color 150ms ease,box-shadow 150ms ease,background-color 150ms ease;
 }
-.dock-surface.is-expanded { width:var(--dock-width-hover, 212px); height:var(--dock-height-hover, 42px); }
+.dock-surface.is-expanded { width:var(--dock-width-hover, 176px); height:var(--dock-height-hover, 56px); }
+/* 第三层兜底：只有自定义超长状态才会真的碰到这个上限（DIP 常量，不用 vw —— 窗口本身
+   很窄，vw 会把测量结果一起截断），此时才允许省略号。 */
+.dock-surface { max-width:var(--dock-max-width,620px); }
 
 .pet-handle:hover .dock-surface { border-color:rgba(79,119,115,.28); background:rgba(252,253,253,.95); box-shadow:0 2px 6px rgba(31,43,44,.07),0 1px 2px rgba(31,43,44,.05),inset 0 1px rgba(255,255,255,.9); }
 .pet-handle:active .dock-surface,.pet-dock.is-dragging .dock-surface { border-color:rgba(79,119,115,.23); box-shadow:0 2px 5px rgba(31,43,44,.055),0 1px 2px rgba(31,43,44,.04); }
 
 /* 拖动期间冻结一切视觉变化：桌面看到的位移只来自窗口本身。 */
 .pet-dock.is-dragging .dock-surface,
-.pet-dock.is-dragging .dock-row,
+.pet-dock.is-dragging .person,
 .pet-dock.is-dragging .status-dot,
 .pet-dock.is-dragging .status-ring {
   animation:none !important;
@@ -100,89 +107,77 @@
 }
 .pet-dock.is-dragging,.pet-dock.is-dragging .pet-handle,.pet-dock.is-dragging .dock-surface { transform:none !important; translate:none !important; scale:1 !important; }
 
-.dock-row {
+/* 一个人：首字母（视觉锚点）+ 状态点 + 此刻状态。左右不强制 50/50：
+   谁的文字长，谁就自然更宽（flex:0 0 auto + min-width:0）。 */
+.person {
   --status:var(--dock-idle);
   position:relative;
-  /* 两列结构：首字母是身份标记，右列才是"主状态 + 辅助信息"。
-     辅助信息因此天然从主状态内容区开始，而不是和 D / Y 平级：
-       ┌────┬────────────────────┐
-       │ D  │ ● 上课中            │
-       │    │   还有 1 小时 30 分 │
-       └────┴────────────────────┘ */
-  display:grid;
-  grid-template-columns:auto minmax(0,1fr);
+  display:flex;
   align-items:center;
-  column-gap:var(--dock-gap,5px);
+  gap:var(--dock-gap,10px);
   min-width:0;
-  flex:1 1 0;
-  /* 内边距 / 间隙要留得下最常见的三字状态（上课中 / 教研中 / 通勤中 / 刚睡醒）：
-     2px 边距 + 5px 间隙 + 12px 状态点列，中档 81px 的列还剩 54px 给状态文字（13px 三字 ≈ 39px）。 */
-  padding:0 2px;
+  flex:0 0 auto;
   transition:background-color 150ms ease;
 }
-.dock-main { display:grid; row-gap:2px; min-width:0; justify-items:start; }
-.dock-row + .dock-row::before { content:""; position:absolute; left:-1px; top:11px; bottom:11px; width:1px; background:rgba(79,119,115,.13); }
-/* 指针所在的那个人只有一层极淡的胶囊底，不铺满整块区域（Asset 04 的 hover 以文字为主）。 */
-.dock-row.is-hovered { background:rgba(79,119,115,.05); border-radius:999px; }
+.person-body { display:grid; row-gap:2px; min-width:0; justify-items:start; }
+/* 指针所在的那个人只有一层极淡的胶囊底（用 box-shadow 扩一圈，不参与布局，
+   因此不会改变已经测量好的宽度）。 */
+.person.is-hovered { background:rgba(79,119,115,.045); border-radius:999px; box-shadow:0 0 0 7px rgba(79,119,115,.045); }
+/* 中缝：1px、很浅的灰青、不撑满高度 —— 只是左右人物的结构提示。 */
+.dock-divider { flex:none; width:1px; height:26px; border-radius:1px; background:rgba(79,119,115,.12); }
 /* 字母与状态之间的呼吸：间距固定，展开时不再变化（宽度留给第二行文案）。 */
-.dock-line { display:flex; align-items:center; gap:var(--dock-gap,5px); min-width:0; max-width:100%; }
-.dock-surface.solo { justify-content:center; }
-.dock-surface.solo .dock-row { flex:0 1 auto; width:100%; }
-.dock-surface.solo .dock-row::before { display:none; }
+.dock-person-status { display:flex; align-items:center; gap:8px; min-width:0; /* 状态点与状态词是一组，整体下沉 1px 让三者视觉中心更齐。 */ transform:translateY(1px); }
 /* 状态色只落在小圆点（Asset 04：实心点，无外环、无发光）。 */
-.dock-row.state-idle { --status:var(--dock-idle); }
-.dock-row.state-busy { --status:var(--dock-active); }
-.dock-row.state-focus { --status:var(--dock-focus); }
-.dock-row.state-upcoming { --status:var(--dock-upcoming); }
-.dock-row.state-dnd { --status:var(--dock-alert); }
-.dock-row.state-offline { --status:#A3ACB0; }
+.person.state-idle { --status:var(--dock-idle); }
+.person.state-busy { --status:var(--dock-active); }
+.person.state-focus { --status:var(--dock-focus); }
+.person.state-upcoming { --status:var(--dock-upcoming); }
+.person.state-dnd { --status:var(--dock-alert); }
+.person.state-offline { --status:#A3ACB0; }
 /* CurrentState.kind 只决定微小 indicator 的语义色，不染整块 surface。 */
 /* 「今日课程已结束」是空闲的上下文，不是一个更"重要"的状态：
    圆点保持空闲绿（见上），只有第二行文字更安静。 */
 
-.dock-alias {
-  /* 身份标记：更大、更轻、更淡；和状态文字（更小、更重、更深）形成层级，
-     两者不再是一模一样的字体样式。 */
-  color:#394A48;
-  font:500 16px/1 "Segoe UI Variable Display","Segoe UI","Microsoft YaHei UI",sans-serif;
-  letter-spacing:.04em;
-  white-space:nowrap;
+/* 人物视觉锚点：受控 serif（Georgia / Cambria / Times），不做花体、不做手写体。
+   视觉权重明显高于状态词，是这块牌子的第一层。 */
+.person-letter {
   flex:none;
+  color:#1F2C2B;
+  font:600 var(--dock-letter,22px)/1 Georgia,"Cambria","Times New Roman",serif;
+  letter-spacing:.01em;
+  white-space:nowrap;
 }
 
-.dock-status {
-  color:var(--dock-ink);
-  /* 13px：略小一点就能让三字状态完整显示，比继续加宽牌面更克制。 */
-  font:600 13px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
+.status-text {
+  color:#33423F;
+  font:600 var(--dock-status,16px)/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
   font-variant-numeric:tabular-nums;
+  letter-spacing:.005em;
   text-align:left;
   white-space:nowrap;
-  overflow:hidden;
-  /* 内置状态（≤3 字）在默认牌面里必须完整显示；省略号只是自定义超长文案的最后手段。 */
-  text-overflow:ellipsis;
   min-width:0;
+  /* 省略号只在 max-width 兜底真正生效时才会出现（自定义超长状态），
+     内置状态与稍长文案一律完整显示。 */
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
 
-/* 第二行辅助信息：11px、明显更浅，并且从主状态内容区开始（与状态点左边缘齐平再 +4px），
-   不允许抢过主状态。牌面宽度按"完整显示还有 1 小时 30 分"反推（见 companion-layout）。 */
-.dock-extra {
-  display:block;
-  max-width:100%;
+/* 第二行辅助信息：11.5px、明显更浅，缩进到主状态内容区（比状态词再右移 4px），
+   不允许抢过主状态；牌面宽度会跟着它一起长，所以同样不会省略。 */
+.person-meta {
+  /* 只在展开态出现（display 切换，不参与默认态的宽度计算）。 */
+  display:none;
   box-sizing:border-box;
-  height:0;
   padding-left:4px;
   overflow:hidden;
   color:#85948F;
-  font:450 11px/1.2 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
+  font:450 11.5px/1.2 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
   text-align:left;
-  text-overflow:ellipsis;
   white-space:nowrap;
-  opacity:0;
-  transition:height 150ms ease,opacity 150ms ease;
 }
 /* Hover 是二级信息揭示：整块状态牌一起显露第二行，而不是只放大被指到的那一行。 */
-.dock-surface.is-expanded .dock-extra { height:14px; opacity:1; }
-.pet-dock.is-dragging .dock-row > * { transform:none !important; transition:none !important; }
+.dock-surface.is-expanded .person-meta { display:block; }
+.pet-dock.is-dragging .person > * { transform:none !important; transition:none !important; }
 
 .status-core {
   position:relative;
@@ -197,10 +192,10 @@
 .status-dot { position:absolute; display:block; border-radius:50%; }
 /* Asset 04 的状态点是实心圆：外环退场（保留节点，供既有结构断言引用）。 */
 .status-ring { inset:1px; border:0; box-shadow:none; opacity:0; }
-/* 7–8px：状态点只表达此刻状态，颜色比尺寸更重要。 */
+/* 9px：状态点只表达此刻状态，颜色比尺寸更重要；不与状态词抢注意力。 */
 .status-dot {
-  width:8px;
-  height:8px;
+  width:9px;
+  height:9px;
   background:var(--status);
   box-shadow:none;
 }
@@ -236,7 +231,7 @@
 }
 
 @media (prefers-reduced-motion:reduce) {
-  .dock-surface,.dock-row,.dock-extra { transition:none; }
+  .dock-surface,.person,.person-meta { transition:none; }
   .motion .status-dot,.motion .status-ring { animation:none !important; }
 }
 

@@ -19,14 +19,19 @@ const PAD = companionDock.shadowCanvas / 2;
  * 状态牌在屏幕上的矩形。dock 给的是**牌面**相对窗口共享边的偏移
  * （渲染层据此把命中区 = 牌面 + 4px 阴影画布贴到同一条边上）。
  */
-function plateOnScreen(bounds: { x: number; y: number; width: number; height: number }, size: CompanionSize, people: number, dock: { left?: number; top?: number; right?: number; bottom?: number }) {
-  const surface = dockSurfaceMetrics('orb', size, people);
-  const x = dock.left !== undefined ? bounds.x + dock.left : bounds.x + bounds.width - (dock.right ?? 0) - surface.defaultWidth;
-  const y = dock.top !== undefined ? bounds.y + dock.top : bounds.y + bounds.height - (dock.bottom ?? 0) - surface.defaultHeight;
-  return { x, y, width: surface.defaultWidth, height: surface.defaultHeight };
+function plateOnScreen(bounds: { x: number; y: number; width: number; height: number }, plate: { width: number; height: number }, dock: { left?: number; top?: number; right?: number; bottom?: number }) {
+  const x = dock.left !== undefined ? bounds.x + dock.left : bounds.x + bounds.width - (dock.right ?? 0) - plate.width;
+  const y = dock.top !== undefined ? bounds.y + dock.top : bounds.y + bounds.height - (dock.bottom ?? 0) - plate.height;
+  return { x, y, width: plate.width, height: plate.height };
 }
 
-const canvasOf = (size: CompanionSize, people: number) => (people <= 1 ? companionDock.soloExpanded : companionDock.expanded)[size];
+/** 窗口 = 牌面 + 阴影画布；牌面宽度按测量结果（这里取最小宽度的两倍，模拟长内容）。 */
+const canvasOf = (size: CompanionSize, people: number, measure?: { collapsed: number; hover: number }) => {
+  const metrics = dockSurfaceMetrics(size, people, measure);
+  return { width: metrics.canvasWidth, height: metrics.canvasHeight, plate: { width: metrics.defaultWidth, height: metrics.defaultHeight } };
+};
+/** 长内容：一屏典型的"今天下午有课"量级，宽度明显大于最小宽度。 */
+const WIDE = { collapsed: 260, hover: 300 };
 
 // Dock 可能停在屏幕的任何位置：右下角（默认）、左下、左上、右上、屏幕中间、副屏。
 const POSITIONS: [string, { x: number; y: number }][] = [
@@ -42,13 +47,13 @@ const POSITIONS: [string, { x: number; y: number }][] = [
 test('详情画布：打开详情不改变牌面在屏幕上的位置', () => {
   for (const people of [1, 2]) {
     for (const size of SIZES) {
-      const canvas = canvasOf(size, people);
+      const canvas = canvasOf(size, people, WIDE);
       for (const [label, position] of POSITIONS) {
         const bounds = { ...position, width: canvas.width, height: canvas.height };
         // 默认画布：牌面贴在窗口右 / 下 4px 处（renderer CSS 的实际情况）。
-        const before = plateOnScreen(bounds, size, people, { right: PAD, bottom: PAD });
-        const frame = dockDetailFrame({ people, size, bounds, area: AREA });
-        const after = plateOnScreen(frame.window, size, people, frame.dock);
+        const before = plateOnScreen(bounds, canvas.plate, { right: PAD, bottom: PAD });
+        const frame = dockDetailFrame({ people, plate: canvas.plate, bounds, area: AREA });
+        const after = plateOnScreen(frame.window, canvas.plate, frame.dock);
         assert.deepEqual(after, before, `${label} · ${size} · ${people} 人`);
       }
     }
@@ -58,17 +63,17 @@ test('详情画布：打开详情不改变牌面在屏幕上的位置', () => {
 test('详情画布：卡片完整落在工作区内，不与牌面重叠', () => {
   for (const people of [1, 2]) {
     for (const size of SIZES) {
-      const canvas = canvasOf(size, people);
+      const canvas = canvasOf(size, people, WIDE);
       for (const [label, position] of POSITIONS) {
         const bounds = { ...position, width: canvas.width, height: canvas.height };
-        const frame = dockDetailFrame({ people, size, bounds, area: AREA });
+        const frame = dockDetailFrame({ people, plate: canvas.plate, bounds, area: AREA });
         const panel = frame.panel;
         const id = `${label} · ${size} · ${people} 人`;
         assert.ok(panel.left >= -1 && panel.top >= -1, `${id} 卡片左上角仍在窗口内`);
         assert.ok(frame.window.x + panel.left >= AREA.x - 1 && frame.window.y + panel.top >= AREA.y - 1, `${id} 卡片左上角落在工作区`);
         assert.ok(frame.window.x + panel.left + panel.width <= AREA.x + AREA.width + 1, `${id} 卡片右边不出屏`);
         assert.ok(frame.window.y + panel.top + panel.height <= AREA.y + AREA.height + 1, `${id} 卡片下边不出屏`);
-        const plate = plateOnScreen(frame.window, size, people, frame.dock);
+        const plate = plateOnScreen(frame.window, canvas.plate, frame.dock);
         const overlaps = plate.x < frame.window.x + panel.left + panel.width && frame.window.x + panel.left < plate.x + plate.width
           && plate.y < frame.window.y + panel.top + panel.height && frame.window.y + panel.top < plate.y + plate.height;
         assert.equal(overlaps, false, `${id} 卡片压住牌面`);
@@ -79,9 +84,9 @@ test('详情画布：卡片完整落在工作区内，不与牌面重叠', () =>
 
 test('详情画布：卡片在 Dock 上方时窗口向上生长（右下角不动）', () => {
   const size: CompanionSize = 'medium', people = 2;
-  const canvas = canvasOf(size, people);
+  const canvas = canvasOf(size, people, WIDE);
   const bounds = { x: 1600, y: 940, width: canvas.width, height: canvas.height };
-  const frame = dockDetailFrame({ people, size, bounds, area: AREA });
+  const frame = dockDetailFrame({ people, plate: canvas.plate, bounds, area: AREA });
   assert.equal(frame.placement, 'above');
   // 右下角与默认画布完全一致：牌面贴在窗口右下角 4px 处。
   assert.equal(frame.window.x + frame.window.width, bounds.x + bounds.width);
@@ -94,24 +99,24 @@ test('详情画布：卡片在 Dock 上方时窗口向上生长（右下角不�
 
 test('详情画布：贴屏幕顶部时卡片向下展开，牌面贴窗口上边', () => {
   const size: CompanionSize = 'medium', people = 2;
-  const canvas = canvasOf(size, people);
+  const canvas = canvasOf(size, people, WIDE);
   const bounds = { x: 1600, y: 0, width: canvas.width, height: canvas.height };
-  const frame = dockDetailFrame({ people, size, bounds, area: AREA });
+  const frame = dockDetailFrame({ people, plate: canvas.plate, bounds, area: AREA });
   assert.equal(frame.placement, 'below');
   // 上边与默认画布一致：牌面仍从上边 14px 处开始。
   assert.equal(frame.window.y, bounds.y);
-  assert.equal(frame.dock.top, bounds.height - PAD - dockSurfaceMetrics('orb', size, people).defaultHeight);
+  assert.equal(frame.dock.top, bounds.height - PAD - canvas.plate.height);
   assert.equal(frame.window.x + frame.window.width, bounds.x + bounds.width);
 });
 
 test('详情画布：靠屏幕左边的 Dock 让卡片向右展开', () => {
   const size: CompanionSize = 'medium', people = 2;
-  const canvas = canvasOf(size, people);
+  const canvas = canvasOf(size, people, WIDE);
   const bounds = { x: 0, y: 600, width: canvas.width, height: canvas.height };
-  const frame = dockDetailFrame({ people, size, bounds, area: AREA });
+  const frame = dockDetailFrame({ people, plate: canvas.plate, bounds, area: AREA });
   // 窗口左边 = 默认画布左边，牌面仍然贴在这条边上。
   assert.equal(frame.window.x, bounds.x);
-  assert.equal(frame.dock.left, bounds.width - PAD - dockSurfaceMetrics('orb', size, people).defaultWidth);
+  assert.equal(frame.dock.left, bounds.width - PAD - canvas.plate.width);
   assert.ok(frame.panel.left + frame.window.x >= AREA.x);
   // 卡片必须整个在工作区里（向右展开也不会出屏）。
   assert.ok(frame.panel.left + frame.window.x + frame.panel.width <= AREA.x + AREA.width);
@@ -119,8 +124,8 @@ test('详情画布：靠屏幕左边的 Dock 让卡片向右展开', () => {
 
 test('详情画布：Solo 卡片比 Together 更窄，且不是砍掉半边', () => {
   const size: CompanionSize = 'medium';
-  const solo = dockDetailFrame({ people: 1, size, bounds: { x: 1600, y: 940, ...canvasOf(size, 1) }, area: AREA });
-  const together = dockDetailFrame({ people: 2, size, bounds: { x: 1600, y: 940, ...canvasOf(size, 2) }, area: AREA });
+  const solo = dockDetailFrame({ people: 1, plate: canvasOf(size, 1, WIDE).plate, bounds: { x: 1600, y: 940, ...canvasOf(size, 1, WIDE) }, area: AREA });
+  const together = dockDetailFrame({ people: 2, plate: canvasOf(size, 2, WIDE).plate, bounds: { x: 1600, y: 940, ...canvasOf(size, 2, WIDE) }, area: AREA });
   assert.ok(solo.panel.width < together.panel.width, 'Solo 卡片更窄');
   assert.ok(solo.panel.width >= 300 && solo.panel.width <= 340, `Solo 卡片宽度 ${solo.panel.width}`);
   assert.ok(together.panel.width >= 440 && together.panel.width <= 480, `Together 卡片宽度 ${together.panel.width}`);

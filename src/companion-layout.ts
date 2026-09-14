@@ -37,65 +37,81 @@ export const companionCharacter = {
 };
 
 /**
- * YD Dual Status Dock（Phase 2）：取代 legacy 黄色悬浮球的常驻状态牌。
+ * YD Dual Status Dock 的尺寸契约。
  *
- * 2026-09-14 重建：字号固定，窗口 = **展开态画布**，默认态在画布内是一块更小的
- * 状态牌。也就是说窗口在 collapsed / hover 之间**从不改变尺寸**：
+ * 2026-09-15 重建：牌面宽度**由内容决定** —— 渲染层测量真实的文字宽度后回报，
+ * 主进程照此定窗口尺寸。因此「今天下午有课」这类稍长状态不会被省略号吞掉，
+ * 左右两侧也不再强求 50/50。
  *
- *   window   = hover 足迹（下图的宽 × 高）
- *   可见牌面 = window − 4px 阴影画布，右 / 下对齐
- *   collapsed 时向右下收拢，hover 时向左上生长
+ *   window   = 牌面 + 4px 阴影画布（四周），牌面右 / 下对齐
+ *   牌面高度 = 54–60（产品口径，三档 54 / 56 / 58）
+ *   牌面宽度 = max(最小宽度, 默认态内容宽度, hover 内容宽度)，上限见 maxWidth
  *
- * 这样 hover 不会移动窗口、也不会改变指针与窗口的几何关系，从根上消除了
- * "resize 丢掉 mouseleave → 鼠标离开仍然放大"这类问题。尺寸取产品定义值：
- *
- *   Together: collapsed 184×44（牌面 176×36）/ hover 248×54（牌面 240×46）
- *   Solo:     collapsed 124×44（牌面 116×36）/ hover 196×54（牌面 188×46）
- *
- * hover 牌面比默认态宽，是因为第二行辅助信息必须**缩进到主状态内容区下方**并且
- * 完整显示（"还有 1 小时 30 分"），这条约束由 11px 文案反推出来，不随尺寸档变化。
+ * 牌面右下角在屏幕上是固定的，所以 hover、状态变化、测量结果更新都只向左 / 上生长；
+ * 窗口在 collapsed / hover 之间仍然**不改变尺寸**，不会把指针与窗口的几何关系搅乱。
  */
 export const companionDock = {
-  collapsed: {
-    // 中档 = 产品基准 176 牌面（+8 阴影画布 = 184 窗口）。状态文字用 13px：
-    // 「上课中 / 教研中 / 通勤中」这类三字状态在 81px 的列里完整显示且留有 6px 余量。
-    small: { width: 176, height: 44 },
-    medium: { width: 184, height: 44 },
-    large: { width: 200, height: 46 },
-  } as Record<CompanionSize, CompanionGeometry>,
-  solo: {
-    small: { width: 112, height: 44 },
-    medium: { width: 124, height: 44 },
-    large: { width: 132, height: 46 },
-  } as Record<CompanionSize, CompanionGeometry>,
-  expanded: {
-    // 展开态宽度由**第二行文案**决定，而不是尺寸档：三档显示的信息量完全相同，
-    // 所以 240px 牌面（含 4px 阴影画布 = 248 窗口）对三档都成立。
-    // 这样第二行永远以完整句子出现，不会被 ellipsis 截断，也不会为了 hover 单独换字号。
-    // 高度只比默认态高 10px：这是"双行胶囊"，不是 mini 详情页。
-    small: { width: 248, height: 54 },
-    medium: { width: 248, height: 54 },
-    large: { width: 248, height: 56 },
-  } as Record<CompanionSize, CompanionGeometry>,
-  soloExpanded: {
-    small: { width: 180, height: 54 },
-    medium: { width: 196, height: 54 },
-    large: { width: 212, height: 56 },
-  } as Record<CompanionSize, CompanionGeometry>,
+  /** 牌面高度（可见胶囊，DIP）。 */
+  height: { small: 54, medium: 56, large: 58 } as Record<CompanionSize, number>,
+  /** Together 的最小牌面宽度：三字状态 + 两枚人名首字母也要像一块状态牌。 */
+  minWidth: { small: 172, medium: 180, large: 188 } as Record<CompanionSize, number>,
+  /** Solo 是收窄的一等形态，不是砍掉半边。 */
+  soloMinWidth: { small: 150, medium: 158, large: 166 } as Record<CompanionSize, number>,
+  /** 兜底上限：只有自定义超长状态才用得上（先缩字号，最后才允许 ellipsis）。 */
+  maxWidth: 620,
+  /** 超过这个宽度就切到 14.5px 的状态字号（第二层降级）。 */
+  compactAt: 430,
+  /** 超长文本第二层降级后的状态字号。 */
+  compactStatus: 14.5,
+  /**
+   * 每个尺寸档的排版：首字母是人物视觉锚点（受控 serif，明显高于状态词），
+   * 状态词与状态点是一组，左右内边距取产品口径 18–22。
+   */
+  type: {
+    small: { letter: 20, status: 15, padding: 18 },
+    medium: { letter: 22, status: 16, padding: 20 },
+    large: { letter: 24, status: 16.5, padding: 22 },
+  } as Record<CompanionSize, { letter: number; status: number; padding: number }>,
   /** 窗口四周留给 CSS 阴影的透明画布（牌面 = 窗口 − 8）。 */
   shadowCanvas: 8,
 };
 
+/** 渲染层测量出来的自然宽度（DIP）。 */
+export interface DockMeasure { collapsed: number; hover: number }
+
+export interface DockSurfaceMetrics {
+  /** 默认态牌面 */
+  defaultWidth: number;
+  defaultHeight: number;
+  /** 展开（hover）态牌面：高度与默认态相同，宽度不小于默认态。 */
+  hoverWidth: number;
+  hoverHeight: number;
+  /** 窗口尺寸（= 牌面 + 阴影画布） */
+  canvasWidth: number;
+  canvasHeight: number;
+}
+
 /**
- * 状态牌可见表面的尺寸契约（renderer 与主进程共用）：
- *   default = collapsed − shadowCanvas
- *   hover   = expanded  − shadowCanvas
+ * 状态牌可见表面的尺寸契约（renderer 与主进程共用）。
+ * measure 为渲染层测得的自然宽度；缺省时退回最小宽度（首帧、无内容时）。
  */
-export function dockSurfaceMetrics(mode: CompanionMode, size: CompanionSize, people = 2): { defaultWidth: number; defaultHeight: number; hoverWidth: number; hoverHeight: number } {
-  const collapsed = (people <= 1 ? companionDock.solo : companionDock.collapsed)[size];
-  const expanded = (people <= 1 ? companionDock.soloExpanded : companionDock.expanded)[size];
+export function dockSurfaceMetrics(size: CompanionSize, people = 2, measure?: DockMeasure): DockSurfaceMetrics {
+  const height = companionDock.height[size];
+  const minWidth = (people <= 1 ? companionDock.soloMinWidth : companionDock.minWidth)[size];
+  const clamp = (value: number | undefined) => Number.isFinite(value) && (value as number) > 0
+    ? Math.max(minWidth, Math.min(companionDock.maxWidth, Math.ceil(value as number)))
+    : minWidth;
+  const defaultWidth = clamp(measure?.collapsed);
+  const hoverWidth = Math.max(defaultWidth, clamp(measure?.hover));
   const pad = companionDock.shadowCanvas;
-  return { defaultWidth: collapsed.width - pad, defaultHeight: collapsed.height - pad, hoverWidth: expanded.width - pad, hoverHeight: expanded.height - pad };
+  return {
+    defaultWidth,
+    defaultHeight: height,
+    hoverWidth,
+    hoverHeight: height,
+    canvasWidth: Math.max(defaultWidth, hoverWidth) + pad,
+    canvasHeight: height + pad,
+  };
 }
 
 /**
@@ -165,12 +181,12 @@ export interface DockDetailFrame {
  */
 export function dockDetailFrame(input: {
   people: number;
-  size: CompanionSize;
+  /** 当前可见牌面尺寸（由 dockSurfaceMetrics 决定，随内容测量结果变化）。 */
+  plate: { width: number; height: number };
   bounds: { x: number; y: number; width: number; height: number };
   area: { x: number; y: number; width: number; height: number };
 }): DockDetailFrame {
-  const surface = dockSurfaceMetrics('orb', input.size, input.people);
-  const plate = { width: surface.defaultWidth, height: surface.defaultHeight };
+  const plate = input.plate;
   const pad = dockDetail.pad;
   const canvas = { width: input.bounds.width, height: input.bounds.height };
   // 牌面在默认画布里的偏移（collapsed 与 hover 共用同一个右下角锚点）。
@@ -207,10 +223,17 @@ export function dockDetailFrame(input: {
     else { horizontal = 'free'; panelX = Math.max(input.area.x, Math.min(panelX, Math.max(input.area.x, areaRight - panelSize.width))); }
   }
   // 画布：与默认画布共享垂直 / 水平各一条边（上或下、左或右），另一条边由卡片撑开。
-  const windowTop = vertical === 'below' ? input.bounds.y : vertical === 'above' ? panelY - pad : Math.min(plateRect.y, panelY) - pad;
-  const windowBottom = vertical === 'above' ? input.bounds.y + canvas.height : panelY + panelSize.height + pad;
-  const windowLeft = horizontal === 'left' ? input.bounds.x : horizontal === 'right' ? panelX - pad : Math.min(plateRect.x, panelX) - pad;
-  const windowRight = horizontal === 'right' ? input.bounds.x + canvas.width : panelX + panelSize.width + pad;
+  // 牌面可能比卡片还宽（长状态 + 窄卡片），因此两条边都要保证画布**装得下牌面**。
+  const windowTop = vertical === 'below' ? input.bounds.y
+    : vertical === 'above' ? Math.min(panelY - pad, plateRect.y - pad)
+    : Math.min(plateRect.y, panelY) - pad;
+  const windowBottom = vertical === 'above' ? input.bounds.y + canvas.height
+    : Math.max(panelY + panelSize.height, plateBottom) + pad;
+  const windowLeft = horizontal === 'left' ? input.bounds.x
+    : horizontal === 'right' ? Math.min(panelX - pad, plateRect.x - pad)
+    : Math.min(plateRect.x, panelX) - pad;
+  const windowRight = horizontal === 'right' ? input.bounds.x + canvas.width
+    : Math.max(panelX + panelSize.width, plateRight) + pad;
   const dock: DockDetailFrame['dock'] = {
     width: plate.width + pad * 2,
     height: plate.height + pad * 2,
@@ -233,11 +256,12 @@ export interface CompanionGeometry {
 }
 
 // Single source of truth for every companion window size.
-export function companionGeometry(mode: CompanionMode, size: CompanionSize, aspect: number, people = 2, expanded = false): CompanionGeometry {
+export function companionGeometry(mode: CompanionMode, size: CompanionSize, aspect: number, people = 2, expanded = false, measure?: DockMeasure): CompanionGeometry {
   if (mode === 'orb') {
-    // 窗口永远是展开态足迹：默认牌面在画布内收拢，hover 只在画布内生长。
-    const { width, height } = (people <= 1 ? companionDock.soloExpanded : companionDock.expanded)[size];
-    return { width, height, shape: 'rounded' };
+    // 窗口 = 牌面（按渲染层测得的自然宽度）+ 阴影画布；collapsed 与 hover 共用同一尺寸，
+    // 所以 hover 不会改变窗口、也不会改变指针与窗口的几何关系。
+    const metrics = dockSurfaceMetrics(size, people, measure);
+    return { width: metrics.canvasWidth, height: metrics.canvasHeight, shape: 'rounded' };
   }
   // Avatar Pack supplies the canvas ratio; window policy stays generic.
   const character = companionCharacter.height[size];

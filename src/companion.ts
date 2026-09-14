@@ -17,6 +17,8 @@ export class Companion {
   private hoverTip?:{person:PersonId;text:string;state:PresenceState;side:number};private dragging=false;private pendingResize=false;private applied='';
   // 启动后第一次"窗口已经在屏幕上"的状态投射：补一次置顶断言（一次性，不是轮询）。
   private topmostAsserted=false;
+  // 渲染层测得的牌面自然宽度（内容完整优先）；缺省时用最小宽度。
+  private dockMeasure?:{collapsed:number;hover:number};
   // Dock 模式（'orb'）下详情是**同一个** floating 窗口的第三种画布状态，而不是第二个
   // BrowserWindow：这样详情天然继承 Dock 的 topmost 语义，不会再被浏览器盖住。
   private dockDetail=false;private dockDetailFrame?:DockDetailPlacement;
@@ -105,13 +107,13 @@ export class Companion {
     this.ensureTopmost();
   }
   geometry(p:{mode:string;size:'small'|'medium'|'large'}){
-    // One fixed rectangle per mode and size. Never derived from the current
-    // frame, the business state or the character bounding box.
+    // Dock 的宽度由渲染层测得的文字宽度决定（内容完整优先），高度与最小宽度来自
+    // companion-layout 的契约；桌宠仍是固定画布。
     const mode=p.mode==='orb'?'orb':'custom';
     const pack=resolveAvatarPack(this.activeAvatar.resolvedPackId);
     const people=this.store.state.profiles.length;
     // Hover/pointer state must never participate in outer-window geometry.
-    const {width,height}=companionGeometry(mode,p.size,pack.canvas.width/pack.canvas.height,people,false);
+    const {width,height}=companionGeometry(mode,p.size,pack.canvas.width/pack.canvas.height,people,false,this.dockMeasure);
     return {width,height};
   }
   /**
@@ -148,7 +150,7 @@ export class Companion {
   private dockPlate(){
     const preferences={...petDefaults,...this.store.state.settings.pet};
     const people=Math.max(1,this.store.state.profiles.length);
-    const surface=dockSurfaceMetrics('orb',preferences.size,people);
+    const surface=dockSurfaceMetrics(preferences.size,people,this.dockMeasure);
     return {surface,people,preferences};
   }
   /**
@@ -158,11 +160,17 @@ export class Companion {
    * （详情需要真实键盘焦点：ESC 与"点击外部收起"都靠它）。
    */
   private openDockDetail(){
-    const {surface,people,preferences}=this.dockPlate();
+    this.dockDetail=true;
+    this.layoutDockDetail();
+    if(!this.orb.isFocused())this.orb.focus();
+    this.broadcast();
+  }
+  /** 按当前牌面尺寸重算详情画布（打开详情 / 牌面测量变化共用同一条路径）。 */
+  private layoutDockDetail(){
+    const {surface,people}=this.dockPlate();
     const bounds=this.orb.getBounds();
     const area=screen.getDisplayMatching(bounds).workArea;
-    const frame=dockDetailFrame({people,size:preferences.size,bounds,area});
-    this.dockDetail=true;
+    const frame=dockDetailFrame({people,plate:{width:surface.defaultWidth,height:surface.defaultHeight},bounds,area});
     this.dockDetailFrame={
       dock:{...frame.dock},
       panel:{left:frame.panel.left,top:frame.panel.top},
@@ -171,8 +179,6 @@ export class Companion {
     this.applied='';
     this.orb.setBounds({x:Math.round(frame.window.x),y:Math.round(frame.window.y),width:Math.round(frame.window.width),height:Math.round(frame.window.height)},false);
     this.ensureTopmost();
-    if(!this.orb.isFocused())this.orb.focus();
-    this.broadcast();
   }
   /**
    * 收起详情：回到状态牌画布，牌面右下角仍然不动。
@@ -220,6 +226,27 @@ export class Companion {
     // 模式 / 尺寸 / 头像变化都属于"外部几何变化"：先把详情收回到状态牌画布，
     // 否则 canonical 尺寸会和当前画布打架。
     this.collapseDetail();
+    this.applyCanvas();
+  }
+  /**
+   * 渲染层测得的牌面自然宽度（内容完整优先）。
+   *
+   * 只有真的改变画布尺寸时才动窗口，并且保持牌面右下角不动（applyCanvas 的
+   * keepRight / keepBottom）。详情打开时窗口已经是详情画布，这里只按新的牌面
+   * 尺寸重算一次画布，不收起详情。
+   */
+  setDockMeasure(measure:{collapsed:number;hover:number}){
+    const valid=(value:unknown)=>typeof value==='number'&&Number.isFinite(value)&&value>=40&&value<=2000?Math.ceil(value):undefined;
+    const collapsed=valid(measure?.collapsed),hover=valid(measure?.hover);
+    if(collapsed===undefined||hover===undefined)return;
+    if(this.dockMeasure&&this.dockMeasure.collapsed===collapsed&&this.dockMeasure.hover===hover)return;
+    this.dockMeasure={collapsed,hover};
+    if(this.dragging){this.pendingResize=true;return;}
+    if(this.dockDetail){this.layoutDockDetail();this.broadcast();return;}
+    this.applyCanvas();
+  }
+  /** 按当前几何契约重排 Dock 画布（不改详情状态）。 */
+  private applyCanvas(){
     const p={...petDefaults,...this.store.state.settings.pet},before=this.orb.getBounds();
     const {width,height}=this.geometry(p);
     // 尺寸没变时不再重复 setBounds：Windows 每次都会把透明窗口重新对齐到

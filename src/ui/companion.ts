@@ -1,4 +1,4 @@
-import React,{useState,useEffect,useRef} from 'react';
+import React,{useState,useEffect,useLayoutEffect,useRef} from 'react';
 import type { LiveSnapshot,PersonStatus,PetPreferences,PresenceState } from '../live.ts';
 import type { PersonId, Profile, State } from '../types.ts';
 import {clockText,personPresentation,petDefaults,presenceStateFor,statusLabel} from '../live.ts';
@@ -8,7 +8,7 @@ import {companionDisplayLabels} from '../companion-display.ts';
 import {companionVisualStates,type CompanionDisplayState} from '../companion-visual.ts';
 import {stateSourceLabel} from '../state/presentation.ts';
 import {companionTone,type CompanionTone} from '../companion-colors.ts';
-import {companionFrame,companionRail,dockDetail,dockDetailPanel,dockSurfaceMetrics} from '../companion-layout.ts';
+import {companionDock,companionFrame,companionRail,dockDetail,dockDetailPanel,dockSurfaceMetrics,type DockMeasure} from '../companion-layout.ts';
 // Asset 03 语义图标（素材图 4 的七枚原素材）：只在表现层把 CurrentState / 下一项
 // 映射到真实图片，找不到准确映射时返回 null —— 不用 emoji、不用第三方图标替代。
 import {iconForCurrent,iconForNext,iconSrc} from './state-icons.ts';
@@ -62,39 +62,43 @@ export function StatusRows({live,compact=false,detailed=false,onSetStatus}:{live
 export function Titlebar(){return h('header',{className:'titlebar'},h('span',{className:'titlebar-brand'},h(BrandGlyph,{className:'yd-glyph',title:''}),h('b',null,'YD'),h('em',null,'· Your Day')),h('div',{className:'window-controls'},...([['minimize','−','最小化'],['maximize','□','最大化或还原'],['close','×','收起到托盘']] as const).map(([action,label,title])=>h('button',{key:action,title,'aria-label':title,onClick:()=>void api.window(action)},label))));}
 function StatusCore({tone}:{tone:CompanionTone}){return h('span',{className:`status-core tone-${tone}`,'aria-hidden':true},h('i',{className:'status-ring'}),h('i',{className:'status-dot'}));}
 /**
- * Dual Status Dock 的一行：人物 label（来自档案，不硬编码）+ 状态点 + 此刻状态。
+ * Dual Status Dock 里的一个人：人物首字母（视觉锚点）+ 状态点 + 此刻状态。
  *
- * 默认态只显示 short status（空闲 / 上课中 / 专注中…），第二行上下文只在展开时出现。
+ *   .person
+ *     .person-letter   D / Y（受控 serif，明显高于状态词）
+ *     .person-body
+ *       .dock-person-status  ● + .status-text（一组，绝不被省略）
+ *       .person-meta    展开时才出现的第二行（还有 1 小时 30 分）
+ *
+ * 默认态只显示 short status（空闲 / 上课中 / 专注中…）。宽度由内容决定：
+ * 文字完整优先，主进程按渲染层测得的宽度定窗口，不靠 ellipsis 兜底。
  * `data-code` 只把日程阶段码透给 CSS / 验证脚本用于断言，不参与状态判断。
- *
- * 结构就是层级本身：首字母在左列，主状态（状态点 + 文案）与辅助信息都在右列，
- * 于是"还有 1 小时 30 分"天然从主状态内容区开始，而不是和 D / Y 平级。
- *   ┌────┬───────────────────┐
- *   │ D  │ ● 上课中          │
- *   │    │   还有 1 小时 30 分│
- *   └────┴───────────────────┘
  */
-function DockRow({status,hovered,onHover}:{status:PersonStatus;hovered:boolean;onHover?:(person:PersonId)=>void}){
+function DockPerson({status,hovered,onHover}:{status:PersonStatus;hovered:boolean;onHover?:(person:PersonId)=>void}){
   const person=status.person;
   const view=personPresentation(status);
   const state=presenceStateFor(status);
   const current=status.current;
-  return h('div',{className:`dock-row presence-${person} state-${state} kind-${current.kind} source-${current.source}${hovered?' is-hovered':''}`,'data-person':person,'data-state-kind':current.kind,'data-code':status.code,onPointerEnter:()=>onHover?.(person)},
-    h('span',{className:'dock-alias'},status.alias),
-    h('div',{className:'dock-main'},
-      h('div',{className:'dock-line'},
+  return h('div',{className:`person presence-${person} state-${state} kind-${current.kind} source-${current.source}${hovered?' is-hovered':''}`,'data-person':person,'data-state-kind':current.kind,'data-code':status.code,onPointerEnter:()=>onHover?.(person)},
+    h('span',{className:'person-letter'},status.alias),
+    h('div',{className:'person-body'},
+      h('div',{className:'dock-person-status'},
         h(StatusCore,{tone:view.dotTone}),
-        h('span',{className:'dock-status'},view.primaryLabel)),
-      h('span',{className:'dock-extra'},view.secondaryLabel)));
+        h('span',{className:'status-text'},view.primaryLabel)),
+      h('span',{className:'person-meta'},view.secondaryLabel)));
 }
-// Dock 按实际档案渲染平级 person item：2 人双项，1 人重排为独立 Solo，不保留空槽。
-// `expanded` 来自渲染层的真实指针状态：点击穿透窗口不会触发 CSS :hover，
-// 因此"整块状态牌一起显露第二行"必须由状态驱动（见 DesktopPet 的 onPointerEnter）。
-function CompanionDock({animate,people,now,hovered,expanded,onHover}:{animate:boolean;people:PersonStatus[];now:number;hovered?:PersonId;expanded?:boolean;onHover?:(person:PersonId)=>void}){
+/**
+ * 状态牌本体：person | divider | person（Solo 只有一块 person，没有空槽）。
+ * `expanded` 来自渲染层的真实指针状态：点击穿透窗口不会触发 CSS :hover，
+ * 因此"整块状态牌一起显露第二行"必须由状态驱动（见 DesktopPet 的 onPointerEnter）。
+ */
+function CompanionDock({animate,people,hovered,expanded,onHover,nodeRef}:{animate:boolean;people:PersonStatus[];hovered?:PersonId;expanded?:boolean;onHover?:(person:PersonId)=>void;nodeRef?:React.Ref<HTMLDivElement>}){
   // 无障碍文案与 Mini / Tip / Tray 同源（statusLabel），不再有第二套粗粒度状态词。
   const labels=people.map(status=>`${status.name} ${statusLabel(status)}`).join('、');
-  return h('div',{className:`dock-surface${people.length<2?' solo':''}${expanded?' is-expanded':''}${animate?' motion':''}`,'role':'status','aria-label':people.length>1?`当前状态：${labels}`:`当前状态：${labels}`},
-    ...people.map(status=>h(DockRow,{key:status.person,status,hovered:hovered===status.person,onHover})));
+  return h('div',{ref:nodeRef,className:`dock-surface${people.length<2?' solo':''}${expanded?' is-expanded':''}${animate?' motion':''}`,'role':'status','aria-label':`当前状态：${labels}`},
+    ...people.flatMap((status,index)=>index===0
+      ? [h(DockPerson,{key:status.person,status,hovered:hovered===status.person,onHover})]
+      : [h('span',{key:`divider-${status.person}`,className:'dock-divider','aria-hidden':true}),h(DockPerson,{key:status.person,status,hovered:hovered===status.person,onHover})]));
 }
 function useSurface(name:string){
   useEffect(()=>{
@@ -118,7 +122,40 @@ export function DesktopPet(){
   // “减少动态”对三种显示模式一视同仁：呼吸、眨眼、徽章脉冲与提醒轻提示都会停。
   const motion={animate:p.animate&&!p.reduceMotion,reduceMotion:p.reduceMotion};
   const people=live?.people??[];
+  const peopleKey=people.map(item=>{const view=personPresentation(item);return `${item.person}:${item.alias}:${view.primaryLabel}:${view.secondaryLabel}`;}).join('|');
   const hidePresence=()=>void api.presence('leave');
+  /**
+   * 牌面宽度由内容决定（"今天下午有课"这类稍长状态不能被省略号吞掉）。
+   *
+   * 隐藏的量具渲染两块牌面（默认态 / 展开态），测出真实自然宽度后：
+   *   * 回报主进程 —— 它按同一份契约（companion-layout）定窗口尺寸；
+   *   * 用同一份测量结果设置 CSS 变量 —— 牌面宽度与窗口宽度永远一致。
+   * 超过 compactAt 时切到 14.5px 状态字号（第二层降级），只有极端长文本才会 ellipsis。
+   */
+  const surfaceRef=useRef<HTMLDivElement|null>(null);
+  const [measured,setMeasured]=useState<DockMeasure|null>(null);
+  const [compact,setCompact]=useState(false);
+  const [fontsReady,setFontsReady]=useState(false);
+  // 字体加载完成后重量一次：首帧可能用的是 fallback 字形，宽度不同。
+  useEffect(()=>{let alive=true;void document.fonts?.ready.then(()=>{if(alive)setFontsReady(true);});return()=>{alive=false;};},[]);
+  useLayoutEffect(()=>{
+    // 在原位测量（不复制 DOM，避免污染选择器）：临时放开宽度约束，量出真实内容宽度，
+    // 量完立刻还原。整个过程在 layout 阶段完成，不会闪一帧。
+    const node=surfaceRef.current;if(!node||custom)return;
+    const wasExpanded=node.classList.contains('is-expanded'),previousWidth=node.style.width,previousMin=node.style.minWidth,previousTransition=node.style.transition;
+    node.style.transition='none';
+    node.style.width='max-content';
+    node.style.minWidth='0';
+    const collapsed=Math.ceil(node.getBoundingClientRect().width);
+    node.classList.add('is-expanded');
+    const hover=Math.ceil(Math.max(collapsed,node.getBoundingClientRect().width));
+    if(!wasExpanded)node.classList.remove('is-expanded');
+    node.style.width=previousWidth;node.style.minWidth=previousMin;node.style.transition=previousTransition;
+    // 第二层降级带 40px 回滞：避免在阈值附近来回切换字号。
+    setCompact(current=>current?collapsed>companionDock.compactAt-40:collapsed>companionDock.compactAt);
+    setMeasured(current=>current&&current.collapsed===collapsed&&current.hover===hover?current:{collapsed,hover});
+  },[peopleKey,compact,fontsReady,p.mode]);
+  useEffect(()=>{if(custom||!measured)return;void api.dockSize(measured);},[measured,custom]);
   /**
    * Dock 的交互状态机（collapsed / hover / detail / dragging）。
    *
@@ -218,9 +255,6 @@ export function DesktopPet(){
     document.addEventListener('mouseleave',leaveWindow);
     return()=>{alive=false;clearInterval(guard);document.removeEventListener('mouseleave',leaveWindow);};
   },[view]);
-  // 状态牌的可见尺寸契约来自 companion-layout（默认 / hover 两档）；Dock 模式下窗口
-  // 在 collapsed / hover 之间固定不变，只有打开详情时窗口才变成详情画布。
-  const dockMetrics=dockSurfaceMetrics(p.mode==='orb'?'orb':'custom',p.size,people.length);
   // 详情打开时命中区跟着状态牌一起贴到画布的共享边上（命中区 = 牌面 + 4px 阴影画布），
   // 所以牌面在屏幕上的位置与默认态完全一致；卡片则按主进程给的偏移绝对定位。
   const handleStyle=detailOpen&&detailFrame?{
@@ -238,10 +272,14 @@ export function DesktopPet(){
       // 固定画布：stage 只负责角色本体与动作，rail 是它的兄弟节点，
       // 两者的 transform / 动画永远不会互相影响，拖动时也不会被裁掉。
       ?h('div',{className:'sprite-stage'},h('div',{className:'sprite-inner'},h('span',{className:'sprite-shadow','aria-hidden':true}),h(CustomCompanionArt,{assets,display:live?.display,frozen:dragging,...motion})))
-      :h(CompanionDock,{animate:motion.animate,people,now:live?.now??Date.now(),hovered:live?.hoverTip?.person,expanded:view==='hover',onHover:hover}));
+      :h(CompanionDock,{animate:motion.animate,people,hovered:live?.hoverTip?.person,expanded:view==='hover',onHover:hover,nodeRef:surfaceRef}));
   const side=custom
     ?h('div',{className:'status-rail'},h('button',{'data-interactive':true,className:'companion-rail-button',title:people.length>1?'查看双方状态':'查看当前状态',onClick:()=>void api.window('mini')},h(CompanionRail,{live})))
     :null;
+  // 状态牌契约（默认 / hover 两档牌面 + 窗口尺寸）与排版数值都来自 companion-layout，
+  // 宽度取渲染层实测的文字宽度：内容完整优先，不为对称牺牲信息。
+  const dockMetrics=dockSurfaceMetrics(p.size,people.length,measured??undefined);
+  const dockType=companionDock.type[p.size];
   return h('div',{className:`pet-dock ${p.mode==='orb'?'orb-mode':'custom-mode'}${dragging?' is-dragging':''}`,'data-dock-view':view,style:{
     '--rail-height':companionRail.height+'px',
     '--frame-pad-x':companionFrame.padX+'px',
@@ -251,6 +289,9 @@ export function DesktopPet(){
     '--dock-width-hover':dockMetrics.hoverWidth+'px',
     '--dock-height-hover':dockMetrics.hoverHeight+'px',
     '--dock-pad':dockDetail.pad+'px',
+    '--dock-padding':dockType.padding+'px',
+    '--dock-letter':dockType.letter+'px',
+    '--dock-status':(compact?companionDock.compactStatus:dockType.status)+'px',
   } as React.CSSProperties},handle,side,
     // 详情卡：与状态牌在同一个窗口里（不是第二个 BrowserWindow），
     // 偏移由主进程按工作区算好；卡片本身是唯一可交互区域。

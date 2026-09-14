@@ -115,7 +115,7 @@ async function run() {
     const b = dock.getBounds(), scale = screen.getDisplayMatching(b).scaleFactor || 1;
     moveCursor(Math.round((b.x + b.width / 2 + attempt + 2) * scale), Math.round((b.y + b.height / 2) * scale));
     await wait(420);
-    hoverState = await dock.webContents.executeJavaScript("({view:document.querySelector('.pet-dock').dataset.dockView,extras:[...document.querySelectorAll('.dock-extra')].map(e=>e.textContent.trim()),status:[...document.querySelectorAll('.dock-status')].map(e=>e.textContent.trim())})");
+    hoverState = await dock.webContents.executeJavaScript("({view:document.querySelector('.pet-dock').dataset.dockView,extras:[...document.querySelectorAll('.person-meta')].map(e=>e.textContent.trim()),status:[...document.querySelectorAll('.status-text')].map(e=>e.textContent.trim())})");
   }
   // 真实指针在部分 DPI / 合成环境下不会产生 pointerover；这时退回与验收脚本同一条
   // React 处理链的合成事件（仍然驱动同一套状态机，不是直接改 DOM）。
@@ -123,7 +123,7 @@ async function run() {
     cursorInto(dock);
     await dock.webContents.executeJavaScript(pointer('pointerover', 'documentElement'));
     await wait(260);
-    hoverState = await dock.webContents.executeJavaScript("({view:document.querySelector('.pet-dock').dataset.dockView,extras:[...document.querySelectorAll('.dock-extra')].map(e=>e.textContent.trim()),status:[...document.querySelectorAll('.dock-status')].map(e=>e.textContent.trim())})");
+    hoverState = await dock.webContents.executeJavaScript("({view:document.querySelector('.pet-dock').dataset.dockView,extras:[...document.querySelectorAll('.person-meta')].map(e=>e.textContent.trim()),status:[...document.querySelectorAll('.status-text')].map(e=>e.textContent.trim())})");
   }
   await save(dock, `${tag}-hover.png`);
   check(`${mode} hover 截图状态`, hoverState.view === 'hover', JSON.stringify(hoverState));
@@ -142,9 +142,9 @@ async function run() {
 
   // 两个真实状态：
   //   正在上课（10:10）→ busy；今日课程已结束（20:00）→ idle + 今日课程已结束。
-  const state = await dock.webContents.executeJavaScript("({status:[...document.querySelectorAll('.dock-status')].map(e=>e.textContent.trim()),kind:[...document.querySelectorAll('.dock-row')].map(e=>e.dataset.stateKind),dot:[...document.querySelectorAll('.dock-row .status-dot')].map(e=>getComputedStyle(e).backgroundColor)})");
+  const state = await dock.webContents.executeJavaScript("({status:[...document.querySelectorAll('.status-text')].map(e=>e.textContent.trim()),kind:[...document.querySelectorAll('.person')].map(e=>e.dataset.stateKind),dot:[...document.querySelectorAll('.person .status-dot')].map(e=>getComputedStyle(e).backgroundColor)})");
   // 默认态不允许任何内置状态被省略号截断（"上课中"是最常见的三字状态）。
-  const compact = await dock.webContents.executeJavaScript(`({overflow:[...document.querySelectorAll('.dock-status')].map(e=>Math.max(0,e.scrollWidth-e.clientWidth)),text:[...document.querySelectorAll('.dock-status')].map(e=>e.textContent.trim()),rows:[...document.querySelectorAll('.dock-row')].map(e=>({w:Math.round(e.getBoundingClientRect().width),aliasW:Math.round(e.querySelector('.dock-alias').getBoundingClientRect().width),statusW:Math.round(e.querySelector('.dock-status').getBoundingClientRect().width),font:getComputedStyle(e.querySelector('.dock-status')).font})),plate:Math.round(document.querySelector('.dock-surface').getBoundingClientRect().width)})`);
+  const compact = await dock.webContents.executeJavaScript(`({overflow:[...document.querySelectorAll('.status-text')].map(e=>Math.max(0,e.scrollWidth-e.clientWidth)),text:[...document.querySelectorAll('.status-text')].map(e=>e.textContent.trim()),rows:[...document.querySelectorAll('.person')].map(e=>({w:Math.round(e.getBoundingClientRect().width),aliasW:Math.round(e.querySelector('.person-letter').getBoundingClientRect().width),statusW:Math.round(e.querySelector('.status-text').getBoundingClientRect().width),font:getComputedStyle(e.querySelector('.status-text')).font})),plate:Math.round(document.querySelector('.dock-surface').getBoundingClientRect().width)})`);
   check(`${mode} compact 内置状态完整显示`, compact.overflow.every(value => value <= 1), JSON.stringify(compact));
   // Solo 与 Together 是两个独立工作区：Solo 必须真的是"一个人 1 行"，不是删掉半边。
   check(`${mode} 工作区档案数正确`, state.kind.length === (solo ? 1 : 2), JSON.stringify(state));

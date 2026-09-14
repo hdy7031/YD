@@ -141,7 +141,9 @@ function canonicalOrbSize(){
   const {width,height}=companion?.geometry(p)??{width:orb.getBounds().width,height:orb.getBounds().height};
   return {width,height};
 }
-async function savePosition(){const [x,y]=orb.getPosition(),size=canonicalOrbSize(),pos=clampPosition(x,y,true,size);moveOrb(pos.x,pos.y,size.width,size.height);if(store.state.settings.pet?.rememberPosition===false)return;await store.update(s=>{s.settings.orb=pos;return s;});}
+// 位置落盘时连窗口尺寸一起记下：Dock 宽度随内容变化，还原时要用"牌面右下角"
+// 这个视觉锚点（见 types.ts 的说明），否则状态词变长会让 Dock 横向漂。
+async function savePosition(){const [x,y]=orb.getPosition(),size=canonicalOrbSize(),pos=clampPosition(x,y,true,size);moveOrb(pos.x,pos.y,size.width,size.height);if(store.state.settings.pet?.rememberPosition===false)return;await store.update(s=>{s.settings.orb={...pos,w:size.width,h:size.height};return s;});}
 async function processReminders(forceSummary=false){
   if(busy)return;busy=true;
   try{
@@ -182,6 +184,14 @@ function setupHandlers(){
   handler('clipboardText',()=>clipboard.readText());
   // 渲染层第一次（也是每次重新）要求状态投射，说明 Dock 已经在屏幕上：顺手确认一次置顶。
   handler('live',()=>{assertDockTopmost();return companion?.get()??snapshot(store.state,Date.now());});
+  // Dock 的宽度由渲染层按真实文字宽度测量后回报（内容完整优先，不默认省略）。
+  // 主进程只校验范围并按契约改窗口尺寸，几何规则仍然只有 companion-layout 一份。
+  handler('dockSize',(measure:unknown)=>{
+    if(!measure||typeof measure!=='object')throw new Error('Dock 尺寸无效');
+    const {collapsed,hover}=measure as {collapsed?:unknown;hover?:unknown};
+    if(typeof collapsed!=='number'||typeof hover!=='number'||!Number.isFinite(collapsed)||!Number.isFinite(hover)||collapsed<0||hover<0||collapsed>4000||hover>4000)throw new Error('Dock 尺寸无效');
+    companion?.setDockMeasure({collapsed,hover});
+  });
   handler('companionAssets',(packId?:unknown)=>{
     if(packId!==undefined&&typeof packId!=='string')throw new Error('Avatar Pack 编号无效');
     return resolveCompanionAssets(__dirname,packId as string|undefined);
@@ -379,7 +389,13 @@ else{
     const initial=companionGeometry(store.state.settings.pet?.mode??'custom','medium',companionAssets.aspect,store.state.profiles.length,false);
     // 首次启动（没有保存位置）落在右下角：用当前模式的真实画布尺寸留 24px 边距，
     // 这样 Dock（很扁）与桌宠（较高）都不会把窗口放在工作区之外。
-    const area=screen.getPrimaryDisplay().workArea,pos=clampPosition(store.state.settings.orb?.x??area.x+area.width-initial.width-24,store.state.settings.orb?.y??area.y+area.height-initial.height-24,false,initial);
+    // 位置还原：新数据带窗口尺寸 → 按牌面右下角锚点换算成当前尺寸下的左上角，
+    // 内容长度变化不会让 Dock 横向漂；老数据没有尺寸 → 维持原来的左上角语义。
+    const area=screen.getPrimaryDisplay().workArea,saved=store.state.settings.orb;
+    const anchored=saved&&Number.isFinite(saved.w)&&Number.isFinite(saved.h)
+      ?{x:saved.x+(saved.w as number)-initial.width,y:saved.y+(saved.h as number)-initial.height}
+      :saved;
+    const pos=clampPosition(anchored?.x??area.x+area.width-initial.width-24,anchored?.y??area.y+area.height-initial.height-24,false,initial);
     orb=new BrowserWindow({...windowOptions(),width:initial.width,height:initial.height,thickFrame:false,hasShadow:false,roundedCorners:false,x:pos.x,y:pos.y,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false});
     panel=new BrowserWindow({...windowOptions(),width:1050,height:780,minWidth:750,minHeight:550,title:'YD · Your Day',icon:path.join(__dirname,PANEL_ICON_FILE),frame:false,show:false});
     lockWindow(orb);lockWindow(panel);

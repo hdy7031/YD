@@ -25,7 +25,11 @@ export interface Reminder { createdAt?: number; updatedAt?: number; id: string; 
 // v0.3 Phase 3C：临时手动状态（每人在同一时刻最多一条）。
 // endAt === null 表示"直到用户取消"；kind 复用 CurrentState 的领域 kind（见 src/state/manual.ts）。
 export interface ManualOverride { createdAt: number; id: string; personId: PersonId; kind: import('./state/manual.ts').ManualStateKind; label: string; startAt: number; endAt: number | null }
-export interface Settings { domainVersion?: number; pet?: import('./live.ts').PetPreferences; liveVersion?: number; petMigratedV0215?: boolean; launch: boolean; trayResident?: boolean; orb?: { x: number; y: number }; setup: boolean }
+// orb = 悬浮球 / 状态 Dock 的窗口位置。w / h 记录落盘时的窗口尺寸：
+// Dock 的宽度随内容变化（内容完整优先），有了这对尺寸就能按"牌面右下角"这个
+// 真正的视觉锚点还原，状态词变长变短都不会让 Dock 横向漂。老数据没有这两个字段，
+// 按原来的"窗口左上角"语义还原，行为与升级前完全一致。
+export interface Settings { domainVersion?: number; pet?: import('./live.ts').PetPreferences; liveVersion?: number; petMigratedV0215?: boolean; launch: boolean; trayResident?: boolean; orb?: { x: number; y: number; w?: number; h?: number }; setup: boolean }
 export interface State { inboxVersion?: number; bubbleHistory?: {id:string;at:number}[]; version: 1; profiles: Profile[]; courses: Course[]; exceptions: Exception[]; events: Event[]; tasks: Task[]; notices: Notice[]; reminders: Reminder[]; manualOverrides: ManualOverride[]; settings: Settings; lastTick: number }
 export interface SchedulePackage {
   format: 'dayhub-schedule'; version: 1; termName: string;
@@ -54,6 +58,8 @@ export interface DesktopAPI {
   live():Promise<import('./live.ts').LiveSnapshot>;
   /** hover 收起的兜底确认：系统光标此刻是否还在桌宠 / 状态牌窗口内。 */
   cursorInside():Promise<boolean>;
+  /** Dock 默认态 / 展开态牌面的自然宽度（渲染层测量）：主进程据此定窗口尺寸。 */
+  dockSize(measure:{collapsed:number;hover:number}):Promise<void>;
   onLive(callback:(value:import('./live.ts').LiveSnapshot)=>void):()=>void;
   // 'mini' = 切换详情（Dock 模式共用同一个窗口，桌宠模式用独立浮层）；
   // 'detail-close' = 明确收起详情（点击 Dock / ESC 用，避免与 toggle 抢语义）。

@@ -65,13 +65,13 @@ app.whenReady().then(async()=>{
   check('三档尺寸单调递增且人物等比放大',sizeSteps[0]<sizeSteps[1]&&sizeSteps[1]<sizeSteps[2]);
   await run("window.dayhub.change({type:'settings',pet:{mode:'orb',size:'medium'}})");await wait(100);
   // Phase 2：'orb' 模式已经是 Dual Status Dock（圆角状态牌），不再有单球体与 D/Y 字母标记。
-  const dockLabels=await orb.webContents.executeJavaScript("[...document.querySelectorAll('.dock-row')].map(row=>row.querySelector('.dock-alias')?.textContent.trim())");
-  check('状态 Dock 双人平级结构：短标签来自档案',await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row').length===2&&document.querySelectorAll('.status-core').length===2")&&dockLabels.join('|')==='D|Y','labels='+dockLabels.join('|'));
+  const dockLabels=await orb.webContents.executeJavaScript("[...document.querySelectorAll('.person')].map(row=>row.querySelector('.person-letter')?.textContent.trim())");
+  check('状态 Dock 双人平级结构：短标签来自档案',await orb.webContents.executeJavaScript("document.querySelectorAll('.person').length===2&&document.querySelectorAll('.status-core').length===2")&&dockLabels.join('|')==='D|Y','labels='+dockLabels.join('|'));
   const dockBox=await orb.webContents.executeJavaScript("(()=>{const s=document.querySelector('.dock-surface').getBoundingClientRect();return {width:s.width,height:s.height,radius:getComputedStyle(document.querySelector('.dock-surface')).borderRadius}})()");console.log('dock',dockBox);
   // 检查的是可见表面（.dock-surface）；窗口本身比它大约 8px，作为阴影 / 圆角安全区。
   // 牌面 = 窗口 − 8px 阴影画布；中档默认态 176×36（窗口 220×54，hover 在画布内生长）。
   check('状态浮标是校正后的圆角状态牌',dockBox.width>=174&&dockBox.width<=178&&dockBox.height>=34&&dockBox.height<=38&&dockBox.width>dockBox.height&&parseFloat(dockBox.radius)>=999*0.9,JSON.stringify(dockBox));
-  const dockRows=await orb.webContents.executeJavaScript("(()=>{const rows=[...document.querySelectorAll('.dock-row')].map(r=>r.getBoundingClientRect()),s=document.querySelector('.dock-surface').getBoundingClientRect();return {rows:rows.map(r=>({top:r.top,left:r.left,width:r.width,height:r.height})),surface:{left:s.left,width:s.width}}})()");console.log('dock rows',dockRows);
+  const dockRows=await orb.webContents.executeJavaScript("(()=>{const rows=[...document.querySelectorAll('.person')].map(r=>r.getBoundingClientRect()),s=document.querySelector('.dock-surface').getBoundingClientRect();return {rows:rows.map(r=>({top:r.top,left:r.left,width:r.width,height:r.height})),surface:{left:s.left,width:s.width}}})()");console.log('dock rows',dockRows);
   check('两个 person item 在同一水平面并由中线分隔',dockRows.rows.every(r=>r.left>=dockRows.surface.left-.5&&r.left+r.width<=dockRows.surface.left+dockRows.surface.width+.5)&&Math.abs(dockRows.rows[0].top-dockRows.rows[1].top)<1&&dockRows.rows[0].left<dockRows.rows[1].left);
   check('旧球体结构与原生title均已删除',await orb.webContents.executeJavaScript("!document.querySelector('.presence-orb,.presence-surface,.identity-mark,.presence-seam')&&!document.querySelector('.pet-handle').hasAttribute('title')"));
   check('默认状态浮标不再显示旧 D/Y 字母标记',await orb.webContents.executeJavaScript("![...document.querySelectorAll('.identity-mark')].length&&!!document.querySelector('.dock-surface')&&!document.querySelector('.split-orb')&&!document.querySelector('.orb-shell')"));
@@ -84,12 +84,12 @@ app.whenReady().then(async()=>{
   for(let i=0;i<6&&!zones;i++){
     orb.webContents.send('dayhub:live',injectKinds(next));
     await wait(60);
-    zones=await orb.webContents.executeJavaScript("!!document.querySelector('.dock-row.presence-me.state-busy')&&!!document.querySelector('.dock-row.presence-partner.state-focus')");
+    zones=await orb.webContents.executeJavaScript("!!document.querySelector('.person.presence-me.state-busy')&&!!document.querySelector('.person.presence-partner.state-focus')");
   }
   check('忙碌与专注状态映射到独立状态核心',zones);
-  await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(80);check('CASE 1 hover 只展开内部信息且外框不变',!tip.isVisible()&&Math.abs(orb.getSize()[0]-220)<=8&&orb.getSize()[1]===54&&await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row.is-hovered').length===1"));
-  check('内部补充信息无 undefined',await orb.webContents.executeJavaScript("!!document.querySelector('.dock-row.is-hovered .dock-extra')&&!document.body.textContent.includes('undefined')"));
-  await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");await wait(80);check('CASE 2 离开后外框仍保持固定且无 tooltip',!tip.isVisible()&&Math.abs(orb.getSize()[0]-220)<=8&&orb.getSize()[1]===54);
+  await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(80);check('CASE 1 hover 只展开内部信息且外框不变',!tip.isVisible()&&Math.abs(orb.getSize()[1]-64)<=2&&await orb.webContents.executeJavaScript("document.querySelectorAll('.person.is-hovered').length===1"));
+  check('内部补充信息无 undefined',await orb.webContents.executeJavaScript("!!document.querySelector('.person.is-hovered .person-meta')&&!document.body.textContent.includes('undefined')"));
+  await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");await wait(80);check('CASE 2 离开后外框仍保持固定且无 tooltip',!tip.isVisible()&&Math.abs(orb.getSize()[1]-64)<=2);
   // Windows 会把透明无边框窗口对齐到物理像素栅格（DPI 缩放下会 ±几 px），
   // 因此窗口尺寸允许物理像素取整；Dock 的固定布局常量由 layout 单测锁定。
   const beforeDrag=orb.getBounds();
@@ -106,7 +106,7 @@ app.whenReady().then(async()=>{
   // 0.2.16：拖动路径改成 setPosition + 系统光标锚点，Windows 仍会把窗口对齐到
   // 物理像素（150% 下偶发 ±1px），因此尺寸允许 2px 误差，位置必须真的移动。
   const afterDrag=orb.getBounds();console.log('drag bounds',{beforeDrag,afterDrag});check('拖动只改变位置且不拉伸窗口',Math.abs(afterDrag.width-beforeDrag.width)<=2&&Math.abs(afterDrag.height-beforeDrag.height)<=2&&afterDrag.x<beforeDrag.x);
-  await orb.webContents.executeJavaScript("window.dayhub.presence('enter','partner')");await wait(30);check('拖动结束后的新 hover 可正常内部展开',!tip.isVisible()&&await orb.webContents.executeJavaScript("document.querySelector('.dock-row.is-hovered')?.dataset.person==='partner'"));await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");
+  await orb.webContents.executeJavaScript("window.dayhub.presence('enter','partner')");await wait(30);check('拖动结束后的新 hover 可正常内部展开',!tip.isVisible()&&await orb.webContents.executeJavaScript("document.querySelector('.person.is-hovered')?.dataset.person==='partner'"));await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");
   for(let i=0;i<3;i++){await orb.webContents.executeJavaScript(`window.dayhub.beginDrag(${afterDrag.x+51},${afterDrag.y+51})`);await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await orb.webContents.executeJavaScript("window.dayhub.endDrag()");}
   await wait(30);check('CASE 7/9 快速连续拖动无幽灵tooltip',!tip.isVisible());
   orb.focus();await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(30);panel.show();panel.focus();await wait(60);check('CASE 8 窗口失焦清除tooltip',!tip.isVisible());

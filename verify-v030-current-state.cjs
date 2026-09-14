@@ -90,13 +90,13 @@ app.whenReady().then(async () => {
       // 首页状态行（Home 的真实 DOM）与 Mini / Tip / Tray 共用同一句文案。
       const rows = await run("[...document.querySelectorAll('.dual-status .person-status')].map(e=>[e.querySelector('.person-status-label')?.textContent,e.querySelector('strong')?.textContent])");
       check(`${time} 首页状态行 ${label}`, rows.some(([, text]) => text === label), JSON.stringify(rows));
-      // VS2 默认形态是 Dual Status Dock（.dock-row），旧的角色陪伴模式才有 .rail-chip；
+      // VS2 默认形态是 Dual Status Dock（.person），旧的角色陪伴模式才有 .rail-chip；
       // 两种形态拼出同一句「短代号 · 状态」，检查不再依赖某一种 DOM。
       const rail = await pet(`(()=>{
         const chips=[...document.querySelectorAll('.rail-chip')].map(e=>e.title);
-        const rows=[...document.querySelectorAll('.dock-row')].map(r=>{
-          const alias=r.querySelector('.dock-alias')?.textContent?.trim()??'';
-          const status=r.querySelector('.dock-status')?.textContent?.trim()??'';
+        const rows=[...document.querySelectorAll('.person')].map(r=>{
+          const alias=r.querySelector('.person-letter')?.textContent?.trim()??'';
+          const status=r.querySelector('.status-text')?.textContent?.trim()??'';
           return alias+' · '+status;
         });
         return [...chips,...rows];

@@ -86,10 +86,12 @@ const report = [];
 const check = (name, value, detail = '') => report.push({ name, ok: !!value, detail });
 // 新几何契约（中档）：窗口 248×54（展开态足迹）；牌面 collapsed 176×36 / hover 240×46。
 // 展开态比默认态宽是因为第二行辅助文案（"还有 1 小时 30 分"）必须完整显示。
-const CANVAS = { width: 248, height: 54 };
-const PLATE = { collapsedWidth: 176, collapsedHeight: 36, hoverWidth: 240, hoverHeight: 46 };
+// 牌面宽度由内容测量决定：这里只锁高度（牌面 56 + 8 阴影画布 = 64），宽度用关系断言。
+const CANVAS = { height: 64, minWidth: 180 };
+const PLATE = { height: 56, minWidth: 180 };
 // 详情画布 = 卡片 460×236 + 10px 间距 + 牌面 36 + 两侧 4px 阴影画布（同一个窗口）。
-const DETAIL = { width: 468, height: 290 };
+// 详情画布 = 卡片 460×236 + 10 间距 + 牌面 56 + 两侧 4px 阴影画布。
+const DETAIL = { width: 468, height: 310 };
 
 async function boot(dataDir) {
   configureIsolatedUserData('dock', dataDir);
@@ -160,16 +162,16 @@ async function runTogether() {
 
   /* ---------- A. 状态语义 ---------- */
   const structure = await pet(`(()=>{
-    const rows=[...document.querySelectorAll('.dock-row')];
+    const rows=[...document.querySelectorAll('.person')];
     const surface=document.querySelector('.dock-surface');
     const rect=surface?.getBoundingClientRect();
     const style=surface?getComputedStyle(surface):null;
-    const overflow=rows.map(row=>{const status=row.querySelector('.dock-status');return status?status.scrollWidth-status.clientWidth:999;});
+    const overflow=rows.map(row=>{const status=row.querySelector('.status-text');return status?status.scrollWidth-status.clientWidth:999;});
     return {
-      rows:rows.map(r=>({person:r.dataset.person,alias:r.querySelector('.dock-alias')?.textContent.trim(),status:r.querySelector('.dock-status')?.textContent.trim(),extra:r.querySelector('.dock-extra')?.textContent.trim(),kind:r.dataset.stateKind,dotColor:r.querySelector('.status-dot')?getComputedStyle(r.querySelector('.status-dot')).backgroundColor:null})),
+      rows:rows.map(r=>({person:r.dataset.person,alias:r.querySelector('.person-letter')?.textContent.trim(),status:r.querySelector('.status-text')?.textContent.trim(),extra:r.querySelector('.person-meta')?.textContent.trim(),kind:r.dataset.stateKind,dotColor:r.querySelector('.status-dot')?getComputedStyle(r.querySelector('.status-dot')).backgroundColor:null})),
       radius:style?.borderRadius,background:style?.backgroundColor,backdrop:style?.backdropFilter,
       rect:rect?{width:Math.round(rect.width),height:Math.round(rect.height)}:null,
-      aliasFont:rows[0]?getComputedStyle(rows[0].querySelector('.dock-alias')).fontFamily:null,
+      aliasFont:rows[0]?getComputedStyle(rows[0].querySelector('.person-letter')).fontFamily:null,
       overflow,
       legacy:!!document.querySelector('.presence-orb,.presence-surface,.identity-mark,.orb-shell,.split-orb')
     };
@@ -180,12 +182,16 @@ async function runTogether() {
   check('compact 状态是此刻状态，不再是"今日…"这类日程阶段长句', structure.rows.every(r => r.status && !contextWords.test(r.status)), structure.rows.map(r => r.status).join('|'));
   check('compact 内置状态完整显示（没有被 ellipsis 截断）', structure.overflow.every(value => value <= 1), JSON.stringify(structure.overflow));
   check('hover 第二行预置了有价值的上下文（默认不可见）', structure.rows.some(r => r.extra && r.extra.length > 1), JSON.stringify(structure.rows.map(r => r.extra)));
-  check('Y / D 不再使用衬线大字', !/Georgia|Songti|SimSun/.test(String(structure.aliasFont)) && !/["']serif["']/.test(String(structure.aliasFont)), String(structure.aliasFont));
-  check('默认牌面尺寸 = 产品基准（Together 176×36，含 4px 阴影画布后窗口 184×44）', structure.rect && Math.abs(structure.rect.width - PLATE.collapsedWidth) <= 1 && Math.abs(structure.rect.height - PLATE.collapsedHeight) <= 1, JSON.stringify(structure.rect));
+  // D / Y 是受控 serif 锚点（Georgia / Cambria / Times），不是装饰字体。
+  check('D / Y 使用受控 serif 字体栈', /Georgia/.test(String(structure.aliasFont)) && !/cursive|fantasy|Script/i.test(String(structure.aliasFont)), String(structure.aliasFont));
+  check('默认牌面高度 = 产品基准 56（54–60 口径）', structure.rect && Math.abs(structure.rect.height - PLATE.height) <= 1, JSON.stringify(structure.rect));
+  check('默认牌面宽度由内容决定且不低于最小宽度', structure.rect && structure.rect.width >= PLATE.minWidth - 1, JSON.stringify(structure.rect));
   check('Dock 是固定状态牌（两端半圆、mist 白底、轻玻璃层）', parseFloat(structure.radius) >= 20 && /rgba?\(\s*250\s*,\s*252\s*,\s*251/.test(String(structure.background)) && /blur\(18px\)/.test(String(structure.backdrop)), JSON.stringify({ radius: structure.radius, background: structure.background }));
   check('legacy orb 结构已不在 DOM 中', structure.legacy === false);
   const dockSize = dock.getSize();
-  check('Dock 窗口尺寸 = 展开态画布（中档 248×54，hover 时窗口本身不变）', Math.abs(dockSize[0] - CANVAS.width) <= 2 && Math.abs(dockSize[1] - CANVAS.height) <= 2, dockSize.join('x'));
+  // 窗口高度固定 = 牌面 56 + 8px 阴影画布；宽度随内容（至少要装下默认态牌面）。
+  check('Dock 窗口高度 = 牌面 + 阴影画布（56+8=64），宽度随内容', Math.abs(dockSize[1] - CANVAS.height) <= 2 && dockSize[0] >= structure.rect.width + 8 - 1, JSON.stringify({ dockSize, plate: structure.rect }));
+  check('默认态内容完整显示（没有被省略号截断）', structure.overflow.every(value => value <= 1), JSON.stringify(structure.overflow));
   /* ---------- H(1). alwaysOnTop：初始状态 ---------- */
   check('创建后 Dock 就是 alwaysOnTop', topmost() === true);
 
@@ -199,15 +205,16 @@ async function runTogether() {
   const hoverView = await pet("document.querySelector('.pet-dock').dataset.dockView");
   const hoverExpanded = await pet("document.querySelector('.dock-surface').classList.contains('is-expanded')");
   const hoverPlate = await pet("(()=>{const r=document.querySelector('.dock-surface').getBoundingClientRect();return {width:Math.round(r.width),height:Math.round(r.height)}})()");
-  const hoverRevealed = await pet("[...document.querySelectorAll('.dock-extra')].filter(e=>Number(getComputedStyle(e).opacity)>0.9&&e.textContent.trim().length>1).length");
+  const hoverRevealed = await pet("[...document.querySelectorAll('.person-meta')].filter(e=>Number(getComputedStyle(e).opacity)>0.9&&e.textContent.trim().length>1).length");
   // 用户报告过"hover 展开显示不完全"：第二行必须完整可见，不能被 ellipsis 截断。
-  const hoverOverflow = await pet("[...document.querySelectorAll('.dock-extra')].map(e=>Math.max(0,e.scrollWidth-e.clientWidth))");
-  const hoverText = await pet("[...document.querySelectorAll('.dock-extra')].map(e=>e.textContent.trim())");
+  const hoverOverflow = await pet("[...document.querySelectorAll('.person-meta')].map(e=>Math.max(0,e.scrollWidth-e.clientWidth))");
+  const hoverText = await pet("[...document.querySelectorAll('.person-meta')].map(e=>e.textContent.trim())");
   const hoverScale = await pet("getComputedStyle(document.querySelector('.dock-surface')).transform");
   const hover = { view: hoverView, expanded: hoverExpanded, width: hoverPlate && hoverPlate.width, height: hoverPlate && hoverPlate.height, revealed: hoverRevealed, scale: hoverScale };
   const afterHover = dock.getBounds();
   check('hover 进入 hover 状态并显露第二行（两块 person 区域同时展开）', hover.view === 'hover' && hover.expanded && hover.revealed === 2, JSON.stringify(hover));
-  check('hover 是 layout 展开（宽高变化），不是整体 scale', hover.width > PLATE.collapsedWidth + 2 && !/matrix\(1\./.test(String(hover.scale)) && hover.scale === 'none', JSON.stringify({ width: hover.width, scale: hover.scale }));
+  check('展开态牌面同样完整装进窗口（窗口按更宽的一态定尺寸）', afterHover.width >= hover.width + 8 - 3, JSON.stringify({ windowWidth: afterHover.width, hoverWidth: hover.width }));
+  check('hover 是 layout 展开（宽度按内容变化），不是整体 scale，也不会缩回默认态', hover.expanded === true && hover.scale === 'none' && hover.width >= structure.rect.width - 1 && hover.height === structure.rect.height, JSON.stringify({ collapsedWidth: structure.rect.width, width: hover.width, height: hover.height, scale: hover.scale }));
   check('hover 第二行完整显示（没有被 ellipsis 截断）', Array.isArray(hoverOverflow) && hoverOverflow.every(value => value <= 1), JSON.stringify({ hoverText, hoverOverflow }));
   check('hover 不移动、不缩放窗口（anchor 完全稳定）', afterHover.x === beforeHover.x && afterHover.y === beforeHover.y && afterHover.width === beforeHover.width && afterHover.height === beforeHover.height, JSON.stringify({ beforeHover, afterHover }));
   fs.writeFileSync(path.join(output, 'dock-together-hover.png'), (await dock.capturePage()).toPNG());
@@ -228,6 +235,30 @@ async function runTogether() {
   }
   check('指针离开 6/6 次都回到 collapsed（不依赖 timer 的正确性）', leaveFailures === 0);
 
+  /* ---------- C(2). 信息完整性：稍长状态也必须完整显示 ---------- */
+  {
+    const probe = async () => pet(`(()=>{const surfaces=[...document.querySelectorAll('.dock-surface')];
+      const plate=surfaces[0];const rect=plate.getBoundingClientRect();
+      const texts=[...plate.querySelectorAll('.status-text')];
+      const metas=[...plate.querySelectorAll('.person-meta')];
+      return {width:Math.round(rect.width),height:Math.round(rect.height),
+        texts:texts.map(e=>e.textContent.trim()),
+        overflow:texts.map(e=>Math.max(0,e.scrollWidth-e.clientWidth)),
+        metaOverflow:metas.map(e=>Math.max(0,e.scrollWidth-e.clientWidth))}})()`);
+    const before = await probe();
+    // 自定义状态（用户自己写的词）是最长的一类文案，必须完整显示而不是省略。
+    await run("window.dayhub.change({type:'manual',kind:'custom',label:'今天下午有课',endAt:null})");
+    await wait(700);
+    const long = await probe(), longBounds = dock.getBounds();
+    check('稍长状态（今天下午有课）完整显示，没有被 ellipsis 截断', long.texts.some(value => value === '今天下午有课') && long.overflow.every(value => value <= 1), JSON.stringify(long));
+    check('稍长状态让牌面与窗口一起变宽（内容自适应，不是固定宽度）', long.width > before.width + 10 && longBounds.width >= long.width + 8 - 3, JSON.stringify({ before, long, longBounds }));
+    fs.writeFileSync(path.join(output, 'dock-together-long-status.png'), (await dock.capturePage()).toPNG());
+    await run("window.dayhub.get().then(s=>Promise.all(s.manualOverrides.map(o=>window.dayhub.change({type:'manualCancel',id:o.id}))))");
+    await wait(600);
+    const restored = await probe();
+    check('清除自定义状态后牌面回到原来的宽度', Math.abs(restored.width - before.width) <= 2, JSON.stringify({ before, restored }));
+  }
+
   /* ---------- E. hover 中 resize：不卡住、锚点不跳 ---------- */
   {
     await cursorInto();
@@ -240,7 +271,7 @@ async function runTogether() {
     const resized = await pet(`(()=>{const surface=document.querySelector('.dock-surface');const rect=surface.getBoundingClientRect();return {width:Math.round(rect.width),view:document.querySelector('.pet-dock').dataset.dockView,expanded:surface.classList.contains('is-expanded')}})()`);
     const afterResize = dock.getBounds();
     const area = screen.getDisplayMatching(afterResize).workArea;
-    check('hover 中确实发生了 resize（大档牌面更宽）', resized.width > PLATE.collapsedWidth + 6, JSON.stringify(resized));
+    check('hover 中确实发生了 resize（大档牌面更高，宽度仍按内容）', resized.width >= PLATE.minWidth && Math.abs(afterResize.height-66)<=1, JSON.stringify({ resized, afterResize }));
     await pet(pointerOut('.pet-handle'));
     await wait(340);
     const settled = await dockView();
@@ -285,7 +316,7 @@ async function runTogether() {
   const afterDetailPlate = await plateOnScreen();
   const detailArea = screen.getDisplayMatching(detailBounds).workArea;
   check('单击 Dock 打开详情：是同一个窗口进入 detail 状态（没有第二个 BrowserWindow）', detailView === 'detail' && !mini.isVisible(), JSON.stringify({ detailView, miniVisible: mini.isVisible() }));
-  check('详情画布 = 卡片 + 间距 + 状态牌（Together 中档 468×290）', Math.abs(detailBounds.width - DETAIL.width) <= 2 && Math.abs(detailBounds.height - DETAIL.height) <= 2, detailBounds.width + 'x' + detailBounds.height);
+  check('详情画布 = 卡片 + 间距 + 状态牌（Together 中档 468×310）', Math.abs(detailBounds.width - DETAIL.width) <= 2 && Math.abs(detailBounds.height - DETAIL.height) <= 2, detailBounds.width + 'x' + detailBounds.height);
   check('打开详情不移动状态牌（牌面的屏幕矩形完全一致）', !!beforeDetailPlate && !!afterDetailPlate && Math.abs(afterDetailPlate.x - beforeDetailPlate.x) <= 2 && Math.abs(afterDetailPlate.y - beforeDetailPlate.y) <= 2, JSON.stringify({ beforeDetailPlate, afterDetailPlate }));
   check('详情卡片不与状态牌重叠，且完全落在工作区内', !!detailBody && detailBody.overlap === false && inside({ x: detailBounds.x + detailBody.rect.x, y: detailBounds.y + detailBody.rect.y, width: detailBody.rect.width, height: detailBody.rect.height }, detailArea), JSON.stringify({ rect: detailBody?.rect, detailBounds, detailArea }));
   check('详情头部是正常 UI 标题 + 极小 YD 签名（没有大 Logo / 大书法标题）', detailBody?.title === '我们 · 此刻' && detailBody?.brand === 'YD', JSON.stringify(detailBody));
@@ -303,7 +334,7 @@ async function runTogether() {
   const afterCloseBounds = dock.getBounds();
   const afterClosePlate = await plateOnScreen();
   // 指针如果还在状态牌上就是 hover（第二行可见），但绝不能停留在 detail。
-  check('再点 Dock 收起详情并回到状态牌画布', afterClose !== 'detail' && afterCloseBounds.width === beforeDetailBounds.width && afterCloseBounds.height === beforeDetailBounds.height, JSON.stringify({ afterClose, afterCloseBounds, beforeDetailBounds }));
+  check('再点 Dock 收起详情并回到状态牌画布', afterClose !== 'detail' && Math.abs(afterCloseBounds.width - beforeDetailBounds.width) <= 1 && Math.abs(afterCloseBounds.height - beforeDetailBounds.height) <= 1, JSON.stringify({ afterClose, afterCloseBounds, beforeDetailBounds }));
   check('收起详情后牌面仍在原来的位置', !!afterClosePlate && Math.abs(afterClosePlate.x - beforeDetailPlate.x) <= 2 && Math.abs(afterClosePlate.y - beforeDetailPlate.y) <= 2, JSON.stringify({ beforeDetailPlate, afterClosePlate }));
 
   /* ---------- H(2). Win32 层级检查（真实 z-order，不是 Electron 缓存标志） ---------- */
@@ -322,7 +353,8 @@ async function runTogether() {
 
   /* ---------- G. drag 与 hover 彻底隔离 ---------- */
   const start = dock.getBounds();
-  check('Dock 窗口尺寸稳定（高度 = 画布常量，宽度仅物理像素取整）', start.height === CANVAS.height && Math.abs(start.width - CANVAS.width) <= 7, JSON.stringify(start));
+  const startPlate = await pet("(()=>{const r=document.querySelector('.dock-surface').getBoundingClientRect();return {width:Math.round(r.width),height:Math.round(r.height)}})()");
+  check('Dock 窗口尺寸稳定（高度 = 牌面 + 阴影画布，宽度装得下牌面）', Math.abs(start.height - CANVAS.height) <= 1 && start.width >= startPlate.width + 8 - 3, JSON.stringify({ start, startPlate }));
   /**
    * 真实拖动：先把系统光标放到状态牌中心，再用 pointer 事件走渲染层同一套手势状态机
    * （pointerdown → pointermove 越过 4px → pointerup）。系统光标与指针增量保持一致，
@@ -356,9 +388,9 @@ async function runTogether() {
   await wait(200);
   const afterDrag = dock.getBounds();
   check('drag：越过 4px 后进入 dragging 并立刻收起 hover 第二行', draggingView === 'dragging', JSON.stringify({ draggingView, gridAfterDrag }));
-  check('拖动改变窗口位置且尺寸完全保持', (afterDrag.x !== start.x || afterDrag.y !== start.y) && Math.abs(afterDrag.width - start.width) <= 1 && afterDrag.height === start.height, JSON.stringify({ start, afterDrag }));
+  check('拖动改变窗口位置且尺寸完全保持', (afterDrag.x !== start.x || afterDrag.y !== start.y) && Math.abs(afterDrag.width - start.width) <= 1 && Math.abs(afterDrag.height - start.height) <= 1, JSON.stringify({ start, afterDrag }));
   check('拖动结束后没有遗留悬停提示 / 展开态 / dragging 类', !windowOf('tip').isVisible()
-    && await pet("!document.querySelector('.pet-dock').classList.contains('is-dragging')&&!document.querySelector('.dock-surface').classList.contains('is-expanded')&&!document.querySelector('.dock-row.is-hovered')&&!document.body.textContent.includes('undefined')")
+    && await pet("!document.querySelector('.pet-dock').classList.contains('is-dragging')&&!document.querySelector('.dock-surface').classList.contains('is-expanded')&&!document.querySelector('.person.is-hovered')&&!document.body.textContent.includes('undefined')")
     && await dockView() === 'collapsed');
   check('拖动结束后仍为 alwaysOnTop', topmost() === true);
   check('拖动结束后窗口仍在工作区内', inside(afterDrag, screen.getDisplayMatching(afterDrag).workArea), JSON.stringify(afterDrag));
@@ -368,20 +400,24 @@ async function runTogether() {
   await pet(pointerOut('.pet-handle'));
   await wait(520);
   const rapid = dock.getBounds();
-  check('快速拖动只移动窗口、不残留提示与形变', Math.abs(rapid.width - start.width) <= 1 && rapid.height === start.height && !windowOf('tip').isVisible() && await pet("!document.querySelector('.pet-dock').classList.contains('is-dragging')"), JSON.stringify(rapid));
+  check('快速拖动只移动窗口、不残留提示与形变', Math.abs(rapid.width - start.width) <= 1 && Math.abs(rapid.height - start.height) <= 1 && !windowOf('tip').isVisible() && await pet("!document.querySelector('.pet-dock').classList.contains('is-dragging')"), JSON.stringify(rapid));
   // 连续往返 20 次：每次都从新的 bounds 建锚。Windows 会把透明窗口重新对齐到物理
   // 像素（±1px），因此这里锁住的是"不会累积长大"，而不是逐像素相等。
   const widths = [];
+  const heights = [];
   for (let i = 0; i < 20; i++) {
     const sign = i % 2 === 0 ? 1 : -1;
     await dragBy(sign * 18, sign * 8, 1);
-    widths.push(dock.getBounds().width);
+    const current = dock.getBounds();
+    widths.push(current.width);
+    heights.push(current.height);
   }
   moveCursor(20, 20);
   await pet(pointerOut('.pet-handle'));
   await wait(320);
   const repeated = dock.getBounds();
-  check('连续拖动 20 次后尺寸不累积增长（高度恒定，宽度仅 ±1px 物理像素取整）', repeated.height === start.height && Math.max(...widths) - Math.min(...widths) <= 1 && Math.abs(repeated.width - start.width) <= 1, JSON.stringify({ start, repeated, widths: [...new Set(widths)] }));
+  // 高度同样只允许 ±1px 的物理像素取整（Dock 高度是常量，绝不允许累积增长）。
+  check('连续拖动 20 次后尺寸不累积增长（高度恒定 ±1px，宽度仅 ±1px 物理像素取整）', repeated.height <= start.height + 1 && Math.max(...heights) - Math.min(...heights) <= 1 && Math.max(...widths) - Math.min(...widths) <= 1 && Math.abs(repeated.width - start.width) <= 1, JSON.stringify({ start, repeated, widths: [...new Set(widths)], heights: [...new Set(heights)] }));
   // 未越过阈值的 potential click 与 double click 都不能触碰窗口 bounds。
   const beforeGestures = dock.getBounds();
   await pet(`(()=>{const el=document.querySelector('.pet-handle');const base={bubbles:true,pointerId:9,pointerType:'mouse',isPrimary:true,button:0,buttons:1};
@@ -390,7 +426,7 @@ async function runTogether() {
   await pet("document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))");
   await wait(280);
   const afterGestures = dock.getBounds();
-  check('click / double click 不改变 Dock 几何', afterGestures.width === beforeGestures.width && afterGestures.height === beforeGestures.height && afterGestures.x === beforeGestures.x && afterGestures.y === beforeGestures.y, JSON.stringify({ beforeGestures, afterGestures }));
+  check('click / double click 不改变 Dock 几何', Math.abs(afterGestures.width - beforeGestures.width) <= 1 && Math.abs(afterGestures.height - beforeGestures.height) <= 1 && afterGestures.x === beforeGestures.x && afterGestures.y === beforeGestures.y, JSON.stringify({ beforeGestures, afterGestures }));
   // drag → mouse leave：拖动中离开不产生提示。
   await pet(pointerOver('.pet-handle'));
   await wait(240);
@@ -434,11 +470,14 @@ async function runRestart(dataDir) {
     bounds, expected, size: dock.getSize(),
   }));
   // 恢复的位置可能被工作区回收（clamp），因此比较的是"同样的回收规则"下的结果。
+  // Dock 宽度随内容变化：新数据带窗口尺寸，锚点是牌面右下角（expected.x + w）。
   const area = screen.getDisplayMatching(bounds).workArea;
-  const wantX = Math.max(area.x, Math.min(expected.x, area.x + area.width - bounds.width));
-  const wantY = Math.max(area.y, Math.min(expected.y, area.y + area.height - bounds.height));
+  const anchorX = Number.isFinite(expected.w) ? expected.x + expected.w : expected.x + bounds.width;
+  const anchorY = Number.isFinite(expected.h) ? expected.y + expected.h : expected.y + bounds.height;
+  const wantX = Math.max(area.x, Math.min(anchorX - bounds.width, area.x + area.width - bounds.width));
+  const wantY = Math.max(area.y, Math.min(anchorY - bounds.height, area.y + area.height - bounds.height));
   check('重启后恢复状态 Dock 位置', Math.abs(bounds.x - wantX) <= 6 && Math.abs(bounds.y - wantY) <= 6, JSON.stringify({ bounds, expected, want: { x: wantX, y: wantY }, area }));
-  check('重启后仍是 Dual Status Dock（两行状态牌）', await dock.webContents.executeJavaScript("!!document.querySelector('.dock-surface')&&document.querySelectorAll('.dock-row').length===2"));
+  check('重启后仍是 Dual Status Dock（两行状态牌）', await dock.webContents.executeJavaScript("!!document.querySelector('.dock-surface')&&document.querySelectorAll('.person').length===2"));
   check('重启后 Dock 仍然置顶', dock.isAlwaysOnTop() === true);
   fs.writeFileSync(path.join(output, 'dock-restarted.png'), (await dock.capturePage()).toPNG());
 }
