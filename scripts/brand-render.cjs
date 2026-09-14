@@ -3,10 +3,9 @@
 // ## 边界说明（重要）
 //
 // **应用图标不在这里生成。** 程序图标（`brand/exports/yd.ico`、`icon-256.png`、
-// `icon-512.png`、`png/yd-*.png`）由 `scripts/prepare-app-icon.py` 从定稿主图标
-// `brand/source/app-icon-master-v2.png` 导出。原因：主图标是"瓷白瓦片 + 右下投影"
-// 的位图，导出时必须按瓦片几何重建 alpha 圆角，矢量化重绘会得到另一套（历史绿色）
-// 图标，曾经覆盖过定稿资源，见 `brand/README.md` 的图标章节。
+// `icon-512.png`、`png/yd-*.png`）由 `scripts/prepare-app-icon.py` 从定稿母版
+// `brand/source/app-icon-master-v3.png` 导出。矢量化重绘会得到另一套（历史绿色）
+// 图标，曾经覆盖过定稿资源；用途映射见 `docs/brand-assets.md`。
 //
 // 本脚本只负责"字标域"的资源：
 //
@@ -35,7 +34,13 @@ const outExplore = path.join(root, 'brand', 'explore');
 const stage = path.join(root, '.build-cache', 'brand-render', 'page.html');
 
 // 与 src/ui/brand.ts / prepare-visual-assets.py 一致的灰绿字标墨色。
-const MONO = '#365653';
+// 视觉常量与路径定义在 scripts/brand-paths.mjs（品牌资源单一来源）。
+let BP;
+function monoHex() {
+  const [r, g, b] = BP.MONO_INK;
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+let MONO = '#365653';
 const MONO_WHITE = '#F7FAFA';
 
 function write(file, data) {
@@ -75,6 +80,8 @@ function page(body, width, height, background = 'transparent') {
 async function main() {
   await app.whenReady();
   const brand = await import('./brand-mark.mjs');
+  BP = (await import('./brand-paths.mjs')).BRAND;
+  MONO = monoHex();
   const win = new BrowserWindow({
     width: 1024,
     height: 1024,

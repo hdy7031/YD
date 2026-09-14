@@ -1,12 +1,17 @@
 """为 NSIS 助手式安装向导生成品牌位图（header / sidebar）。
 
-只使用 24 位未压缩 BMP：NSIS 2 的向导位图不支持 alpha 通道，带 alpha 的
-PNG/32 位 BMP 会被渲染成黑块或白块。这里统一在暖雾底色上作画，避免透明
-边缘在半透明处露出白色轮廓。
+风格：暖雾白底 + 深灰青 YD 字标 + 鼠尾草细线，安静、克制、留白。
+与程序图标、托盘、界面标题栏同属一套视觉，不使用旧版金 / 绿素材。
 
-输出：
-  brand/installer/header.bmp   150 x 57   （页眉条）
-  brand/installer/sidebar.bmp  164 x 314  （左侧竖幅）
+输出（24 位未压缩 BMP，NSIS 2 不支持 alpha，带 alpha 会渲染成黑块）：
+
+    brand/installer/header.bmp   150 x 57   页眉条
+    brand/installer/sidebar.bmp  164 x 314  左侧竖幅
+
+字标来自品牌资源单一来源：``brand/exports/png/yd-mono-128.png``（单色深灰青），
+由 ``scripts/brand-render.cjs`` 从 ``brand/source/yd-logo-mist-master.png`` 生成。
+安装器图标（installerIcon / uninstallerIcon）与程序图标共用 ``brand/exports/yd.ico``，
+配置见 package.json 的 nsis 段。
 
 运行：python scripts/installer-brand-assets.py
 """
@@ -18,127 +23,99 @@ import sys
 
 from PIL import Image, ImageDraw, ImageFont
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ICON_SOURCE = os.path.join(ROOT, "brand", "exports", "icon-256.png")
-MARK_SOURCE = os.path.join(ROOT, "brand", "exports", "png", "yd-64.png")
-OUT_DIR = os.path.join(ROOT, "brand", "installer")
-
-MIST = (246, 244, 238)
-MIST_DEEP = (238, 235, 226)
-MIST_LIGHT = (252, 251, 247)
-LINE = (216, 219, 208)
-SAGE = (47, 76, 61)
-SAGE_SOFT = (126, 154, 135)
-SAGE_LIGHT = (231, 237, 230)
-INK = (32, 38, 33)
-MUTED = (138, 146, 138)
+import brand_paths as bp
 
 FONT_CANDIDATES = {
-    "regular": ["segoeui.ttf", "SegUIVar.ttf", "arial.ttf", "calibri.ttf"],
+    "regular": ["segoeui.ttf", "SegUIVar.ttf", "arial.ttf"],
     "semibold": ["seguisb.ttf", "SegUIVar.ttf", "segoeuib.ttf", "arialbd.ttf"],
 }
 
 
 def load_font(style: str, size: int) -> ImageFont.FreeTypeFont:
-    candidates = FONT_CANDIDATES[style]
-    for name in candidates:
-        for root in (os.environ.get("WINDIR", r"C:\Windows"),):
-            path = os.path.join(root, "Fonts", name)
-            if os.path.exists(path):
-                try:
-                    return ImageFont.truetype(path, size)
-                except OSError:
-                    continue
+    for name in FONT_CANDIDATES[style]:
+        path = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", name)
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except OSError:
+                continue
     return ImageFont.load_default()
 
 
-def assert_brand_icon() -> None:
-    """确认用的是 VS2 绿色矢量导出，而不是旧的黄色位图主图。"""
-    if not os.path.exists(ICON_SOURCE):
+def verify_mark() -> Image.Image:
+    """字标必须存在、带 alpha、且是单色深灰青（防止误用旧的金 / 绿素材）。"""
+    if not bp.TRAY_MONO_128.exists():
         raise SystemExit(
-            f"缺少 {ICON_SOURCE}；先运行 npx electron scripts/brand-render.cjs"
+            f"缺少字标 {bp.TRAY_MONO_128}；先运行 npx electron scripts/brand-render.cjs"
         )
-    with Image.open(ICON_SOURCE) as icon:
-        rgba = icon.convert("RGBA")
-        # 取样徽记实体区（左上圆角内）而不是抗锯齿边缘。
-        sample = rgba.getpixel((rgba.width // 2, int(rgba.height * 0.08)))
-    if sample[3] < 200:
-        raise SystemExit(f"{ICON_SOURCE} 中心不是实心徽记（alpha={sample[3]}）")
-    if not (sample[1] > sample[0] + 4 and sample[1] >= sample[2]):
-        raise SystemExit(
-            f"{ICON_SOURCE} 像素 {sample[:3]} 不是 VS2 绿色徽记；"
-            "疑似旧的黄色位图导出，请重新运行 scripts/brand-render.cjs"
-        )
+    mark = Image.open(bp.TRAY_MONO_128).convert("RGBA")
+    alpha = mark.getchannel("A")
+    if alpha.getextrema()[1] < 200:
+        raise SystemExit(f"{bp.TRAY_MONO_128} 没有可用 alpha，无法用于品牌图")
+    return mark
 
 
-def vertical_gradient(size: tuple[int, int], top: tuple[int, int, int], bottom: tuple[int, int, int]) -> Image.Image:
-    """受限渐变：整幅高度只有很轻的明度变化，避免 dashboard 式重渐变。"""
+def vertical_gradient(size: tuple[int, int], top, bottom) -> Image.Image:
+    """很轻的明度渐变，避免 dashboard 式的重渐变。"""
     width, height = size
     image = Image.new("RGB", size, top)
     draw = ImageDraw.Draw(image)
     for y in range(height):
         ratio = y / max(height - 1, 1)
-        color = tuple(round(top[i] + (bottom[i] - top[i]) * ratio) for i in range(3))
-        draw.line([(0, y), (width, y)], fill=color)
+        draw.line(
+            [(0, y), (width, y)],
+            fill=tuple(round(top[i] + (bottom[i] - top[i]) * ratio) for i in range(3)),
+        )
     return image
 
 
-def paste_mark(image: Image.Image, size: int, left: int, top: int) -> None:
-    """把 VS2 矢量导出的徽记按需缩放合成，保证与产品图标同一套几何。"""
-    mark = Image.open(MARK_SOURCE).convert("RGBA")
-    if mark.size != (size, size):
-        mark = mark.resize((size, size), Image.LANCZOS)
-    image.paste(mark, (left, top), (mark.getchannel("A").point(lambda value: value)))
+def paste_mark(image: Image.Image, mark: Image.Image, size: int, left: int, top: int) -> None:
+    scaled = mark.resize((size, size), Image.LANCZOS) if mark.size != (size, size) else mark
+    image.paste(scaled, (left, top), scaled)
 
 
-def build_header() -> Image.Image:
-    """150 x 57 页眉：浅雾底 + 小徽记 + 字标，右侧留白给向导标题。"""
+def centered_text(draw: ImageDraw.ImageDraw, text: str, font, top: int, width: int, fill) -> None:
+    left, _, right, _ = draw.textbbox((0, 0), text, font=font)
+    draw.text(((width - (right - left)) / 2 - left, top), text, font=font, fill=fill)
+
+
+def build_header(mark: Image.Image) -> Image.Image:
+    """150 x 57：左侧字标 + YD / Your Day，右侧留白给向导标题。"""
     width, height = 150, 57
-    image = vertical_gradient((width, height), MIST_LIGHT, MIST).convert("RGB")
+    image = vertical_gradient((width, height), bp.MIST_LIGHT, bp.MIST)
     draw = ImageDraw.Draw(image)
-    draw.line([(0, height - 1), (width, height - 1)], fill=LINE)
+    draw.line([(0, height - 1), (width, height - 1)], fill=bp.LINE)
 
-    mark_size = 30
-    paste_mark(image, mark_size, 12, (height - mark_size) // 2)
+    paste_mark(image, mark, 30, 14, (height - 30) // 2)
+    draw = ImageDraw.Draw(image)
     wordmark = load_font("semibold", 17)
     caption = load_font("regular", 9)
-    draw.text((52, 13), "YD", font=wordmark, fill=INK)
-    draw.line([(52, 37), (74, 37)], fill=SAGE_SOFT, width=2)
-    draw.text((79, 31), "Your Day", font=caption, fill=MUTED)
+    draw.text((52, 13), "YD", font=wordmark, fill=bp.MONO_INK)
+    draw.line([(52, 37), (74, 37)], fill=bp.SAGE, width=2)
+    draw.text((79, 31), "Your Day", font=caption, fill=bp.MUTED)
     return image
 
 
-def build_sidebar() -> Image.Image:
-    """164 x 314 侧幅：暖雾底 + 徽记 + 一条秩序线 + 两行小字。"""
+def build_sidebar(mark: Image.Image) -> Image.Image:
+    """164 x 314：字标 + YD + Your Day + 秩序线 + tagline。"""
     width, height = 164, 314
-    image = vertical_gradient((width, height), MIST_LIGHT, MIST_DEEP).convert("RGB")
+    image = vertical_gradient((width, height), bp.MIST_LIGHT, bp.MIST)
     draw = ImageDraw.Draw(image)
-    draw.line([(width - 1, 0), (width - 1, height)], fill=LINE)
+    draw.line([(width - 1, 0), (width - 1, height)], fill=bp.LINE)
 
-    mark_size = 56
-    mark_x = (width - mark_size) // 2
-    paste_mark(image, mark_size, mark_x, 72)
+    paste_mark(image, mark, 56, (width - 56) // 2, 72)
+    draw = ImageDraw.Draw(image)
     wordmark = load_font("semibold", 20)
     caption = load_font("regular", 10)
-    for text, font, top in (("YD", wordmark, 148), ("Your Day", caption, 176)):
-        left, _, right, _ = draw.textbbox((0, 0), text, font=font)
-        draw.text(((width - (right - left)) / 2 - left, top), text, font=font, fill=INK if font is wordmark else MUTED)
-
-    line_width = 44
-    draw.line(
-        [((width - line_width) // 2, 205), ((width + line_width) // 2, 205)],
-        fill=SAGE_SOFT,
-        width=2,
-    )
-
     footer = load_font("regular", 10)
-    for text, top in (("quietly organized.", 224), ("day hub", 244)):
-        left, _, right, _ = draw.textbbox((0, 0), text, font=footer)
-        draw.text(((width - (right - left)) / 2 - left, top), text, font=footer, fill=MUTED)
+    centered_text(draw, "YD", wordmark, 146, width, bp.MONO_INK)
+    centered_text(draw, "Your Day", caption, 176, width, bp.MUTED)
+    draw.line([((width - 44) // 2, 205), ((width + 44) // 2, 205)], fill=bp.SAGE, width=2)
+    centered_text(draw, "your day, quietly organized.", footer, 224, width, bp.MUTED)
     return image
 
 
-def save_bmp(image: Image.Image, path: str) -> int:
+def save_bmp(image: Image.Image, path) -> int:
     image.convert("RGB").save(path, "BMP")
     with open(path, "rb") as handle:
         header = handle.read(30)
@@ -151,18 +128,19 @@ def save_bmp(image: Image.Image, path: str) -> int:
 
 
 def main() -> int:
-    assert_brand_icon()
-    os.makedirs(OUT_DIR, exist_ok=True)
-    header = build_header()
-    sidebar = build_sidebar()
+    mark = verify_mark()
+    bp.INSTALLER.mkdir(parents=True, exist_ok=True)
+    header = build_header(mark)
+    sidebar = build_sidebar(mark)
     assert header.size == (150, 57), header.size
     assert sidebar.size == (164, 314), sidebar.size
-    header_bytes = save_bmp(header, os.path.join(OUT_DIR, "header.bmp"))
-    sidebar_bytes = save_bmp(sidebar, os.path.join(OUT_DIR, "sidebar.bmp"))
+    header_bytes = save_bmp(header, bp.INSTALLER_HEADER)
+    sidebar_bytes = save_bmp(sidebar, bp.INSTALLER_SIDEBAR)
     print(
-        "安装向导品牌位图已生成：\n"
-        f"  brand/installer/header.bmp  150x57  {header_bytes} bytes\n"
-        f"  brand/installer/sidebar.bmp 164x314 {sidebar_bytes} bytes"
+        "安装器品牌位图已生成：\n"
+        f"  {bp.INSTALLER_HEADER.relative_to(bp.ROOT)}  150x57  {header_bytes} bytes\n"
+        f"  {bp.INSTALLER_SIDEBAR.relative_to(bp.ROOT)} 164x314 {sidebar_bytes} bytes\n"
+        "  字标来源：brand/exports/png/yd-mono-128.png（单色深灰青）"
     )
     return 0
 

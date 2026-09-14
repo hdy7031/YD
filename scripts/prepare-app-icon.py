@@ -32,15 +32,15 @@ from __future__ import annotations
 
 import struct
 import sys
-from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-ROOT = Path(__file__).resolve().parents[1]
-MASTER = ROOT / "brand" / "source" / "app-icon-master-v3.png"
-EXPORTS = ROOT / "brand" / "exports"
-PNG_DIR = EXPORTS / "png"
+import brand_paths as bp
+
+MASTER = bp.APP_ICON_MASTER
+EXPORTS = bp.EXPORTS
+PNG_DIR = bp.EXPORT_PNG
 
 SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256, 512)
 ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
@@ -119,9 +119,9 @@ def main() -> int:
         frames[size] = frame
         frame.save(PNG_DIR / f"yd-{size}.png", optimize=True)
 
-    frames[256].save(EXPORTS / "icon-256.png", optimize=True)
-    frames[512].save(EXPORTS / "icon-512.png", optimize=True)
-    save_bmp_icon(frames, EXPORTS / "yd.ico")
+    frames[256].save(bp.APP_ICON_PNG, optimize=True)
+    frames[512].save(bp.APP_ICON_PNG_LARGE, optimize=True)
+    save_bmp_icon(frames, bp.APP_ICON)
 
     # 自检：四角必须透明；小尺寸边缘不得出现"亮白框"。
     problems: list[str] = []
