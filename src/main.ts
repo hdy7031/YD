@@ -68,7 +68,7 @@ function pauseBubbles(minutes:number){
 function togglePetWindow(){
   if(!orb||orb.isDestroyed())return;
   if(orb.isVisible()){companion?.hideMenu();orb.hide();}
-  else{orb.showInactive();refreshTrayMenu(true);}
+  else{orb.showInactive();assertDockTopmost();refreshTrayMenu(true);}
 }
 let trayMenuPaused:boolean|undefined;
 // 托盘图标 = Asset 06 / 07（同一枚字标的深灰青 / 近白两版）。
@@ -118,8 +118,18 @@ function moveOrb(x:number,y:number,width?:number,height?:number){
   const targetWidth=width??currentWidth,targetHeight=height??currentHeight;
   // 尺寸没变时只移动位置：setBounds 会让 Windows 把透明窗口重新对齐到物理像素，
   // 拖动过程中反复调用就会出现 1px 的尺寸抖动与贴图残影。
-  if(targetWidth===currentWidth&&targetHeight===currentHeight){orb.setPosition(Math.round(x),Math.round(y));return;}
+  if(targetWidth===currentWidth&&targetHeight===currentHeight){orb.setPosition(Math.round(x),Math.round(y));assertDockTopmost();return;}
   orb.setBounds({x:Math.round(x),y:Math.round(y),width:targetWidth,height:targetHeight},false);
+  assertDockTopmost();
+}
+/**
+ * Dock 必须始终在普通桌面窗口之上。alwaysOnTop 是窗口的扩展样式位，
+ * Windows 会在 hide/show、setIgnoreMouseEvents、DPI 重新对齐等路径后丢掉它，
+ * 而它以前只在创建时设置过一次。这里在每条状态切换路径后重新断言：
+ * 只在真的丢了的时候调用一次 setAlwaysOnTop，不刷新 z-order、不抢焦点。
+ */
+function assertDockTopmost(){
+  if(orb&&!orb.isDestroyed()&&orb.isVisible()&&!orb.isAlwaysOnTop())orb.setAlwaysOnTop(true);
 }
 function canonicalOrbSize(){
   const p={...petDefaults,...store.state.settings.pet};
@@ -180,6 +190,14 @@ function setupHandlers(){
     return companion?.avatarVisualReady(ready as import('./avatar-runtime.ts').AvatarVisualReady)??false;
   });
   handler('pointer',(interactive:boolean)=>{if(typeof interactive!=='boolean')throw new Error('参数无效');});
+  // hover 收起的兜底真相来源：点击穿透窗口在变成 WS_EX_TRANSPARENT 之后可能不再
+  // 收到 pointerleave，因此渲染层在展开期间会用系统光标位置做一次兜底确认。
+  // 这里只读光标与窗口 bounds，不改变任何状态、不抢焦点。
+  handler('cursorInside',()=>{
+    if(!orb||orb.isDestroyed())return false;
+    const b=orb.getBounds(),c=screen.getCursorScreenPoint();
+    return c.x>=b.x&&c.x<b.x+b.width&&c.y>=b.y&&c.y<b.y+b.height;
+  });
   // Restrict click-through control to the sending companion window.
   ipcMain.removeHandler('dayhub:pointer');
   // 退出过程中窗口可能已经被销毁：这里先排除 destroyed 的窗口，避免把
@@ -188,6 +206,8 @@ function setupHandlers(){
     const w=[orb,companion?.bubble].find(candidate=>candidate&&!candidate.isDestroyed()&&candidate.webContents===event.sender);
     if(!w||event.senderFrame!==event.sender.mainFrame||typeof interactive!=='boolean')throw new Error('不允许的窗口操作');
     w.setIgnoreMouseEvents(!interactive,{forward:true});
+    // 点击穿透会改写窗口的扩展样式位，改完立刻确认 Dock 仍然置顶。
+    assertDockTopmost();
   });
   handler('bubble',(action:string)=>{if(!['hold','release','close'].includes(action))throw new Error('无效操作');companion?.action(action);});
   // 悬停区域可以是任意存在的档案 id（单人工作区只有一个人），由 Companion 自己校验存在性。
@@ -382,7 +402,7 @@ else{
     companion.setShortcut({label:companionToggleShortcut.label,ready:shortcutReady});
     runtimeLog(shortcutReady?'info':'warn',`桌宠显示/隐藏快捷键 ${companionToggleShortcut.label} ${shortcutReady?'已注册':'注册失败（可能被其它程序占用）'}`);
     const openedAtLogin=app.getLoginItemSettings().wasOpenedAtLogin;
-    orb.showInactive();if(showPanelOnLaunch(openedAtLogin,store.state.settings.setup))showPanel();
+    orb.showInactive();assertDockTopmost();if(showPanelOnLaunch(openedAtLogin,store.state.settings.setup))showPanel();
     runtimeLog('info',`启动显示 主窗口=${panel.isVisible()} 开机自启=${openedAtLogin}`);
     if(store.recovered)dialog.showMessageBox(panel,{type:'warning',message:'已从上一份本地副本恢复',detail:'原数据库读取失败，损坏文件已保留。请核对最近的修改。'});
     await processReminders(true);await companion.pulse(true);timer=setInterval(()=>{void processReminders();tray.setToolTip(snapshot(store.state,Date.now()).people.map(p=>`${p.alias} · ${statusLabel(p)}`).join('\n'));refreshTrayMenu();},1000);

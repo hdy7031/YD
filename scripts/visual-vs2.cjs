@@ -417,10 +417,10 @@ async function checkDuoDock(panel, dock, mini) {
   await wait(400);
   const shown = mini.isVisible();
   const cards = await mini.webContents.executeJavaScript(`(() => {
-    const cards = [...document.querySelectorAll('.mini-status-card')];
+    const cards = [...document.querySelectorAll('.detail-person')];
     return {
       cards: cards.length,
-      next: document.querySelectorAll('.mini-next').length,
+      next: document.querySelectorAll('.detail-next').length,
       people: cards.map(card => card.dataset.person),
       hasUndefined: /undefined/.test(document.body.innerText),
     };
@@ -474,17 +474,17 @@ async function checkSoloDock(dock, mini) {
   await dock.webContents.executeJavaScript(`document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('click', { bubbles: true }))`);
   await wait(400);
   const cards = await mini.webContents.executeJavaScript(`(() => {
-    const cards = [...document.querySelectorAll('.mini-status-card')];
+    const cards = [...document.querySelectorAll('.detail-person')];
     return {
       visible: true,
       cards: cards.length,
       width: cards[0]?.getBoundingClientRect().width ?? 0,
-      grid: document.querySelector('.mini-status-grid') ? document.querySelector('.mini-status-grid').getBoundingClientRect().width : 0,
+      grid: document.querySelector('.mini-grid') ? document.querySelector('.mini-grid').getBoundingClientRect().width : 0,
       hasUndefined: /undefined/.test(document.body.innerText),
     };
   })()`);
-  check('Solo Mini 只有一张状态卡', mini.isVisible() && cards.cards === 1, JSON.stringify(cards));
-  check('Solo Mini 状态卡铺满一行', cards.width >= cards.grid * 0.8, JSON.stringify({ card: cards.width, grid: cards.grid }));
+  check('Solo Mini 只有一个平级人物区', mini.isVisible() && cards.cards === 1, JSON.stringify(cards));
+  check('Solo Mini 人物区铺满一行', cards.width >= cards.grid * 0.8, JSON.stringify({ card: cards.width, grid: cards.grid }));
   check('Solo Mini 文案不含 undefined', !cards.hasUndefined);
   fs.writeFileSync(path.join(output, 'solo-mini.png'), (await mini.capturePage()).toPNG());
   check('Solo Dock 点击不改变外框几何', Math.abs(dock.getBounds().width - handle.width) <= 8 && dock.getBounds().height === handle.height);

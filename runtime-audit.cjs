@@ -56,7 +56,7 @@ app.whenReady().then(async()=>{
   await orb.webContents.executeJavaScript("window.dayhub.window('open')");await wait(200);check('桌宠重新打开主窗口',panel.isVisible()&&!panel.isMinimized());
   await run("document.querySelector('[aria-label=\"收起到托盘\"]').click()");check('关闭收起到托盘',!panel.isVisible()&&orb.isVisible());
   await orb.webContents.executeJavaScript("document.querySelector('.companion-rail-button').click()");await wait(100);check('单击打开双方小面板',mini.isVisible());
-  // Asset 04 收口后的详情面板：卡片 560×350，窗口 584×391（窗外留阴影画布与底部指示三角）。
+  // Dock 重建后的详情浮层：卡片 308×144，窗口 316×162（阴影画布 + 底部指示三角）。
   check('双方小面板紧凑且内容完整',mini.getSize()[0]<=600&&mini.getSize()[1]<=400&&await mini.webContents.executeJavaScript("document.documentElement.scrollHeight<=document.documentElement.clientHeight"));
   fs.writeFileSync(path.join(output,'mini.png'),(await mini.webContents.capturePage()).toPNG());
   await mini.webContents.executeJavaScript("window.dayhub.window('settings')");await wait(100);check('桌宠设置导航',await run("document.querySelector('h1').textContent==='设置与备份'"));
@@ -69,7 +69,8 @@ app.whenReady().then(async()=>{
   check('状态 Dock 双人平级结构：短标签来自档案',await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row').length===2&&document.querySelectorAll('.status-core').length===2")&&dockLabels.join('|')==='D|Y','labels='+dockLabels.join('|'));
   const dockBox=await orb.webContents.executeJavaScript("(()=>{const s=document.querySelector('.dock-surface').getBoundingClientRect();return {width:s.width,height:s.height,radius:getComputedStyle(document.querySelector('.dock-surface')).borderRadius}})()");console.log('dock',dockBox);
   // 检查的是可见表面（.dock-surface）；窗口本身比它大约 8px，作为阴影 / 圆角安全区。
-  check('状态浮标是校正后的圆角状态牌',dockBox.width>=266&&dockBox.width<=270&&dockBox.height>=48&&dockBox.height<=52&&dockBox.width>dockBox.height&&parseFloat(dockBox.radius)>=14,JSON.stringify(dockBox));
+  // 牌面 = 窗口 − 8px 阴影画布；中档默认态 176×36（窗口 220×54，hover 在画布内生长）。
+  check('状态浮标是校正后的圆角状态牌',dockBox.width>=174&&dockBox.width<=178&&dockBox.height>=34&&dockBox.height<=38&&dockBox.width>dockBox.height&&parseFloat(dockBox.radius)>=999*0.9,JSON.stringify(dockBox));
   const dockRows=await orb.webContents.executeJavaScript("(()=>{const rows=[...document.querySelectorAll('.dock-row')].map(r=>r.getBoundingClientRect()),s=document.querySelector('.dock-surface').getBoundingClientRect();return {rows:rows.map(r=>({top:r.top,left:r.left,width:r.width,height:r.height})),surface:{left:s.left,width:s.width}}})()");console.log('dock rows',dockRows);
   check('两个 person item 在同一水平面并由中线分隔',dockRows.rows.every(r=>r.left>=dockRows.surface.left-.5&&r.left+r.width<=dockRows.surface.left+dockRows.surface.width+.5)&&Math.abs(dockRows.rows[0].top-dockRows.rows[1].top)<1&&dockRows.rows[0].left<dockRows.rows[1].left);
   check('旧球体结构与原生title均已删除',await orb.webContents.executeJavaScript("!document.querySelector('.presence-orb,.presence-surface,.identity-mark,.presence-seam')&&!document.querySelector('.pet-handle').hasAttribute('title')"));
@@ -86,13 +87,13 @@ app.whenReady().then(async()=>{
     zones=await orb.webContents.executeJavaScript("!!document.querySelector('.dock-row.presence-me.state-busy')&&!!document.querySelector('.dock-row.presence-partner.state-focus')");
   }
   check('忙碌与专注状态映射到独立状态核心',zones);
-  await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(80);check('CASE 1 hover 只展开内部信息且外框不变',!tip.isVisible()&&Math.abs(orb.getSize()[0]-276)<=8&&orb.getSize()[1]===78&&await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row.is-hovered').length===1"));
+  await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(80);check('CASE 1 hover 只展开内部信息且外框不变',!tip.isVisible()&&Math.abs(orb.getSize()[0]-220)<=8&&orb.getSize()[1]===54&&await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row.is-hovered').length===1"));
   check('内部补充信息无 undefined',await orb.webContents.executeJavaScript("!!document.querySelector('.dock-row.is-hovered .dock-extra')&&!document.body.textContent.includes('undefined')"));
-  await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");await wait(80);check('CASE 2 离开后外框仍保持固定且无 tooltip',!tip.isVisible()&&Math.abs(orb.getSize()[0]-276)<=8&&orb.getSize()[1]===78);
+  await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");await wait(80);check('CASE 2 离开后外框仍保持固定且无 tooltip',!tip.isVisible()&&Math.abs(orb.getSize()[0]-220)<=8&&orb.getSize()[1]===54);
   // Windows 会把透明无边框窗口对齐到物理像素栅格（DPI 缩放下会 ±几 px），
   // 因此窗口尺寸允许物理像素取整；Dock 的固定布局常量由 layout 单测锁定。
   const beforeDrag=orb.getBounds();
-  check('状态浮标窗口为固定圆角状态牌',Math.abs(beforeDrag.width-276)<=8&&beforeDrag.height===78,JSON.stringify({width:beforeDrag.width,height:beforeDrag.height}));
+  check('状态浮标窗口为固定圆角状态牌',Math.abs(beforeDrag.width-220)<=8&&beforeDrag.height===54,JSON.stringify({width:beforeDrag.width,height:beforeDrag.height}));
   const pointer={x:beforeDrag.x+Math.round(beforeDrag.width/2),y:beforeDrag.y+Math.round(beforeDrag.height/2)};
   await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(30);
   await orb.webContents.executeJavaScript(`window.dayhub.beginDrag(${pointer.x},${pointer.y})`);

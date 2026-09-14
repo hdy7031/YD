@@ -3,7 +3,7 @@ import { BrowserWindow, screen } from 'electron';
 import { snapshot, bubbleEvents, petDefaults, presenceStateFor, statusLabel, type LiveSnapshot, type PresenceState } from './live.ts';
 import { CompanionTimeline } from './companion-display.ts';
 import { buildCompanionMenu, companionMenuHeight, companionMenuMetrics, companionToggleShortcut } from './companion-menu.ts';
-import { companionGeometry } from './companion-layout.ts';
+import { companionGeometry, detailGeometry } from './companion-layout.ts';
 import { DEFAULT_AVATAR_PACK_ID, resolveAvatarPack } from './avatar.ts';
 import type { AvatarVisualReady } from './avatar-runtime.ts';
 import { resolvePetInstance } from './pet-instance.ts';
@@ -31,7 +31,10 @@ export class Companion {
     // 阴影只由 renderer 的 CSS 在窗口内绘制。
     this.bubble=new BrowserWindow({...options,width:330,height:180,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false,hasShadow:false,roundedCorners:false});
     const soloMini=this.store.state.profiles.length<=1;
-    this.mini=new BrowserWindow({...options,width:soloMini?288:300,height:soloMini?216:236,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,hasShadow:false,roundedCorners:false});
+    // 详情浮层是 Dock 的 owner window（parent: orb）：它永远跟着 Dock 的 z-order，
+    // 不会变成第二个无主透明窗口去和桌面上的浏览器抢层级。
+    const detail=detailGeometry(soloMini?1:2);
+    this.mini=new BrowserWindow({...options,parent:this.orb,width:detail.width,height:detail.height,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,hasShadow:false,roundedCorners:false});
     this.tip=new BrowserWindow({...options,width:150,height:32,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false,hasShadow:false,roundedCorners:false});
     // 右键菜单是自绘窗口：原生菜单无法沿用 YD 的字体、间距与品牌层级。
     // 它需要真正的焦点才能“点外面自动收起”，所以不加入点击穿透名单。
@@ -40,8 +43,16 @@ export class Companion {
     lock(this.bubble);lock(this.mini);lock(this.tip);lock(this.sheet);
     this.mini.on('blur',()=>this.mini.hide());
     this.mini.on('close',e=>{if(!this.closing){e.preventDefault();this.mini.hide();}});
+    // 详情浮层的可见性就是 Dock 的 collapsed / detail 状态来源，因此每一条隐藏路径
+    // （blur、Dock 收起、外部代码、切换到主窗口）都必须广播一次，渲染层才不会
+    // 永远停在 detail 上。
+    this.mini.on('hide',()=>this.broadcast());
     this.orb.on('hide',()=>{this.bubble.hide();this.mini.hide();this.tip.hide();});
     this.orb.on('blur',()=>this.clearPresence());
+    // Windows 上窗口的 z-order 样式位会被 hide/show、setIgnoreMouseEvents 等路径改写，
+    // 而 alwaysOnTop 只在创建时设置过一次。每次窗口重新出现（以及移动 / 缩放之后）
+    // 都重新断言一遍，避免 Dock 偶尔被普通窗口盖住。
+    this.orb.on('show',()=>this.ensureTopmost());
     // 桌宠移动或收起时，右键菜单不能再悬在原处。
     this.orb.on('move',()=>{this.hideMenu();this.position();});
     this.orb.on('hide',()=>this.hideMenu());
@@ -66,7 +77,7 @@ export class Companion {
     const now=Date.now();
     this.timeline.sync(pendingReminders(this.store.state).length,now);
     // 姿态由统一状态引擎在 snapshot() 内计算；这里只传提醒相关的表现层状态。
-    return {...snapshot(this.store.state,now,this.timeline.state()),bubble:this.active?{...this.active,below:this.bubble.getBounds().y>this.orb.getBounds().y}:undefined,hoverTip:this.hoverTip};
+    return {...snapshot(this.store.state,now,this.timeline.state()),detail:this.detailOpen(),bubble:this.active?{...this.active,below:this.bubble.getBounds().y>this.orb.getBounds().y}:undefined,hoverTip:this.hoverTip};
   }
   broadcast(){
     // 悬停提示只描述仍然存在的档案：档案消失（例如以后移除同行者）时安静收起，
@@ -84,12 +95,24 @@ export class Companion {
     const {width,height}=companionGeometry(mode,p.size,pack.canvas.width/pack.canvas.height,people,false);
     return {width,height};
   }
+  /**
+   * 常驻窗口（Dock / 详情浮层 / 气泡 / 提示）都必须在普通桌面窗口之上。
+   * 这里只重新断言一次已经丢失 / 从未设置的窗口，不刷新 z-order、不抢焦点，
+   * 因此既不会打断用户输入，也不需要 setInterval 强行 bringToFront。
+   */
+  private ensureTopmost(){
+    for(const w of [this.orb,this.mini,this.bubble,this.tip]){
+      if(w.isDestroyed()||!w.isVisible())continue;
+      if(!w.isAlwaysOnTop())w.setAlwaysOnTop(true);
+    }
+  }
+  /** 详情浮层是否打开：Dock 的 collapsed / detail 状态由它决定。 */
+  private detailOpen(){return !this.mini.isDestroyed()&&this.mini.isVisible();}
   private resizeMini(){
-    // 详情面板按参考稿 1:1 复刻，窗口 = 卡片 + 阴影画布（四周 12px）+ 底部指示三角（27px）：
-    //   Together（Asset 04）：卡片 560×350（比参考稿宽 40px，只为容纳真实中英混排标题）
-    //   Solo（单人参照图）  ：卡片 620×340
+    // 详情浮层是轻量 popover：窗口 = 卡片 + 8px 阴影画布。
+    //   Together 316×152 / Solo 276×136（Solo 是独立配比，不是砍掉半边）
     const solo=this.store.state.profiles.length<=1;
-    const [width,height]=solo?[644,383]:[584,391];
+    const {width,height}=detailGeometry(solo?1:2);
     if(this.mini.getSize()[0]!==width||this.mini.getSize()[1]!==height){
       this.mini.setResizable(true);
       this.mini.setSize(width,height,false);
@@ -107,11 +130,13 @@ export class Companion {
     // 物理像素栅格，重复调用会带来 1px 抖动与多余的透明合成。
     const key=`${width}x${height}`;
     if(key===this.applied){this.position();return;}
-    // Keep the character's feet on the same spot: the bottom edge stays put and
-    // the window is re-centred horizontally, so switching size or mode never
-    // makes the pet jump to another corner of the screen.
-    let x=Math.round(before.x+(before.width-width)/2),y=Math.round(before.y+before.height-height);
+    // 保持用户停靠的那条边：靠右下角的 Dock 改尺寸时右边缘与底边不动（向左 / 上生长），
+    // 靠左上角时相反。以前是"水平居中 + 底边固定"，尺寸变化会让 Dock 从两侧一起长，
+    // 视觉上就像桌面上的 Dock 在漂。
     const display=screen.getDisplayMatching(before).workArea;
+    const keepRight=before.x+before.width/2>=display.x+display.width/2;
+    const keepBottom=before.y+before.height/2>=display.y+display.height/2;
+    let x=Math.round(keepRight?before.x+before.width-width:before.x),y=Math.round(keepBottom?before.y+before.height-height:before.y);
     x=Math.max(display.x,Math.min(x,display.x+display.width-width));
     y=Math.max(display.y,Math.min(y,display.y+display.height-height));
     // 不切换 resizable：Windows 会因此改动窗口样式位并让透明窗口重新对齐，
@@ -121,6 +146,7 @@ export class Companion {
     // 因此这里不能再对透明 Dock 使用 BrowserWindow.setShape()。
     this.orb.setBounds({x,y,width,height},false);
     this.applied=key;
+    this.ensureTopmost();
     this.position();this.broadcast();
   }
   /** Renderer calls this only after new Pack images have loaded and decoded. */
@@ -154,7 +180,7 @@ export class Companion {
     }
     if(this.hoverTip){const [width,height]=this.tip.getSize(),side=this.hoverTip.side;let x=b.x+b.width*side-width/2,y=b.y+b.height+3;if(y+height>a.y+a.height)y=b.y-height-3;x=Math.max(a.x,Math.min(x,a.x+a.width-width));y=Math.max(a.y,Math.min(y,a.y+a.height-height));this.tip.setPosition(Math.round(x),Math.round(y));}
   }
-  toggleMini(){const p={...petDefaults,...this.store.state.settings.pet};if(this.mini.isVisible()){this.mini.hide();return;}this.clearPresence();if(!p.miniPanel){this.panel.show();this.panel.focus();return;}this.resizeMini();this.position();this.broadcast();this.mini.show();}
+  toggleMini(){const p={...petDefaults,...this.store.state.settings.pet};if(this.mini.isVisible()){this.mini.hide();this.broadcast();return;}this.clearPresence();if(!p.miniPanel){this.panel.show();this.panel.focus();return;}this.resizeMini();this.position();this.broadcast();this.mini.show();this.ensureTopmost();this.broadcast();}
   // 主进程注册全局快捷键后把结果告诉桌宠：菜单右侧的提示文字与真实可用性一致。
   setShortcut(shortcut:{label:string;ready:boolean}){this.shortcut=shortcut;}
   // 打开设置 / 退出 / 显示隐藏桌宠由 main 负责，这里只负责转达。
@@ -224,6 +250,7 @@ export class Companion {
     // A normal drag never writes width/height back. Only a real settings change
     // deferred during the drag may apply a new canonical geometry afterwards.
     if(this.pendingResize){this.pendingResize=false;this.applied='';this.resize();}
+    this.ensureTopmost();
   }
   private clearPresence(){const changed=!!this.hoverTip||this.tip.isVisible();this.hoverTip=undefined;this.tip.hide();if(changed)this.broadcast();}
   private next(){if(this.active||!this.queue.length)return;this.active=this.queue.shift();this.expires=Date.now()+(this.store.state.settings.pet?.duration??8)*1000;this.position();if(this.orb.isVisible())this.bubble.showInactive();}

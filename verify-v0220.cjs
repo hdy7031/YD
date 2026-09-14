@@ -166,9 +166,9 @@ app.whenReady().then(async()=>{
     await menu("[...document.querySelectorAll('.pet-menu-item')].find(b=>b.querySelector('.pet-menu-label').textContent.trim()==='显示为状态浮标').click()");
     await wait(600);
     const dockSize=orb.getSize();
-    // Together 的两个 person item 使用布局常量宽 276；Windows 会把透明无边框窗口的
+    // Together 的展开态画布宽 220（默认牌面 176 在画布内向右下收拢）；Windows 会把透明无边框窗口的
     // 客户区对齐到物理像素，150% DPI 下取整到 277，因此按物理像素取整给容差。
-    check('从菜单切到状态浮标（Dual Status Dock）',!menuWindow.isVisible()&&dockSize[0]>dockSize[1]&&Math.abs(dockSize[0]-276)<=8&&dockSize[1]===58&&await pet("!!document.querySelector('.dock-surface')&&document.querySelectorAll('.dock-row').length===2"),dockSize.join('x'));
+    check('从菜单切到状态浮标（Dual Status Dock）',!menuWindow.isVisible()&&dockSize[0]>dockSize[1]&&Math.abs(dockSize[0]-220)<=8&&dockSize[1]===54&&await pet("!!document.querySelector('.dock-surface')&&document.querySelectorAll('.dock-row').length===2"),dockSize.join('x'));
     await pet("window.dayhub.window('menu')");await wait(400);
     await menu("[...document.querySelectorAll('.pet-menu-item')].find(b=>b.querySelector('.pet-menu-label').textContent.trim()==='显示为桌宠').click()");
     await wait(600);

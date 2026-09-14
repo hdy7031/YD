@@ -98,21 +98,21 @@ app.whenReady().then(async () => {
     await orb.webContents.executeJavaScript("window.dayhub.presence('enter','alex')");
     await wait(250);
     check('Solo hover 只展开内部信息，164×70 外框保持不变', !tip.isVisible()&&Math.abs(orb.getSize()[0]-164)<=2&&Math.abs(orb.getSize()[1]-70)<=2,JSON.stringify(orb.getSize()));
-    check('Solo hover 补充信息短而完整',await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row.is-hovered').length===1&&!!document.querySelector('.dock-extra')&&!document.body.textContent.includes('undefined')"));
+    check('Solo hover 补充信息短而完整',await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row.is-hovered').length===1&&!!document.querySelector('.dock-extra')&&document.querySelector('.dock-extra').textContent.trim().length>1&&!document.body.textContent.includes('undefined')"));
     fs.writeFileSync(path.join(output,'dock-solo-hover.png'),(await orb.capturePage()).toPNG());
     check('不存在的状态区域被拒绝而不是崩溃', await orb.webContents.executeJavaScript("window.dayhub.presence('enter','partner').then(()=>false).catch(()=>true)"));
     await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");
     await wait(180);
-    check('Solo hover 离开后外框稳定且无残留',!tip.isVisible()&&Math.abs(orb.getSize()[0]-164)<=2&&Math.abs(orb.getSize()[1]-70)<=2&&await orb.webContents.executeJavaScript("!document.querySelector('.dock-row.is-hovered')"));
+    check('Solo hover 离开后外框稳定且无残留',!tip.isVisible()&&Math.abs(orb.getSize()[0]-196)<=2&&Math.abs(orb.getSize()[1]-54)<=2&&await orb.webContents.executeJavaScript("!document.querySelector('.dock-row.is-hovered')"));
 
     /* ---------- Mini / Menu ---------- */
     await orb.webContents.executeJavaScript("window.dayhub.window('mini')");
     await wait(300);
-    check('mini 面板打开且只有一条状态', mini.isVisible() && await mini.webContents.executeJavaScript("document.querySelectorAll('.mini-status-card').length===1"));
-    // Solo 详情面板按单人参照图复刻：标题「我的 · 此刻」，一块状态块 + 一块下一项块。
-    check('mini 标题与结构是专门的 Solo 详情态', await mini.webContents.executeJavaScript("document.querySelector('h2')?.textContent==='我的 · 此刻'&&document.querySelectorAll('.mini-status-card').length===1&&document.querySelectorAll('.mini-next').length===1&&!!document.querySelector('.solo-open')"));
-    // Solo 详情面板按单人参照图复刻：卡片 620×340 + 阴影画布 + 底部指示三角（窗口 644×383）。
-    check('mini 使用完整宽度且没有空白第二列',Math.abs(mini.getSize()[0]-644)<=2&&Math.abs(mini.getSize()[1]-383)<=2&&await mini.webContents.executeJavaScript("(()=>{const panel=document.querySelector('.mini-panel'),block=document.querySelector('.solo-state');if(!panel||!block)return false;return block.getBoundingClientRect().width>=panel.getBoundingClientRect().width*0.8})()"),JSON.stringify(mini.getSize()));
+    check('mini 浮层打开且只有一个人物区', mini.isVisible() && await mini.webContents.executeJavaScript("document.querySelectorAll('.detail-person').length===1"));
+    // Solo 详情是独立设计的轻浮层（标题「此刻」+ 一块人物区 + 一条下一项），不是砍掉半边的 Together。
+    check('mini 标题与结构是专门的 Solo 详情态', await mini.webContents.executeJavaScript("document.querySelector('.mini-head h2')?.textContent==='此刻'&&document.querySelectorAll('.detail-person').length===1&&document.querySelectorAll('.detail-next').length===1&&!document.querySelector('.detail-foot')&&!document.querySelector('.mini-grid .detail-person + .detail-person')"));
+    // Solo 浮层：卡片 268×128 + 阴影画布 + 底部指示三角（窗口 276×146），内容占满宽度。
+    check('mini 使用完整宽度且没有空白第二列',Math.abs(mini.getSize()[0]-276)<=2&&Math.abs(mini.getSize()[1]-146)<=2&&await mini.webContents.executeJavaScript("(()=>{const panel=document.querySelector('.mini-panel'),block=document.querySelector('.detail-person');if(!panel||!block)return false;return block.getBoundingClientRect().width>=panel.getBoundingClientRect().width*0.75})()"),JSON.stringify(mini.getSize()));
     check('mini 没有 undefined', await mini.webContents.executeJavaScript("!document.body.textContent.includes('undefined')"));
     fs.writeFileSync(path.join(output,'dock-solo-mini.png'),(await mini.capturePage()).toPNG());
     await orb.webContents.executeJavaScript("window.dayhub.window('menu')");
