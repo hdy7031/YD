@@ -80,16 +80,13 @@ def main() -> None:
             save_scaled(cleaned, RUNTIME / f"{name}.png", (width, height))
             continue
         if name == "app-icon-master":
+            # 界面侧只需 512 版参考图；程序图标（yd.ico / icon-256 / icon-512 /
+            # png/yd-*.png）由 scripts/prepare-app-icon.py 从定稿母版
+            # brand/source/app-icon-master-v2.png 导出——那种"整张画布直接缩放"
+            # 的做法会让不透明浅底在 Windows 上渲染成白方块。
             icon = cleaned.resize((1024, 1024), Image.Resampling.LANCZOS)
             save_scaled(icon, RUNTIME / "app-icon-master.png", (512, 512))
-            exports = ROOT / "brand" / "exports"
-            png = exports / "png"
-            png.mkdir(parents=True, exist_ok=True)
-            for size in (16, 20, 24, 32, 40, 48, 64, 128, 256, 512):
-                save_scaled(icon, png / f"yd-{size}.png", (size, size))
-            save_scaled(icon, exports / "icon-256.png", (256, 256))
-            save_scaled(icon, exports / "icon-512.png", (512, 512))
-            icon.save(exports / "yd.ico", sizes=[(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48), (64, 64), (128, 128), (256, 256)])
+            print("提示：程序图标请运行 python scripts/prepare-app-icon.py")
             continue
         subject = crop_subject(cleaned)
         save_scaled(subject, RUNTIME / f"{name}.png", (512, 512))

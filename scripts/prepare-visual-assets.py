@@ -1,13 +1,18 @@
-"""Prepare the user supplied YD mark for UI, Windows icon and tray use.
+"""Prepare the user supplied YD mark for UI and tray use.
 
 This script only cleans, crops and exports the supplied artwork. It does not
 redraw the YD geometry. The largest connected alpha component is retained so
 isolated extraction specks do not become part of the production mark.
+
+程序图标（Windows .ico / 窗口图标 / 安装包图标）不在这里导出：它必须来自定稿母版
+``brand/source/app-icon-master-v2.png``，并由 ``scripts/prepare-app-icon.py`` 按瓦片
+几何重建 alpha 圆角。把字标直接缩放的旧做法会让不透明浅底在 Windows 上渲染成
+"白方块 + 白边"，历史上曾经覆盖过一次定稿资源。
 """
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 from scipy import ndimage
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +21,6 @@ MASTER = ROOT / "brand" / "source" / "yd-logo-mist-master.png"
 MONO = ROOT / "src" / "ui" / "assets" / "gen" / "yd-logo-mono.png"
 MONO_WHITE = ROOT / "src" / "ui" / "assets" / "gen" / "yd-logo-mono-white.png"
 UI_MARK = ROOT / "src" / "ui" / "assets" / "gen" / "yd-logo-gradient.png"
-APP_MASTER = ROOT / "brand" / "source" / "yd-app-icon-mist-master.png"
 OUT = ROOT / "brand" / "exports"
 OUT_PNG = OUT / "png"
 
@@ -50,19 +54,6 @@ def recolor(mark: Image.Image, color: tuple[int, int, int]) -> Image.Image:
     return solid
 
 
-def app_tile(mark: Image.Image) -> Image.Image:
-    size = 1024
-    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    tile = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(tile)
-    draw.rounded_rectangle((36, 36, size - 36, size - 36), radius=218, fill="#F3F6F7", outline="#D6E1E1", width=4)
-    canvas.alpha_composite(tile)
-    fitted = mark.copy()
-    fitted.thumbnail((758, 758), Image.Resampling.LANCZOS)
-    canvas.alpha_composite(fitted, ((size - fitted.width) // 2, (size - fitted.height) // 2 + 8))
-    return canvas
-
-
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     OUT_PNG.mkdir(parents=True, exist_ok=True)
@@ -75,12 +66,10 @@ def main() -> None:
     mono.resize((512, 512), Image.Resampling.LANCZOS).save(MONO, optimize=True)
     white.resize((512, 512), Image.Resampling.LANCZOS).save(MONO_WHITE, optimize=True)
 
-    icon = app_tile(mark)
-    icon.save(APP_MASTER)
-    for size in (16, 20, 24, 32, 40, 48, 64, 128, 256, 512):
-        icon.resize((size, size), Image.Resampling.LANCZOS).save(OUT_PNG / f"yd-{size}.png", optimize=True)
-    icon.resize((512, 512), Image.Resampling.LANCZOS).save(OUT / "icon-512.png", optimize=True)
-    icon.resize((256, 256), Image.Resampling.LANCZOS).save(OUT / "icon-256.png", optimize=True)
+    # 程序图标（yd.ico / icon-256 / icon-512 / png/yd-*.png）不在这里生成：
+    # 它必须来自定稿母版 `brand/source/app-icon-master-v2.png`，并由
+    # `scripts/prepare-app-icon.py` 重建 alpha 圆角。字标直接缩放的旧做法会把
+    # 不透明浅底渲染成"白方块 + 白边"。这里只保留界面侧字标资源。
     mono.resize((32, 32), Image.Resampling.LANCZOS).save(OUT / "tray-32.png", optimize=True)
     for size in (16, 24, 32):
         mono.resize((size, size), Image.Resampling.LANCZOS).save(OUT_PNG / f"tray-{size}.png", optimize=True)

@@ -25,23 +25,38 @@ YD / Your Day —— `your day, quietly organized.`
 
 | 文件 | 用途 |
 | --- | --- |
-| `exports/svg/yd-mark.svg` | 主标（深鼠尾草底 + 瓷白字标），SVG 主文件 |
-| `exports/svg/yd-mark-small.svg` | 小尺寸专用字面（16–24px） |
-| `exports/svg/yd-mark-porcelain.svg` | 浅底版（瓷白底 + 深绿字标） |
-| `exports/svg/yd-mark-mono.svg` | 单色版（字标挖空，只需一种颜色） |
+| `source/app-icon-master-v2.png` | **程序图标定稿母版**（瓷白软方瓦片 + 灰 / 鼠尾草 YD 字标） |
+| `exports/yd.ico` | Windows 程序图标（16/20/24/32/40/48/64/128/256 九层，含 125% DPI 档） |
+| `exports/icon-256.png` / `icon-512.png` | 窗口图标与商店 / 文档用大图 |
+| `exports/png/yd-16…512.png` | 程序图标多尺寸 PNG（≤24 用硬边圆角，≥32 带投影） |
 | `exports/svg/yd-mark-glyph.svg` / `-porcelain.svg` | 纯字标，用于水印与标题栏 |
-| `exports/png/yd-16…512.png` | 多尺寸 PNG（≤24 用 small 字面） |
-| `exports/png/yd-mono-*.png` | 单色 PNG |
-| `exports/yd.ico` | Windows 程序图标（16/24/32/48/64/128/256 七层） |
-| `exports/tray-32.png` | 任务栏 / 托盘（32px 光栅） |
-| `exports/icon-256.png` / `icon-512.png` | 应用主图标 PNG |
-| `explore/directions.png` | 方向探索与尺寸自检图（A 软方徽记 / B 字标优先 / C 圆徽记） |
+| `exports/svg/yd-mark-mono.svg` | 单色字标（字标挖空，只需一种颜色） |
+| `exports/tray-32.png`、`exports/png/tray-16/24.png` | 托盘 / 任务栏单色字标 |
+| `exports/png/tray-white-*.png` | 深色任务栏备用白色字标 |
+| `exports/png/yd-mono-*.png` | 界面侧单色字标 PNG |
+| `explore/directions.png` | 托盘字标的尺寸自检图（浅底 / 深底） |
+
+### 图标导出链路
+
+程序图标与字标是两条独立的链，不要互相覆盖：
+
+| 链路 | 入口脚本 | 产物 |
+| --- | --- | --- |
+| 程序图标 | `python scripts/prepare-app-icon.py` | `yd.ico`、`icon-256/512.png`、`png/yd-*.png` |
+| 字标 / 托盘 | `npx electron scripts/brand-render.cjs` | `tray-*.png`、`yd-mono-*.png`、`svg/yd-mark-*.svg` |
+| 界面字标 PNG | `python scripts/prepare-visual-assets.py` | `src/ui/assets/gen/yd-logo-*.png` |
+
+**程序图标必须从 `app-icon-master-v2.png` 导出。** 该母版是**完全不透明**的位图：
+瓦片之外仍有一圈浅色垫底与右下投影。若把整张画布直接缩放成图标，Windows 会把整块
+方形当成图标实体，浅白近白底在桌面 / 任务栏 / Alt+Tab 上表现为"白方块 + 白边"
+（0.2.21 的实际缺陷）。`prepare-app-icon.py` 因此按瓦片真实几何（占画布 88%、
+圆角约边长 27%）重建 alpha：≥32px 保留投影，≤24px 只保留硬边圆角。
 
 ### 尺寸与底色
 
-- 桌面与安装包：深鼠尾草徽记在任何壁纸、任务栏明暗下都成立。
-- 侧栏：浅底（暖雾白 `#FAF9F5 → #F2F0E9`）上用同款深绿徽记，字标为瓷白；纯单色场景用 `-mono` / `-porcelain` 变体。
-- 托盘：使用 32px 图层，Windows 会按 DPI 缩放到 16/20/24，笔画仍可辨认。
+- 桌面与安装包：瓷白瓦片 + 灰 / 鼠尾草字标；四角必须透明，否则浅底会渲染成白方块。
+- 侧栏：浅底（暖雾白 `#FAF9F5 → #F2F0E9`）上用同款字标；纯单色场景用 `-mono` / `-porcelain` 变体。
+- 托盘：单色字标（`#365653`）在浅色任务栏、白色字标在深色任务栏；小尺寸用加粗字面。
 - 最小可用尺寸 16px；低于 16px 请改用纯字标（`yd-mark-glyph`）。
 
 ## 3. 品牌图形语言
