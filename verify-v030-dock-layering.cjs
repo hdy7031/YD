@@ -10,7 +10,7 @@
 //   3. 白色网页上 Dock 四周的阴影有多深？（量化 ring 亮度，用证据而不是观感。）
 //
 // 运行：npx electron verify-v030-dock-layering.cjs
-const { app, BrowserWindow, desktopCapturer, screen } = require('electron');
+const { app, BrowserWindow, desktopCapturer, nativeImage, nativeTheme, screen, Tray } = require('electron');
 const { execFileSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -202,6 +202,17 @@ async function sampleWindow(bounds, ring) {
 }
 
 async function boot(dataDir) {
+  // 记录每一次托盘换图标：用真实的 nativeImage 位图与 dist 里的托盘文件逐字节比对，
+  // 断言"系统主题 → 字标版本"的映射，而不是只看源码。
+  trayImages.length = 0;
+  if (!trayPatched) {
+    trayPatched = true;
+    const original = Tray.prototype.setImage;
+    Tray.prototype.setImage = function patchedSetImage(image) {
+      trayImages.push(image);
+      return original.call(this, image);
+    };
+  }
   configureIsolatedUserData('dock-layering', dataDir);
   app.setAppPath(root);
   require('./dist/main.cjs');
@@ -214,6 +225,18 @@ async function boot(dataDir) {
     await wait(100);
   }
   return { panel, dock };
+}
+
+const trayImages = [];
+let trayPatched = false;
+
+function bitmapOf(file) {
+  return Buffer.from(nativeImage.createFromPath(path.join(root, file)).toBitmap());
+}
+
+function trayMatches(file) {
+  const expected = bitmapOf(file);
+  return trayImages.some((image) => Buffer.from(image.toBitmap()).equals(expected));
 }
 
 const windowOf = (hash) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#' + hash));
@@ -398,6 +421,20 @@ async function run(dataDir) {
   check('深色网页上 Dock 像素仍然可见', darkSample.inner.median > 200 && darkSample.inner.min < 150, JSON.stringify({ inner: darkSample.inner, ring: darkSample.ring }));
   fs.writeFileSync(path.join(output, 'over-dark-cover.png'), darkSample.crop.toPNG());
   check('深色网页上 Dock 外圈没有明显亮边 / 脏灰 halo（ring 中位亮度 ≤ 45）', darkSample.ring.median <= 45, JSON.stringify(darkSample.ring));
+
+  /* ---------- G. 托盘：系统主题 → 字标版本（Asset 06 / 07） ---------- */
+  {
+    const original = nativeTheme.themeSource;
+    nativeTheme.themeSource = 'dark';
+    await wait(600);
+    check('切到深色系统主题后托盘换成近白字标（Asset 07）', trayMatches('dist/tray-light-16.png'), JSON.stringify({ calls: trayImages.length }));
+    nativeTheme.themeSource = 'light';
+    await wait(600);
+    check('切回浅色系统主题后托盘换回深灰青字标（Asset 06）', trayMatches('dist/tray-dark-16.png'), JSON.stringify({ calls: trayImages.length }));
+    check('主题切换只换图标、没有重建 Tray（每次切换恰好一次 setImage）', trayImages.length === 2, String(trayImages.length));
+    nativeTheme.themeSource = original;
+    await wait(300);
+  }
 
   /* ---------- F. 真实浏览器（Edge 最大化）覆盖：用户报告的原始场景 ---------- */
   const edge = launchEdge();
