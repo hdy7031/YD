@@ -19,6 +19,7 @@ import { Store } from './store.ts';
 import type { DB } from './store.ts';
 import { pack, unpack } from './backup.ts';
 import { clampToArea, resolveDragStep, type DragAnchor } from './geometry.ts';
+import { PANEL_ICON_FILE, TRAY_ICON_FILE, PRODUCT_VERSION } from './brand-assets.ts';
 import { configureLogging, installStreamGuards, logError, logLine } from './logging.ts';
 import { DOMAIN_VERSION, domainVersion, migrationSteps, runMigrations } from './migration.ts';
 import type { Command, PersonId, SchedulePackage } from './types.ts';
@@ -194,7 +195,9 @@ function setupHandlers(){
     changed();return result;
   });
   handler('toggle',()=>{if(panel.isVisible())panel.hide();else showPanel();});
-  handler('version',()=>app.getVersion());
+  // 版本来自构建时注入的产品版本（scripts/build.mjs 的 define），
+  // 开发态与打包态一致；缺失时回退到 Electron 的 app.getVersion()。
+  handler('version',()=>PRODUCT_VERSION||app.getVersion());
   handler('beginDrag',(pointerX:number,pointerY:number)=>{
     if(!Number.isFinite(pointerX)||!Number.isFinite(pointerY))throw new Error('拖动参数无效');
     const {x:windowX,y:windowY}=orb.getBounds(),{width,height}=canonicalOrbSize(),cursor=screen.getCursorScreenPoint();
@@ -292,7 +295,7 @@ else{
   app.whenReady().then(async()=>{
     data=app.getPath('userData');attachments=path.join(data,'attachments');fs.mkdirSync(attachments,{recursive:true});
     configureLogging({file:path.join(data,'dayhub.log'),mirrorConsole:!app.isPackaged});
-    runtimeLog('info',`启动 ${app.getVersion()} packaged=${app.isPackaged}`);
+    runtimeLog('info',`启动 ${PRODUCT_VERSION||app.getVersion()} packaged=${app.isPackaged}`);
     const wasmBinary=Uint8Array.from(fs.readFileSync(path.join(app.getAppPath(),'node_modules','sql.js','dist','sql-wasm.wasm'))).buffer;
     const SQL=await initSqlJs({wasmBinary});
     store=new Store(data,bytes=>new SQL.Database(bytes) as unknown as DB);
@@ -324,7 +327,7 @@ else{
     // 这样 Dock（很扁）与桌宠（较高）都不会把窗口放在工作区之外。
     const area=screen.getPrimaryDisplay().workArea,pos=clampPosition(store.state.settings.orb?.x??area.x+area.width-initial.width-24,store.state.settings.orb?.y??area.y+area.height-initial.height-24,false,initial);
     orb=new BrowserWindow({...windowOptions(),width:initial.width,height:initial.height,thickFrame:false,hasShadow:false,roundedCorners:false,x:pos.x,y:pos.y,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false});
-    panel=new BrowserWindow({...windowOptions(),width:1050,height:780,minWidth:750,minHeight:550,title:'YD · Your Day',icon:path.join(__dirname,'icon.png'),frame:false,show:false});
+    panel=new BrowserWindow({...windowOptions(),width:1050,height:780,minWidth:750,minHeight:550,title:'YD · Your Day',icon:path.join(__dirname,PANEL_ICON_FILE),frame:false,show:false});
     lockWindow(orb);lockWindow(panel);
     orb.setTitle('YD · 桌宠');
     companion=new Companion(store,orb,panel,windowOptions(),path.join(__dirname,'index.html'),lockWindow);
@@ -341,7 +344,9 @@ else{
     await Promise.all([orb.loadFile(path.join(__dirname,'index.html'),{hash:'orb'}),panel.loadFile(path.join(__dirname,'index.html'))]);
     await companion.load();
     runtimeLog('info','主界面、桌宠与气泡页面已加载');
-    const icon=nativeImage.createFromPath(path.join(__dirname,'tray.png'));
+    // 托盘图标是独立资源（单色鼠尾草字标），不继承 app icon：
+    // 来源 brand/exports/tray-32.png，见 docs/brand-assets.md。
+    const icon=nativeImage.createFromPath(path.join(__dirname,TRAY_ICON_FILE));
     tray=new Tray(icon);tray.setToolTip('YD · 本地运行');
     refreshTrayMenu(true);tray.on('double-click',showPanel);
     const reposition=()=>{void savePosition().catch(error=>logError(error,'保存桌宠位置失败'));};screen.on('display-removed',reposition);screen.on('display-metrics-changed',reposition);
