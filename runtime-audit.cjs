@@ -56,7 +56,8 @@ app.whenReady().then(async()=>{
   await orb.webContents.executeJavaScript("window.dayhub.window('open')");await wait(200);check('桌宠重新打开主窗口',panel.isVisible()&&!panel.isMinimized());
   await run("document.querySelector('[aria-label=\"收起到托盘\"]').click()");check('关闭收起到托盘',!panel.isVisible()&&orb.isVisible());
   await orb.webContents.executeJavaScript("document.querySelector('.companion-rail-button').click()");await wait(100);check('单击打开双方小面板',mini.isVisible());
-  check('双方小面板紧凑且内容完整',mini.getSize()[0]<=430&&mini.getSize()[1]<=290&&await mini.webContents.executeJavaScript("document.documentElement.scrollHeight<=document.documentElement.clientHeight"));
+  // Asset 04 收口后的详情面板：卡片 560×350，窗口 584×391（窗外留阴影画布与底部指示三角）。
+  check('双方小面板紧凑且内容完整',mini.getSize()[0]<=600&&mini.getSize()[1]<=400&&await mini.webContents.executeJavaScript("document.documentElement.scrollHeight<=document.documentElement.clientHeight"));
   fs.writeFileSync(path.join(output,'mini.png'),(await mini.webContents.capturePage()).toPNG());
   await mini.webContents.executeJavaScript("window.dayhub.window('settings')");await wait(100);check('桌宠设置导航',await run("document.querySelector('h1').textContent==='设置与备份'"));
   // 画布 = 上下透明安全区 28 + 可见人物（148/172/200）+ 间隙 4 + 状态条 32。

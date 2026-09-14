@@ -462,45 +462,79 @@ body {
 .mini-panel {
   display:flex;
   flex-direction:column;
-  /* 详情面板的窗口比卡片大 8px 一圈：这圈透明画布是 CSS 阴影的落点。
-     阴影在这里收敛（边缘 alpha < 1.5%），不会被窗口边界裁成黑边；
+  /* Asset 04 的卡片本体：520×350、26px 圆角。窗口比卡片大一圈（阴影 + 底部指示三角），
+     那圈透明画布是 CSS 阴影的落点，阴影在这里收敛，不会被窗口边界裁成黑边；
      原生窗口阴影已关闭（见 src/companion.ts），不会出现 native + CSS 双层阴影。 */
   height:100%;
-  padding:15px 16px 14px;
+  padding:30px 36px 10px;
   overflow:hidden;
-  border:1px solid rgba(79,119,115,.20);
-  border-radius:19px;
-  background:rgba(249,252,251,.965);
-  box-shadow:0 3px 10px rgba(31,43,44,.09),inset 0 1px rgba(255,255,255,.92);
-  backdrop-filter:blur(18px) saturate(108%);
+  border:1px solid rgba(79,119,115,.18);
+  border-radius:26px;
+  background:rgba(251,252,251,.965);
+  box-shadow:0 4px 14px rgba(31,43,44,.10),inset 0 1px rgba(255,255,255,.92);
+  backdrop-filter:blur(20px) saturate(108%);
 }
-.mini-body #root { padding:8px; box-sizing:border-box; }
-.mini-panel .section-head { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:9px; margin:0 2px 10px; }
-.mini-panel .section-head h2 { margin:0; color:#26383a; font-size:15px; font-weight:650; letter-spacing:.015em; }
-.mini-panel .section-head .muted { font-size:10px; font-variant-numeric:tabular-nums; }
-.mini-brand { color:#819390; font-size:11px; font-weight:650; letter-spacing:.12em; }
-.mini-status-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; min-height:0; }
-.mini-panel.solo .mini-status-grid { grid-template-columns:1fr; }
-.mini-status-card { --status:#7C9E99; --status-rgb:124,158,153; min-width:0; padding:10px; border:1px solid rgba(79,119,115,.105); border-radius:14px; background:rgba(239,246,244,.68); }
-.mini-status-card.state-upcoming { --status:#D6AE6A; --status-rgb:214,174,106; }
-.mini-status-card.state-busy { --status:#6F9895; --status-rgb:111,152,149; }
-.mini-status-card.state-focus { --status:#3F7774; --status-rgb:63,119,116; }
+.mini-body #root { position:relative; padding:12px 12px 29px; box-sizing:border-box; }
+/* 底部指示三角：与卡片同色，外圈留 1px 极淡描边（Asset 04 的对话尾巴）。 */
+.mini-tail { position:absolute; left:50%; bottom:4px; width:54px; height:27px; transform:translateX(-50%); }
+.mini-tail::before,.mini-tail::after { content:""; position:absolute; left:0; top:0; }
+.mini-tail::before { width:54px; height:27px; background:rgba(79,119,115,.20); clip-path:polygon(0 0,100% 0,50% 100%); }
+.mini-tail::after { left:1px; width:52px; height:25px; background:rgba(251,252,251,.97); clip-path:polygon(0 0,100% 0,50% 100%); }
+/* Asset 04 的详情面板（1:1 复刻）：520×350 卡片 + 底部指示三角。
+   标题区（38px 衬线 + 说明 + 右侧品牌块）→ 两块 person 区域 → 贯通分隔线 → 下一个。 */
+.mini-head { display:flex; align-items:flex-start; justify-content:space-between; gap:32px; }
+.mini-title h2 { margin:0; color:#22302F; font:600 36px/1.05 Georgia,"Songti SC","SimSun","Microsoft YaHei UI",serif; letter-spacing:.01em; }
+.mini-subtitle { margin:7px 0 0; color:#8A9A97; font:400 17px/1.3 Georgia,"Songti SC","SimSun","Microsoft YaHei UI",serif; }
+.mini-brand-block { display:flex; align-items:center; gap:18px; padding-top:8px; }
+.mini-brand-glyph { width:56px; height:56px; object-fit:contain; opacity:.95; }
+.mini-brand-words { display:grid; gap:6px; }
+.mini-brand-words b { color:#4A5B58; font:600 13px/1 "Segoe UI Variable Text","Segoe UI",sans-serif; letter-spacing:.3em; }
+.mini-brand-words i { display:block; height:1px; background:rgba(79,119,115,.28); }
+.mini-brand-words small { color:#9AA7A4; font:500 8.5px/1 "Segoe UI Variable Text","Segoe UI",sans-serif; letter-spacing:.1em; white-space:nowrap; }
+.mini-status-grid,.mini-next-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; min-width:0; }
+.mini-status-grid { margin-top:16px; }
+.mini-panel.solo .mini-status-grid,.mini-panel.solo .mini-next-grid { grid-template-columns:1fr; }
+.mini-status-card { --status:#C18A9C; --status-rgb:193,138,156; display:flex; flex-direction:column; min-width:0; }
+.mini-status-card.state-idle { --status:#C18A9C; --status-rgb:193,138,156; }
+.mini-status-card.state-busy { --status:#55A995; --status-rgb:85,169,149; }
+.mini-status-card.state-focus { --status:#60998F; --status-rgb:96,153,143; }
+.mini-status-card.state-upcoming { --status:#D7AD59; --status-rgb:215,173,89; }
 .mini-status-card.state-dnd { --status:#C2726A; --status-rgb:194,114,106; }
 .mini-status-card.state-offline { --status:#A3ACB0; --status-rgb:163,172,176; }
-.mini-current { display:flex; align-items:flex-start; gap:7px; min-width:0; }
-.mini-current>.status-core { flex:0 0 16px; margin-top:1px; }
-.mini-current>div { display:grid; min-width:0; }
-.mini-current .mini-person { color:#758683; font-size:9px; font-weight:650; letter-spacing:.1em; }
-.mini-current strong { overflow:hidden; margin-top:2px; color:#293b3d; font-size:12.5px; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
-.mini-current small { overflow:hidden; margin-top:2px; color:#81908e; font-size:9.5px; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
-.mini-next { display:grid; gap:2px; margin-top:8px; padding:7px 8px; border-radius:10px; background:rgba(255,255,255,.72); }
-.mini-next span { color:#879693; font-size:9px; }
-.mini-next strong { overflow:hidden; color:#435553; font-size:10px; font-weight:580; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
-.mini-note { margin:10px 0 0; color:#7c8996; font-size:10.5px; line-height:1.5; }
-.mini-actions { display:flex; align-items:center; gap:7px; margin-top:auto; }
-.mini-panel .mini-actions button { min-height:31px; margin:0; border-radius:10px; font-size:11px; }
-.mini-panel .mini-actions .primary { flex:1; }
-.mini-panel .mini-actions .ghost { flex:0 0 auto; padding-inline:12px; }
+.mini-status-card[data-code="DAY_FINISHED"],.mini-status-card[data-code="TERM_ENDED"] { --status:#9AA79F; --status-rgb:154,167,159; }
+/* 两块 person 区域等权：一条极淡的中线在状态行与「下一个」行之间贯通。 */
+/* 两块 person 区域等权：中线贯通「状态行 + 下一个」，分隔线两侧留同样的呼吸。 */
+.mini-panel:not(.solo) .mini-status-card,
+.mini-panel:not(.solo) .mini-next-grid > * { padding-right:14px; }
+.mini-panel:not(.solo) .mini-status-card + .mini-status-card,
+.mini-panel:not(.solo) .mini-next-grid > * + * { border-left:1px solid rgba(79,119,115,.12); padding-left:14px; padding-right:0; }
+.mini-person-head { display:grid; grid-template-columns:auto auto minmax(0,1fr); align-items:center; gap:14px; }
+.mini-alias { color:#22302F; font:600 36px/1 Georgia,"Songti SC","SimSun",serif; }
+.mini-person-state { overflow:hidden; color:#26383A; font:600 24px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
+.mini-row { display:grid; grid-template-columns:44px minmax(0,1fr); align-items:center; gap:14px; margin-top:12px; }
+.mini-icon-slot { display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; }
+.mini-icon { width:32px; height:32px; opacity:.94; }
+.mini-row-body { display:grid; gap:6px; min-width:0; }
+.mini-row-label { color:#93A19E; font:500 15px/1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; letter-spacing:.1em; }
+.mini-row b { overflow:hidden; color:#2F3E3C; font:500 21px/1.25 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
+.mini-divider { height:1px; margin:10px 0 0; background:rgba(79,119,115,.10); }
+.mini-next-grid { margin-top:10px; }
+/* 「下一个」整行在可跳转时是一个按钮：右侧箭头是真实的可点提示。 */
+.mini-next { display:grid; grid-template-columns:36px minmax(0,1fr) 16px; align-items:center; gap:10px; padding:0; border:0; background:none; text-align:left; cursor:pointer; }
+/* 「下一个」的图标比「当前」小一档（Asset 04 里两行图标的视觉重量不同）。 */
+.mini-next .mini-icon-slot { width:36px; height:36px; }
+.mini-next .mini-icon { width:30px; height:30px; }
+div.mini-next { cursor:default; }
+.mini-next:focus-visible { outline:2px solid rgba(85,169,149,.6); outline-offset:4px; border-radius:10px; }
+.mini-next strong { overflow:hidden; color:#33423F; font:500 19px/1.3 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; }
+.mini-place { color:#A2ADAB; font:400 17px/1.3 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; }
+.mini-next small { overflow:hidden; color:#93A19E; font:400 17px/1.25 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
+.mini-chevron { color:#C0CAC7; font:400 26px/1 "Segoe UI",sans-serif; text-align:right; }
+.mini-actions { display:flex; align-items:center; gap:18px; margin-top:auto; padding-top:4px; }
+.mini-panel .mini-actions button { min-height:0; margin:0; padding:0; border:0; background:none; border-radius:0; font:560 16px/1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; cursor:pointer; }
+.mini-panel .mini-actions .primary { color:#3C6E67; }
+.mini-panel .mini-actions .ghost { color:#93A19E; font-weight:500; }
+.mini-panel .mini-actions button:hover { text-decoration:underline; text-underline-offset:4px; }
 
 /* V0.2.10 — compact, explicit partner schedule status */
 .partner-status-card {
@@ -1132,13 +1166,7 @@ button.attention-link { min-height:34px; color:#714d34; border-color:rgba(183,13
 .rail-chip b { color:#3c4b57; font-size:11px; font-weight:650; letter-spacing:.04em; }
 /* V0.2.16 修复：状态点颜色只由语义决定（companion-colors.ts）。
    这里没有“按人”的调色板，也没有红色兜底：空闲永远是绿色，红色只给安排冲突。 */
-.rail-dot { width:6px; height:6px; border-radius:50%; background:var(--tone-calm,#8ed9c3); box-shadow:0 0 0 2px rgba(142,217,195,.20); }
-.rail-dot.tone-calm { background:#8ed9c3; box-shadow:0 0 0 2px rgba(142,217,195,.20); }
-.rail-dot.tone-upcoming { background:#e0b463; box-shadow:0 0 0 2px rgba(224,180,99,.22); }
-.rail-dot.tone-busy { background:#e9a15f; box-shadow:0 0 0 2px rgba(233,161,95,.22); }
-.rail-dot.tone-focus { background:#8eb9f4; box-shadow:0 0 0 2px rgba(142,185,244,.22); }
-.rail-dot.tone-alert { background:#cf7b6f; box-shadow:0 0 0 2px rgba(207,123,111,.22); }
-.rail-dot.tone-neutral { background:#a9b3b6; box-shadow:0 0 0 2px rgba(169,179,182,.20); }
+.rail-dot { width:6px; height:6px; border-radius:50%; background:#C18A9C; box-shadow:0 0 0 2px rgba(193,138,156,.20); }
 /* 夜间休息：状态条整体转柔和，但状态点仍然表达真实业务语义。 */
 .companion-rail.is-night { border-color:rgba(216,221,246,.92); background:rgba(246,247,255,.95); box-shadow:0 2px 8px rgba(52,58,96,.14); }
 .companion-rail.is-night .rail-chip b { color:#4a5170; }
@@ -1693,17 +1721,19 @@ input:hover, select:hover, textarea:hover { border-color: #C3CDC8; }
 .person-status small { display: block; margin-top: 4px; color: var(--yd-muted); font-size: 11.5px; line-height: 1.5; }
 .person-dot { width: 7px; height: 7px; margin-top: 6px; background: var(--yd-sage); box-shadow: 0 0 0 3px rgba(70, 108, 106, .16); }
 
-/* —— 状态语义色：主窗口、迷你面板、悬浮球、桌宠状态条共用同一套低饱和色 —— */
-.person-dot.tone-calm { background: #8CBE9E; box-shadow: 0 0 0 3px rgba(140, 190, 158, .20); }
-.person-dot.tone-upcoming { background: #D6AE6A; box-shadow: 0 0 0 3px rgba(214, 174, 106, .22); }
-.person-dot.tone-busy { background: #DE9A63; box-shadow: 0 0 0 3px rgba(222, 154, 99, .22); }
-.person-dot.tone-focus { background: #8FAED2; box-shadow: 0 0 0 3px rgba(143, 174, 210, .22); }
+/* —— 状态语义色：主窗口、详情面板、状态 Dock、桌宠状态条共用同一套低饱和色 ——
+   （唯一来源 src/companion-colors.ts；Asset 04 收口后：空闲 rose、即将 amber、
+   进行中 sage teal、专注更深一层，只有真正的冲突才是红。） */
+.person-dot.tone-calm { background: #C18A9C; box-shadow: 0 0 0 3px rgba(193, 138, 156, .20); }
+.person-dot.tone-upcoming { background: #D7AD59; box-shadow: 0 0 0 3px rgba(215, 173, 89, .22); }
+.person-dot.tone-busy { background: #55A995; box-shadow: 0 0 0 3px rgba(85, 169, 149, .22); }
+.person-dot.tone-focus { background: #60998F; box-shadow: 0 0 0 3px rgba(96, 153, 143, .22); }
 .person-dot.tone-alert { background: #C2726A; box-shadow: 0 0 0 3px rgba(194, 114, 106, .22); }
 .person-dot.tone-neutral { background: #A3ACB0; box-shadow: 0 0 0 3px rgba(163, 172, 176, .22); }
-.rail-dot.tone-calm { background: #8CBE9E; box-shadow: 0 0 0 2px rgba(140, 190, 158, .22); }
-.rail-dot.tone-upcoming { background: #D6AE6A; box-shadow: 0 0 0 2px rgba(214, 174, 106, .24); }
-.rail-dot.tone-busy { background: #DE9A63; box-shadow: 0 0 0 2px rgba(222, 154, 99, .24); }
-.rail-dot.tone-focus { background: #8FAED2; box-shadow: 0 0 0 2px rgba(143, 174, 210, .24); }
+.rail-dot.tone-calm { background: #C18A9C; box-shadow: 0 0 0 2px rgba(193, 138, 156, .22); }
+.rail-dot.tone-upcoming { background: #D7AD59; box-shadow: 0 0 0 2px rgba(215, 173, 89, .24); }
+.rail-dot.tone-busy { background: #55A995; box-shadow: 0 0 0 2px rgba(85, 169, 149, .24); }
+.rail-dot.tone-focus { background: #60998F; box-shadow: 0 0 0 2px rgba(96, 153, 143, .24); }
 .rail-dot.tone-alert { background: #C2726A; box-shadow: 0 0 0 2px rgba(194, 114, 106, .24); }
 .rail-dot.tone-neutral { background: #A3ACB0; box-shadow: 0 0 0 2px rgba(163, 172, 176, .24); }
 
@@ -2739,20 +2769,34 @@ body.main-body .settings-nav button.active::before { top:auto; right:0; bottom:-
 .setting-switch input:focus-visible + span { outline:2px solid #5E8583; outline-offset:2px; }
 .routine-people { width:100%; margin-bottom:10px; }
 
-.mini-panel { display:flex; flex-direction:column; padding:18px; background:rgba(250,252,251,.98); }
-.mini-panel .section-head { display:flex; grid-template-columns:none; justify-content:space-between; margin:0 0 12px; }
-.mini-brand { color:#7A8987; font-size:10.5px; font-weight:550; }
-.mini-status-grid { gap:10px; }
-.mini-status-card { padding:13px 14px; border:0; border-radius:12px; background:#F2F6F5; }
-.mini-current .mini-person { font-size:10px; letter-spacing:.035em; }
-.mini-current strong { margin-top:4px; font-size:14px; }
-.mini-current small { margin-top:3px; font-size:10.5px; }
-.mini-next { margin-top:10px; padding:9px 0 0; border-top:1px solid rgba(79,119,115,.12); border-radius:0; background:transparent; }
-.mini-next span { font-size:9.5px; }
-.mini-next strong { font-size:11px; line-height:1.35; white-space:normal; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
-.mini-next small { overflow:hidden; color:#81908E; font-size:9.5px; text-overflow:ellipsis; white-space:nowrap; }
-.mini-note { margin:9px 2px 0; }
-.mini-panel .mini-actions button { min-height:30px; }
+/* 「下一个」的标题允许两行；「当前」保持一行（长标题用 tooltip 补偿）。 */
+.mini-next strong { white-space:normal; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+
+/* —— Solo 详情面板（单人参照图）：我的 · 此刻 + 两块圆角块 + 页脚 —— */
+.mini-panel.solo { padding:30px 30px 12px; }
+.mini-panel.solo .mini-head { align-items:center; margin-bottom:24px; }
+.mini-panel.solo h2 { font-size:33px; }
+.mini-solo-brand { display:flex; align-items:center; gap:18px; }
+.mini-solo-brand b { color:#4A5B58; font:600 13px/1 "Segoe UI Variable Text","Segoe UI",sans-serif; letter-spacing:.3em; }
+.mini-gear { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; padding:0; border:0; background:none; color:#9AA7A4; cursor:pointer; }
+.mini-gear:hover { color:#55A995; }
+.mini-panel.solo .solo-block { display:grid; grid-template-columns:46px minmax(0,1fr); align-items:center; gap:18px; padding:14px 20px; border:0; border-radius:18px; background:rgba(240,246,244,.72); }
+.mini-panel.solo .solo-block + .solo-block { margin-top:10px; }
+.mini-panel.solo .solo-state .status-core { width:38px; height:38px; }
+.mini-panel.solo .solo-state .status-dot { width:38px; height:38px; }
+.solo-state-body { display:grid; gap:5px; min-width:0; }
+.solo-state-body strong { color:#26383A; font:600 24px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; }
+.solo-state-body small { color:#93A19E; font:400 17px/1.2 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; }
+.mini-panel.solo .solo-next { grid-template-columns:46px minmax(0,1fr) auto; padding:16px 20px; }
+.solo-next-body { display:grid; gap:5px; min-width:0; }
+.solo-next-body strong { overflow:hidden; color:#26383A; font:600 22px/1.25 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
+.solo-next-body small { overflow:hidden; color:#93A19E; font:400 15px/1.25 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
+.mini-panel.solo .mini-next .mini-icon-slot { width:46px; height:46px; }
+.mini-panel.solo .mini-next .mini-icon { width:34px; height:34px; }
+.solo-open { display:inline-flex; align-items:center; gap:10px; padding:14px 22px; border:1px solid rgba(79,119,115,.10); border-radius:14px; background:#FFFFFF; color:#2B3A38; font:600 19px/1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; cursor:pointer; box-shadow:0 1px 2px rgba(31,43,44,.04); }
+.solo-open:hover { border-color:rgba(79,119,115,.22); color:#3C6E67; }
+.solo-foot { display:flex; align-items:center; gap:12px; margin:22px 2px 0; color:#93A19E; font:400 17px/1.2 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; }
+.solo-foot i { display:block; width:26px; height:1px; background:rgba(79,119,115,.28); }
 
 @media (max-width:900px) {
   .course-toolbar { align-items:flex-start; flex-direction:column; }

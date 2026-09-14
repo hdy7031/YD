@@ -109,8 +109,10 @@ app.whenReady().then(async () => {
     await orb.webContents.executeJavaScript("window.dayhub.window('mini')");
     await wait(300);
     check('mini 面板打开且只有一条状态', mini.isVisible() && await mini.webContents.executeJavaScript("document.querySelectorAll('.mini-status-card').length===1"));
-    check('mini 标题与结构是专门的 Solo 详情态', await mini.webContents.executeJavaScript("document.querySelector('h2')?.textContent==='此刻'&&document.querySelectorAll('.mini-status-card').length===1&&document.querySelectorAll('.mini-next').length===1"));
-    check('mini 使用完整宽度且没有空白第二列',Math.abs(mini.getSize()[0]-340)<=2&&Math.abs(mini.getSize()[1]-292)<=2&&await mini.webContents.executeJavaScript("getComputedStyle(document.querySelector('.mini-status-grid')).gridTemplateColumns.split(' ').length===1"),JSON.stringify(mini.getSize()));
+    // Solo 详情面板按单人参照图复刻：标题「我的 · 此刻」，一块状态块 + 一块下一项块。
+    check('mini 标题与结构是专门的 Solo 详情态', await mini.webContents.executeJavaScript("document.querySelector('h2')?.textContent==='我的 · 此刻'&&document.querySelectorAll('.mini-status-card').length===1&&document.querySelectorAll('.mini-next').length===1&&!!document.querySelector('.solo-open')"));
+    // Solo 详情面板按单人参照图复刻：卡片 620×340 + 阴影画布 + 底部指示三角（窗口 644×383）。
+    check('mini 使用完整宽度且没有空白第二列',Math.abs(mini.getSize()[0]-644)<=2&&Math.abs(mini.getSize()[1]-383)<=2&&await mini.webContents.executeJavaScript("(()=>{const panel=document.querySelector('.mini-panel'),block=document.querySelector('.solo-state');if(!panel||!block)return false;return block.getBoundingClientRect().width>=panel.getBoundingClientRect().width*0.8})()"),JSON.stringify(mini.getSize()));
     check('mini 没有 undefined', await mini.webContents.executeJavaScript("!document.body.textContent.includes('undefined')"));
     fs.writeFileSync(path.join(output,'dock-solo-mini.png'),(await mini.capturePage()).toPNG());
     await orb.webContents.executeJavaScript("window.dayhub.window('menu')");

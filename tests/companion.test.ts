@@ -105,8 +105,10 @@ test('0.2.16 状态颜色只有一套：语义相同必然同色，空闲不会�
   assert.equal(companionTone('focus'),'focus');
   assert.equal(companionTone('dnd'),'alert');
   assert.equal(companionTone('offline'),'neutral');
-  // 空闲是绿色，不是红色；只有真正的冲突才用 alert 色。
-  assert.equal(companionToneColors.calm,'#8CBE9E');
+  // 2026-09-14（Asset 04）统一后的语义色板：空闲是低饱和 dusty rose，
+  // 即将开始是 amber（不是红），进行中 / 专注是 sage teal，只有真正的冲突才是红。
+  assert.deepEqual(companionToneColors,{calm:'#C18A9C',upcoming:'#D7AD59',busy:'#55A995',focus:'#60998F',alert:'#C2726A',neutral:'#A3ACB0'});
+  assert.notEqual(companionToneColors.upcoming,companionToneColors.alert);
   assert.notEqual(companionTone('idle'),'alert');
   assert.notEqual(companionTone('offline'),'alert');
 

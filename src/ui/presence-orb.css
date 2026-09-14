@@ -46,9 +46,17 @@
 .pet-dock.orb-mode .pet-handle:focus-visible { outline:0; box-shadow:none; }
 
 .dock-surface {
-  --dock-edge:rgba(79,119,115,.18);
-  --dock-ink:#24323B;
-  --dock-muted:#657473;
+  /* 状态语义色只在这里落地（取值与 src/companion-colors.ts 一致，见 docs/brand-assets.md）：
+     空闲 dusty rose / 即将 amber / 进行中 sage teal / 专注更深的 sage / 只有冲突才是红。 */
+  --dock-edge:rgba(79,119,115,.16);
+  --dock-ink:#22302F;
+  --dock-muted:#5F706E;
+  --dock-idle:#C18A9C;
+  --dock-active:#55A995;
+  --dock-focus:#60998F;
+  --dock-upcoming:#D7AD59;
+  --dock-alert:#C2726A;
+  --dock-finished:#9AA79F;
   isolation:isolate;
   position:relative;
   display:flex;
@@ -58,9 +66,10 @@
   margin:4px;
   box-sizing:border-box;
   overflow:hidden;
-  padding:0 8px;
+  padding:0 6px;
   border:1px solid var(--dock-edge);
-  border-radius:15px;
+  /* Asset 04：默认与悬停共用同一块状态牌，两端是完整半圆（pill）。 */
+  border-radius:999px;
   background:rgba(250,252,251,.92);
   /* 阴影必须在这块 4px 透明画布内收敛：窗口边界处的合成 alpha 直接决定它会不会
      变成"被切断的黑边"。0 2px 5px ≈ 在 4px 处 alpha < 2%，边缘不再有硬台阶。 */
@@ -86,48 +95,54 @@
 .pet-dock.is-dragging,.pet-dock.is-dragging .pet-handle,.pet-dock.is-dragging .dock-surface { transform:none !important; translate:none !important; scale:1 !important; }
 
 .dock-row {
-  --status:#7C9E99;
-  --status-rgb:124,158,153;
+  --status:var(--dock-idle);
+  --status-rgb:193,138,156;
   position:relative;
   display:grid;
-  grid-template-columns:14px 14px minmax(0,1fr);
+  grid-template-columns:26px 16px minmax(0,1fr);
   align-items:center;
-  column-gap:4px;
+  column-gap:6px;
   min-width:0;
   flex:1 1 0;
-  padding:0 4px;
+  padding:0 8px;
   transition:background-color 150ms ease,padding 150ms ease;
 }
-.dock-row + .dock-row::before { content:""; position:absolute; left:-1px; top:12px; bottom:12px; width:1px; background:rgba(79,119,115,.14); }
-.dock-row:hover { background:rgba(79,119,115,.045); }
-.dock-row.is-hovered { background:rgba(79,119,115,.055); }
+.dock-row + .dock-row::before { content:""; position:absolute; left:-1px; top:11px; bottom:11px; width:1px; background:rgba(79,119,115,.13); }
+/* 指针所在的那个人只有一层极淡的胶囊底，不铺满整块区域（Asset 04 的 hover 以文字为主）。 */
+.dock-row.is-hovered { background:rgba(79,119,115,.05); border-radius:999px; }
 .dock-row > .dock-alias,.dock-row > .status-core,.dock-row > .dock-status { transition:transform 140ms ease; }
-.dock-row.is-hovered > .dock-alias,.dock-row.is-hovered > .status-core,.dock-row.is-hovered > .dock-status { transform:translateY(-7px); }
+.dock-row.is-hovered > .dock-alias,.dock-row.is-hovered > .status-core,.dock-row.is-hovered > .dock-status { transform:translateY(-6px); }
+.dock-surface.is-expanded > .dock-row > .dock-alias,
+.dock-surface.is-expanded > .dock-row > .status-core,
+.dock-surface.is-expanded > .dock-row > .dock-status { transform:translateY(-6px); }
 .dock-surface.solo { justify-content:center; padding:0 12px; }
 .dock-surface.solo .dock-row { flex:0 1 auto; width:100%; padding-left:6px; padding-right:6px; }
 .dock-surface.solo .dock-row::before { display:none; }
-/* 状态色只落在小圆点：空闲 sage、忙碌 muted teal、专注 deep teal、冲突 dusty red。 */
-.dock-row.state-upcoming { --status:#D6AE6A; --status-rgb:214,174,106; }
-.dock-row.state-busy { --status:#6F9895; --status-rgb:111,152,149; }
-.dock-row.state-focus { --status:#3F7774; --status-rgb:63,119,116; }
-.dock-row.state-dnd { --status:#C2726A; --status-rgb:194,114,106; }
+/* 状态色只落在小圆点（Asset 04：实心点，无外环、无发光）。 */
+.dock-row.state-idle { --status:var(--dock-idle); --status-rgb:193,138,156; }
+.dock-row.state-busy { --status:var(--dock-active); --status-rgb:85,169,149; }
+.dock-row.state-focus { --status:var(--dock-focus); --status-rgb:96,153,143; }
+.dock-row.state-upcoming { --status:var(--dock-upcoming); --status-rgb:215,173,89; }
+.dock-row.state-dnd { --status:var(--dock-alert); --status-rgb:194,114,106; }
 .dock-row.state-offline { --status:#A3ACB0; --status-rgb:163,172,176; }
+/* 已完成（今日结束 / 学期结束）：sage gray，不和进行中的 active 一样饱和。 */
+.dock-row[data-code="DAY_FINISHED"],.dock-row[data-code="TERM_ENDED"] { --status:var(--dock-finished); --status-rgb:154,167,159; }
 /* CurrentState.kind 只决定微小 indicator 的语义色，不染整块 surface。 */
 .dock-row.kind-meal { --status:#C7A775; --status-rgb:199,167,117; }
 .dock-row.kind-commute { --status:#738791; --status-rgb:115,135,145; }
 .dock-row.kind-nap,.dock-row.kind-sleep,.dock-row.kind-rest { --status:#8E91AE; --status-rgb:142,145,174; }
-.dock-row.source-manual { --status:#748B89; --status-rgb:116,139,137; }
 
 .dock-alias {
   color:var(--dock-ink);
-  font:600 12px/1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
-  letter-spacing:.035em;
+  /* Asset 04 的量取结果：首字母墨高约为状态牌高度的 35%，是状态文字的 1.7 倍。 */
+  font:600 24px/1 Georgia,"Times New Roman","Songti SC",serif;
+  letter-spacing:.01em;
   white-space:nowrap;
 }
 
 .dock-status {
   color:var(--dock-muted);
-  font:560 11.5px/1.2 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
+  font:580 14px/1.2 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
   font-variant-numeric:tabular-nums;
   text-align:left;
   white-space:nowrap;
@@ -135,8 +150,10 @@
   text-overflow:ellipsis;
 }
 
-.dock-extra { position:absolute; left:40px; right:6px; bottom:6px; overflow:hidden; color:#899795; font:450 9.5px/1.1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-align:left; text-overflow:ellipsis; white-space:nowrap; opacity:0; transform:translateY(2px); transition:opacity 140ms ease,transform 140ms ease; }
-.dock-row.is-hovered .dock-extra { opacity:1; transform:none; }
+/* 第二行与状态文字左对齐（8 边距 + 26 首字母列 + 6 + 16 状态点列 + 6 = 62px）。 */
+.dock-extra { position:absolute; left:62px; right:8px; bottom:5px; overflow:hidden; color:#8B9997; font:450 10.5px/1.1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-align:left; text-overflow:ellipsis; white-space:nowrap; opacity:0; transform:translateY(2px); transition:opacity 140ms ease,transform 140ms ease; }
+/* Hover 是二级信息揭示：整块状态牌一起显露第二行，而不是只放大被指到的那一行。 */
+.dock-surface.is-expanded .dock-extra,.dock-row.is-hovered .dock-extra { opacity:1; transform:none; }
 .pet-dock.is-dragging .dock-row > * { transform:none !important; transition:none !important; }
 
 .status-core {
@@ -149,17 +166,14 @@
 
 .status-ring,
 .status-dot { position:absolute; display:block; border-radius:50%; }
-.status-ring {
-  inset:1px;
-  border:1px solid rgba(var(--status-rgb),.24);
-  box-shadow:none;
-  opacity:.72;
-}
+/* Asset 04 的状态点是实心圆：外环退场（保留节点，供既有结构断言引用）。 */
+.status-ring { inset:1px; border:0; box-shadow:none; opacity:0; }
+/* Asset 04：状态点直径约为状态牌高度的 20%（中档 50px 牌面 ≈ 10px）。 */
 .status-dot {
-  width:6px;
-  height:6px;
+  width:10px;
+  height:10px;
   background:var(--status);
-  box-shadow:0 0 3px rgba(var(--status-rgb),.25);
+  box-shadow:none;
 }
 
 .tip-body,

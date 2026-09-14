@@ -1,5 +1,19 @@
 ## 未发布 · 品牌 / 安装器 / 托盘 / Dock 收口
 
+### 状态牌与详情面板按参考稿收口（`ui: align floating dock with final visual reference`）
+
+- 状态牌按 Asset 04 量取后复刻：pill 两端半圆、衬线首字母（墨高 ≈ 牌面 35%）、
+  实心状态点（≈ 20%）、更清晰的字级层级；hover 时整块状态牌一起显露第二行。
+- 点击穿透窗口里 **CSS `:hover` 不生效**，因此 hover 展开改由渲染层真实指针状态驱动
+  （`onPointerEnter` → `.dock-surface.is-expanded`），并写进守护断言。
+- 详情面板 Together 形态按 Asset 04 复刻：`我们 · 此刻` + 品牌块 + 两块等权 person 区域 +
+  贯通分隔线 + 「下一个」带语义图标/箭头 + 底部指示三角；卡片 560×350。
+- Solo 形态按单人参照图复刻：`我的 · 此刻` + YD/设置 + 两块圆角块（当前状态 / 下一项安排 +
+  打开 YD）+ 页脚；卡片 620×340。
+- 状态语义色统一为：空闲 rose、即将 amber（不再是红）、进行中 sage teal、专注深一档、
+  已完成 sage gray，只有真正的冲突才用红。
+- Asset 03 语义图标接入详情面板（presentation-only 映射，找不到映射就不显示图标）。
+
 ### 品牌资源单一来源（`fix: centralize current YD production brand assets`）
 
 - 用户确认的 8 张正式素材全部落在 `brand/source/`，用途映射写进 `docs/brand-assets.md`：

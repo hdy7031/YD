@@ -28,16 +28,32 @@ export const companionToneOf: Record<PresenceState, CompanionTone> = {
 };
 
 // Reference colours (the UI uses the CSS classes; tests and docs use these).
-// 0.2.17 起统一到 YD 的低饱和语义色：同一个语义在任何界面都是同一个颜色，
-// 且不做成高饱和信号灯——桌面产品要“看得懂”，不需要“刺眼”。
+//
+// 2026-09-14 收口（Asset 04）：这是**唯一**的状态语义色板，界面各处（状态 Dock、
+// 详情面板、主窗口状态点、桌宠状态轨）只允许引用这里的语义：
+//
+//   calm     空闲 / 休息 —— 低饱和 dusty rose，非常克制
+//   upcoming 即将开始    —— warm amber（**不再是红色**）
+//   busy     上课 / 活动 —— 低饱和 sage teal
+//   focus    教研 / 专注 —— sage teal，比 busy 略深一档
+//   alert    冲突        —— 只有真正的警示才用红（安排冲突 / 异常）
+//   neutral  暂不可用    —— 中性灰
 export const companionToneColors: Record<CompanionTone, string> = {
-  calm: '#8CBE9E',
-  upcoming: '#D6AE6A',
-  busy: '#DE9A63',
-  focus: '#8FAED2',
+  calm: '#C18A9C',
+  upcoming: '#D7AD59',
+  busy: '#55A995',
+  focus: '#60998F',
   alert: '#C2726A',
   neutral: '#A3ACB0',
 };
+
+/**
+ * 日程阶段码的补充分化色（presentation-only）：
+ * "今日结束 / 学期结束"这类**已完成**语义使用 sage gray，
+ * 不允许和进行中的 active 一样饱和。`src/ui/presence-orb.css` 与 `style.css`
+ * 用 `[data-code="…"]` 选择器引用同一组取值。
+ */
+export const companionFinishedColor = '#9AA79F';
 
 export function companionTone(state: PresenceState): CompanionTone {
   return companionToneOf[state] ?? 'neutral';

@@ -76,3 +76,61 @@ legacy「双状态球」的视觉与结构全部退役：
 
 Solo 工作区无法在本脚本里播种（应用没有 solo 种子命令），因此 Dock 的 Solo 行为由
 `runtime-audit-solo.cjs` 使用它自带的 Solo fixture 覆盖。
+
+---
+
+# 2026-09-14 收口 · 按 Asset 04 / 单人参照图复刻
+
+本轮把状态牌与详情面板的视觉**按参考稿量取后 1:1 复刻**，不再由实现自由发挥。
+量取方法：直接读参考图的像素（边框 / 墨高 / 圆角 / 间距），换算成 CSS 取值。
+
+## 1. 状态牌（默认 / Hover）
+
+| 项目 | 参考稿量取 | 实现取值 |
+| --- | --- | --- |
+| 形状 | 两端完整半圆（pill） | `border-radius:999px` |
+| 首字母 | 墨高 ≈ 牌面高度的 35%（衬线） | `24px Georgia 衬线`（牌面 50px） |
+| 状态点 | 直径 ≈ 高度 20%，实心 | 10px 实心（无外环、无发光） |
+| 状态文字 | 墨高 ≈ 高度 20% | `14px / 580` |
+| 次级信息 | hover 出现，与状态文字左对齐 | `.dock-extra` 10.5px 灰 |
+
+**Hover 机制**：点击穿透窗口（`WS_EX_TRANSPARENT`）里 **CSS `:hover` 不会生效**，
+因此整块状态牌一起显露第二行由渲染层的真实指针状态驱动（`onPointerEnter` →
+`.dock-surface.is-expanded`）。这条约束已写进 `verify-v030-dock.cjs` 的断言。
+
+## 2. 详情面板
+
+| 形态 | 参考稿 | 实现 |
+| --- | --- | --- |
+| Together | 卡片 520×350 | 卡片 560×350（宽 40px 用于容纳真实中英混排标题），窗口 584×391 |
+| Solo | 卡片 632×341 | 卡片 620×340，窗口 644×383 |
+| 尾部 | 底部正中三角，指向状态牌 | `.mini-tail` 54×27，卡片与窗口底边之间 |
+| 窗口 | — | 卡片 + 四周 12px 阴影画布 + 底部 27px 三角区 |
+
+- Together：`我们 · 此刻` + 说明 + 右侧品牌块（YD 字标 / YD / canonical tagline）；
+  两块等权 person 区域、贯通分隔线、「下一个」带语义图标与箭头（有下一项时整行可点，打开 YD）。
+- Solo：`我的 · 此刻` + 右上 YD / 设置；两块圆角块（当前状态、下一项安排 + 打开 YD 按钮）+ 页脚。
+- 面板内容全部来自 CurrentState / 日程投影 / Profile；参考稿里的示例文案不写死。
+- 原生窗口阴影已关闭（`hasShadow:false`），阴影只由 CSS 在窗口画布内绘制并收敛，
+  避免"Windows 原生阴影 + CSS 阴影"叠成黑框。
+
+## 3. 语义色（唯一来源 `src/companion-colors.ts`）
+
+| 语义 | 取值 | 使用场景 |
+| --- | --- | --- |
+| 空闲 / 休息 | `#C18A9C` dusty rose | 空闲、休息、睡眠 |
+| 即将开始 | `#D7AD59` amber | 即将上课 / 即将有安排（**不再是红色**） |
+| 进行中 | `#55A995` sage teal | 上课、活动、忙碌 |
+| 专注 | `#60998F` sage teal（深一档） | 教研、专注 |
+| 已完成 | `#9AA79F` sage gray | 今日结束 / 学期结束 |
+| 冲突 | `#C2726A` | 只有真正的安排冲突才用红 |
+
+## 4. 本轮验证
+
+| 命令 | 覆盖 |
+| --- | --- |
+| `npm test` / `npm run typecheck` / `npm run build` / `npm run assets:check` | 单测 241 项、类型、构建、品牌资源契约 |
+| `npx electron verify-v030-dock.cjs` | Together：结构 / pill 圆角 / hover（合成 + 真实指针）/ click / drag×20 / 位置落盘 + 重启 |
+| `npx electron verify-v030-dock-layering.cjs` | Win32 层级：topmost / 覆盖窗口 / 真实 Edge / 桌面切换 / 阴影 alpha |
+| `npx electron runtime-audit.cjs` | Together 端到端（含详情面板尺寸与内容完整性） |
+| `npx electron runtime-audit-solo.cjs` | Solo：单行状态牌 / Solo 详情面板 / 无幽灵第二列 |

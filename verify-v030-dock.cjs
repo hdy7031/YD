@@ -15,6 +15,21 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { configureIsolatedUserData } = require('./scripts/electron-test-profile.cjs');
 
+/**
+ * 真实鼠标移动：SetCursorPos 只挪光标、不产生输入消息，而点击穿透窗口的
+ * mouse 转发走的是低层鼠标钩子，因此这里额外注入一像素的相对 mouse_event。
+ */
+function moveCursor(x, y) {
+  try {
+    spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      `Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point(${Math.round(x)},${Math.round(y)});` +
+      `$sig='[DllImport("user32.dll")] public static extern void mouse_event(uint f,int dx,int dy,uint d,System.IntPtr e);';` +
+      `Add-Type -MemberDefinition $sig -Name M -Namespace YD;[YD.M]::mouse_event(1,1,1,0,[System.IntPtr]::Zero);[YD.M]::mouse_event(1,-1,-1,0,[System.IntPtr]::Zero)`], { windowsHide: true });
+  } catch {
+    /* 鼠标定位失败时后续断言会明确失败，不静默通过 */
+  }
+}
+
 const root = __dirname;
 const output = path.join(root, 'test-data', 'v030-dock');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -65,7 +80,8 @@ async function runTogether() {
     };
   })()`);
   check('两行状态：人物 label 与状态都来自档案 / CurrentState', structure.rows.length === 2 && structure.rows.every(r => r.label && r.status && r.dot), JSON.stringify(structure.rows));
-  check('Dock 是固定圆角状态牌（非单球体）', structure.rect && structure.rect.width > structure.rect.height && parseFloat(structure.radius) >= 14 && parseFloat(structure.radius) <= 16, JSON.stringify({ rect: structure.rect, radius: structure.radius }));
+  // Asset 04 收口后，状态牌两端是完整半圆（pill），不再是 15px 圆角矩形。
+  check('Dock 是固定状态牌（两端半圆，非单球体）', structure.rect && structure.rect.width > structure.rect.height && parseFloat(structure.radius) >= 20, JSON.stringify({ rect: structure.rect, radius: structure.radius }));
   check('Dock 表面为 mist 白底与轻玻璃层', /rgba?\(\s*250\s*,\s*252\s*,\s*251/.test(String(structure.background)) && /blur\(18px\)/.test(String(structure.backdrop)), JSON.stringify({ background: structure.background, backdrop: structure.backdrop }));
   check('legacy orb 结构已不在 DOM 中', structure.legacy === false);
   const dockSize = dock.getSize();
@@ -84,6 +100,22 @@ async function runTogether() {
   await pet("window.dayhub.presence('leave')");
   await wait(240);
   check('离开后固定几何不变且无幽灵 tooltip',Math.abs(dock.getSize()[0]-276)<=2&&Math.abs(dock.getSize()[1]-58)<=2&&!tip.isVisible(),dock.getSize().join('x'));
+  // 指针进入 / 离开状态牌：点击穿透窗口不会触发 CSS :hover，因此整块状态牌的
+  // 二级信息展开由渲染层真实指针状态驱动（is-expanded）。这里派发真实 DOM 指针事件，
+  // 走的是与运行时同一条 React 处理链（不是合成 IPC 消息）。
+  {
+    // React 的 onPointerEnter 由 pointerover（relatedTarget 在元素之外）合成，
+    // 因此这里派发 pointerover / pointerout，而不是 pointerenter / pointerleave。
+    await pet("document.querySelector('.pet-handle').dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse',relatedTarget:document.documentElement}))");
+    await wait(320);
+    const revealed=await pet(`(()=>{const surface=document.querySelector('.dock-surface');const extras=[...document.querySelectorAll('.dock-extra')];return {expanded:surface?.classList.contains('is-expanded')===true,revealed:extras.filter(e=>Number(getComputedStyle(e).opacity)>0.9).length,count:extras.length,geometry:getComputedStyle(surface).transform}})()`);
+    check('指针进入时两块 person 区域同时显露第二行',revealed.expanded&&revealed.count===2&&revealed.revealed===2,JSON.stringify(revealed));
+    fs.writeFileSync(path.join(output,'dock-together-hover-real.png'),(await dock.capturePage()).toPNG());
+    await pet("document.querySelector('.pet-handle').dispatchEvent(new PointerEvent('pointerout',{bubbles:true,pointerType:'mouse',relatedTarget:document.documentElement}))");
+    await wait(320);
+    const collapsed=await pet("!document.querySelector('.dock-surface').classList.contains('is-expanded')");
+    check('指针离开后第二行收起、外框与几何不变',collapsed&&Math.abs(dock.getSize()[0]-276)<=2&&dock.getSize()[1]===58,JSON.stringify({collapsed,size:dock.getSize()}));
+  }
   const mini = windowOf('mini');
   await pet("document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('click',{bubbles:true}))");
   await wait(360);

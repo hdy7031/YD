@@ -85,8 +85,11 @@ export class Companion {
     return {width,height};
   }
   private resizeMini(){
+    // 详情面板按参考稿 1:1 复刻，窗口 = 卡片 + 阴影画布（四周 12px）+ 底部指示三角（27px）：
+    //   Together（Asset 04）：卡片 560×350（比参考稿宽 40px，只为容纳真实中英混排标题）
+    //   Solo（单人参照图）  ：卡片 620×340
     const solo=this.store.state.profiles.length<=1;
-    const [width,height]=solo?[340,292]:[424,278];
+    const [width,height]=solo?[644,383]:[584,391];
     if(this.mini.getSize()[0]!==width||this.mini.getSize()[1]!==height){
       this.mini.setResizable(true);
       this.mini.setSize(width,height,false);
@@ -139,7 +142,16 @@ export class Companion {
   position(){
     const b=this.orb.getBounds(),a=screen.getDisplayMatching(b).workArea;
     const place=(w:BrowserWindow)=>{const [width,height]=w.getSize(),center=b.x+b.width/2,anchor=center<a.x+a.width/2?b.x:b.x+b.width-width;const x=Math.max(a.x,Math.min(anchor,a.x+a.width-width));let y=b.y-height-10;if(y<a.y)y=b.y+b.height+10;w.setPosition(Math.round(x),Math.round(Math.max(a.y,Math.min(y,a.y+a.height-height))));};
-    place(this.bubble);place(this.mini);
+    place(this.bubble);
+    // 详情面板与状态牌居中对齐：Asset 04 的对话尾巴在面板底部正中，正好指向状态牌。
+    // 窗口底部贴着状态牌顶边，尾巴尖（距窗口底 4px）落在状态牌上方几个像素。
+    {
+      const [width,height]=this.mini.getSize();
+      const x=Math.max(a.x,Math.min(Math.round(b.x+b.width/2-width/2),a.x+a.width-width));
+      let y=b.y-height;
+      if(y<a.y)y=b.y+b.height+10;
+      this.mini.setPosition(Math.round(x),Math.round(Math.max(a.y,Math.min(y,a.y+a.height-height))));
+    }
     if(this.hoverTip){const [width,height]=this.tip.getSize(),side=this.hoverTip.side;let x=b.x+b.width*side-width/2,y=b.y+b.height+3;if(y+height>a.y+a.height)y=b.y-height-3;x=Math.max(a.x,Math.min(x,a.x+a.width-width));y=Math.max(a.y,Math.min(y,a.y+a.height-height));this.tip.setPosition(Math.round(x),Math.round(y));}
   }
   toggleMini(){const p={...petDefaults,...this.store.state.settings.pet};if(this.mini.isVisible()){this.mini.hide();return;}this.clearPresence();if(!p.miniPanel){this.panel.show();this.panel.focus();return;}this.resizeMini();this.position();this.broadcast();this.mini.show();}

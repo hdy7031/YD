@@ -66,11 +66,13 @@ test('Phase 2 Dual Status Dock：legacy 黄色单球体与 gold/amber 残留已�
   assert.doesNotMatch(mainCss,/^[\s,>+~]*\.identity-mark\b/m,'旧的 identity-mark 选择器必须移除');
   // Dock 表面：mist 白底 + 圆角矩形，没有暗金色渐变。
   assert.match(orbCss,/\.dock-surface\b/);
-  assert.match(orbCss,/\.dock-surface[\s\S]*?border-radius:15px/);
+  // 2026-09-14（Asset 04）：两端是完整半圆的状态牌（pill）。
+  assert.match(orbCss,/\.dock-surface[\s\S]*?border-radius:999px/);
   assert.doesNotMatch(orbCss,/#(?:e0b234|b88a16|7e5c0c|e4c87c)/i,'Dock 路径不得保留 legacy 暗金配色');
   assert.doesNotMatch(orbCss,/linear-gradient\([^)]*rgba\(\s*2[0-9]{2}\s*,/,'Dock 不使用暖色大色块渐变');
-  // 暖色只允许作为极小 upcoming / meal indicator；默认、忙碌与专注都回到 sage / teal。
-  for(const tone of ['#7C9E99','#6F9895','#3F7774','#C2726A','#A3ACB0']) assert.match(orbCss,new RegExp(tone,'i'),`缺少 ${tone}`);
+  // 统一语义色（与 companion-colors.ts 一致）：空闲 rose、即将 amber、进行中 sage teal、
+  // 专注更深一层，只有真正的冲突才是红；meal / sleep 只作为极小 indicator 保留各自的柔和色。
+  for(const tone of ['#C18A9C','#D7AD59','#55A995','#60998F','#C2726A','#A3ACB0']) assert.match(orbCss,new RegExp(tone,'i'),`缺少 ${tone}`);
   assert.match(orbCss,/\.dock-row\.kind-meal/,'meal 使用独立的小范围 soft-sand indicator');
   assert.match(orbCss,/\.dock-row\.kind-(?:nap|sleep)/,'休息状态使用 dusty blue-gray indicator');
 });
