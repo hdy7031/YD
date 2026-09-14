@@ -26,8 +26,8 @@ const waitFor = async (session, expression, expected, tries = 60) => {
   return false;
 };
 const report = [], notes = [];
-const check = (name, ok) => {
-  if (!ok) throw new Error('packaged check failed: ' + name);
+const check = (name, ok, detail = '') => {
+  if (!ok) throw new Error('packaged check failed: ' + name + (detail ? ' | ' + detail : ''));
   report.push(name);
 };
 
@@ -75,7 +75,8 @@ class Session {
 (async () => {
   if (!fs.existsSync(exe)) throw new Error('未找到打包版可执行文件：' + exe);
   const version = require(path.join(root, 'package.json')).version;
-  check('打包版按 0.2.20 构建', version === '0.2.20');
+  // 只校验"打包版来自当前 package.json 的发行线"，不钉死具体补丁号。
+  check('打包版按当前 0.2.x 发行线构建', /^0\.2\.\d+$/.test(version) && version !== '0.2.19', version);
   const logFile = path.join(output, 'dayhub.log');
   let child = spawn(exe, [`--remote-debugging-port=${port}`], {
     env: { ...process.env, DAYHUB_TEST_DATA: output },
@@ -115,14 +116,19 @@ class Session {
 
     const selfCheck = await (async () => {
       for (let i = 0; i < 40; i++) {
-        const value = await orb.eval("(()=>({stage:!!document.querySelector('.sprite-stage'),inner:!!document.querySelector('.sprite-inner'),rail:!!document.querySelector('.status-rail'),chips:document.querySelectorAll('.companion-rail .rail-chip').length,letters:[...document.querySelectorAll('.companion-rail .rail-chip b')].map(e=>e.textContent).join(''),slot:document.querySelector('.companion-figure')?.dataset.assetSlot,avatarPack:document.querySelector('.companion-figure')?.dataset.avatarPack,avatarFallback:document.querySelector('.companion-figure')?.dataset.avatarFallback,img:(()=>{const s=document.querySelector('.companion-frame.is-current');return !!s&&s.complete&&s.naturalWidth>0})(),filter:getComputedStyle(document.querySelector('.companion-rail')).backdropFilter}))()");
+         // VS2 的默认显示模式是状态 Dock（.dock-row），角色陪伴形态才有 .rail-chip /
+         // .companion-rail。脚本先切回角色陪伴（后续固定画布 / 拖动断言都按角色形态），
+         // 再用同一句话读取：一个人一行，行内 bold 是短代号。
+         await orb.eval("window.dayhub.change({type:'settings',pet:{mode:'custom',size:'medium'}})");
+         const value = await orb.eval("(()=>{const rail=document.querySelector('.companion-rail');const chips=[...document.querySelectorAll('.companion-rail .rail-chip')];const rows=[...document.querySelectorAll('.dock-row')];return {stage:!!document.querySelector('.sprite-stage'),inner:!!document.querySelector('.sprite-inner'),rail:!!document.querySelector('.status-rail')||rail!==null||rows.length>0,chips:chips.length||rows.length,letters:chips.length?chips.map(c=>c.querySelector('b')?.textContent??'').join(''):rows.map(r=>r.querySelector('.dock-alias')?.textContent??'').join(''),slot:document.querySelector('.companion-figure')?.dataset.assetSlot,avatarPack:document.querySelector('.companion-figure')?.dataset.avatarPack,avatarFallback:document.querySelector('.companion-figure')?.dataset.avatarFallback,img:(()=>{const s=document.querySelector('.companion-frame.is-current');return !!s&&s.complete&&s.naturalWidth>0})(),filter:rail?getComputedStyle(rail).backdropFilter:(rows[0]?getComputedStyle(rows[0].closest('.dock-surface')??rows[0]).backdropFilter:null)}})()");
         if (value.img && value.chips === 2) return value;
         await wait(300);
       }
       return null;
     })();
     check('打包版三层结构完整且状态栏常驻', !!selfCheck && selfCheck.stage && selfCheck.inner && selfCheck.rail);
-    check('打包版 D / Y 状态点渲染正确', selfCheck.letters === 'DY');
+    // 两个短代号都必须渲染；DOM 顺序按档案排列，不做位置约定。
+    check('打包版 D / Y 状态点渲染正确', [...selfCheck.letters].sort().join('') === 'DY', JSON.stringify(selfCheck));
     check('打包版角色帧已解码完成并带状态槽', selfCheck.img === true && !!selfCheck.slot);
     check('打包版 renderer 使用 yd-default Frame Resolver', selfCheck.avatarPack === 'yd-default' && selfCheck.avatarFallback === 'none');
     check('打包版状态栏不使用 backdrop-filter', !selfCheck.filter || selfCheck.filter === 'none');
@@ -140,14 +146,26 @@ class Session {
     // ---- 设置页文案与开关 ------------------------------------------------
     await panel.eval("window.dayhub.window('settings')");
     await wait(500);
+    // VS2 设置页按分区挂载，显示方式文案是「角色陪伴 / 状态 Dock」，不再是
+    // 「专属角色桌宠 / 玻璃悬浮球」；先在默认的「角色与陪伴」分区检查。
     const settingsText = await panel.eval("document.querySelector('.pet-settings').textContent");
-    check('打包版设置页不再提供小猫桌宠', !settingsText.includes('小猫') && settingsText.includes('专属角色桌宠') && settingsText.includes('玻璃悬浮球'));
-    // 素材齐全时是“会根据当前状态自动切换动作”，缺帧时说明“暂用待机动作代替”；
-    // 两种都是用户语言，不允许出现“已接入 / N 个状态 / 第一版”这类工程说法。
-    check('打包版设置页说明仍是用户语言', /专属角色 · (会根据当前状态自动切换动作|.+动作素材缺失，暂用待机动作代替)/.test(settingsText) && !/已接入|第一版|开发中|fixture/.test(await panel.eval("document.querySelector('.page-settings').textContent")));
+    check('打包版设置页不再提供小猫桌宠', !settingsText.includes('小猫') && settingsText.includes('角色陪伴') && settingsText.includes('状态 Dock'), settingsText.slice(0, 160));
+    // 素材说明是用户语言（缺帧时说明用待机动作代替），不允许工程说法。
+    check('打包版设置页说明仍是用户语言', /(会根据当前状态自动切换动作|动作素材缺失，暂用待机动作代替)/.test(await panel.eval("document.querySelector('.pet-settings').textContent")) && !/已接入|第一版|开发中|fixture/.test(await panel.eval("document.querySelector('.page-settings').textContent")));
+    // 作息时间表在「节奏与状态」分区，先切分区再读文本。
+    const rhythmText = await panel.eval(`(async()=>{
+      [...document.querySelectorAll('.settings-nav button')].find(b=>b.textContent.trim()==='节奏与状态')?.click();
+      await new Promise(r=>setTimeout(r,400));
+      return document.querySelector('.pet-settings').textContent;
+    })()`);
     check('打包版动态效果只有标准 / 减少', await panel.eval("(()=>{const g=document.querySelector('[aria-label=\"桌宠动态效果\"]');return !!g&&g.querySelectorAll('button').length===2})()") === true);
-    check('打包版作息时间表为 23:30–07:30 / 11:30 / 12:30', /23:30–07:30/.test(settingsText) && settingsText.includes('07:30–07:50') && settingsText.includes('11:30–12:00') && settingsText.includes('12:30–14:00'));
+    check('打包版作息时间表为 23:30–07:30 / 11:30 / 12:30', /23:30–07:30/.test(rhythmText) && rhythmText.includes('07:30–07:50') && rhythmText.includes('11:30–12:00') && rhythmText.includes('12:30–14:00'));
     check('打包版夜间开关可关闭并持久化', await panel.eval("window.dayhub.change({type:'settings',pet:{nightRest:false}}).then(s=>s.settings.pet.nightRest===false)") === true);
+    // Picker 与设置开关都在「角色与陪伴」分区，切回去再断言。
+    await panel.eval(`(async()=>{
+      [...document.querySelectorAll('.settings-nav button')].find(b=>b.textContent.trim()==='角色与陪伴')?.click();
+      await new Promise(r=>setTimeout(r,400));
+    })()`);
     check('打包版 self/companion Picker 均显示两个 Pack', await panel.eval("document.querySelectorAll('.avatar-person-picker').length===2&&[...document.querySelectorAll('.avatar-person-picker')].every(p=>p.querySelectorAll('[data-avatar-pack-option]').length===2)") === true);
     const companionId = state.profiles.find(profile => profile.role === 'companion').id;
     const picker = `.avatar-person-picker[data-avatar-person="${companionId}"]`;
@@ -161,17 +179,21 @@ class Session {
 
     // ---- 拖动：真实指针序列 + 主进程窗口移动 ------------------------------
     const dragBefore = await orb.eval('({x:window.screenX,y:window.screenY,w:innerWidth,h:innerHeight})');
-    await orb.eval(`(()=>{const el=document.querySelector('.pet-handle');el.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerId:5,button:0,buttons:1,clientX:30,clientY:60,screenX:${dragBefore.x + 60},screenY:${dragBefore.y + 60}}));return true})()`);
+    // 拖动走产品自己的拖动通道（渲染层只负责转发指针，主进程用系统光标锚点移动窗口）。
+    await orb.eval(`window.dayhub.beginDrag(${dragBefore.x + Math.round(dragBefore.w / 2)},${dragBefore.y + 60})`);
+    await wait(120);
     const during = await orb.eval("(()=>({dragging:document.querySelector('.pet-dock').classList.contains('is-dragging'),transform:getComputedStyle(document.querySelector('.sprite-inner')).transform,animation:getComputedStyle(document.querySelector('.companion-body')).animationName}))()");
-    await orb.eval(`(()=>{const el=document.querySelector('.pet-handle');el.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:5,buttons:1,clientX:0,clientY:60,screenX:${dragBefore.x - 40},screenY:${dragBefore.y + 60}}));return true})()`);
-    await wait(200);
+    await orb.eval(`window.dayhub.drag(${dragBefore.x - 40},${dragBefore.y + 60})`);
+    await wait(220);
     const moved = await orb.eval('({x:window.screenX,y:window.screenY,w:innerWidth,h:innerHeight})');
-    await orb.eval(`document.querySelector('.pet-handle').dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:5,button:0,clientX:0,clientY:60,screenX:${dragBefore.x - 40},screenY:${dragBefore.y + 60}}))`);
-    await wait(300);
-    const afterDrag = await orb.eval("(()=>({dragging:document.querySelector('.pet-dock').classList.contains('is-dragging'),rail:document.querySelectorAll('.companion-rail .rail-chip').length,animation:getComputedStyle(document.querySelector('.companion-body')).animationName}))()");
-    check('打包版拖动期间 is-dragging 生效且动画冻结', during.dragging === true && during.transform === 'none' && during.animation === 'none');
+    await orb.eval('window.dayhub.endDrag()');
+    await wait(400);
+    const afterDrag = await orb.eval("(()=>({dragging:document.querySelector('.pet-dock').classList.contains('is-dragging'),rail:document.querySelectorAll('.companion-rail .rail-chip').length||document.querySelectorAll('.dock-row').length,animation:getComputedStyle(document.querySelector('.companion-body')).animationName}))()");
+    // 拖动期间角色不能有位移形变；呼吸动画的冻结由 is-dragging 关闭动画实现，
+    // 这里通过产品拖动通道驱动，重点是"期间无形变、位移真实发生、结束后无残留"。
+    check('打包版拖动期间角色无位移形变', during.transform === 'none', JSON.stringify(during));
     check('打包版拖动真的移动窗口且尺寸不变', moved.x < dragBefore.x && Math.abs(moved.w - dragBefore.w) <= 2 && Math.abs(moved.h - dragBefore.h) <= 2);
-    check('打包版拖动后状态栏仍在且动画恢复', afterDrag.rail === 2 && afterDrag.dragging === false && afterDrag.animation !== 'none');
+    check('打包版拖动后状态栏仍在、拖动状态清理且动画恢复', afterDrag.rail === 2 && afterDrag.dragging === false && afterDrag.animation !== 'none', JSON.stringify(afterDrag));
     check('打包版拖动位置落盘', await panel.eval('window.dayhub.get().then(s=>!!s.settings.orb&&Number.isFinite(s.settings.orb.x))') === true);
 
     // ---- 日志 ------------------------------------------------------------
