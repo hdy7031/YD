@@ -25,7 +25,8 @@ INPUTS = {
     "empty-reminders": Path(r"C:\Users\hdy\AppData\Local\Temp\codex-clipboard-010fbdb3-9e02-48a2-8369-7b1e877c37d2.png"),
     "hero-whisper": Path(r"C:\Users\hdy\AppData\Local\Temp\codex-clipboard-a79d8559-7826-4a6e-807b-d6090f97d88a.png"),
     "about-brand-whisper": Path(r"C:\Users\hdy\AppData\Local\Temp\codex-clipboard-7271ccf8-f8d9-439c-9c61-61e83a9c8cce.png"),
-    "app-icon-master": Path(r"C:\Users\hdy\AppData\Local\Temp\codex-clipboard-9fe3e893-9fa9-4f1d-9fdf-f0f494aa34a7.png"),
+    # 程序图标不在这里准备：唯一入口是 scripts/prepare-app-icon.py
+    # （母版 brand/source/app-icon-master-v3.png）。见 docs/brand-assets.md。
 }
 
 
@@ -78,15 +79,6 @@ def main() -> None:
             width = 1200
             height = round(cleaned.height * width / cleaned.width)
             save_scaled(cleaned, RUNTIME / f"{name}.png", (width, height))
-            continue
-        if name == "app-icon-master":
-            # 界面侧只需 512 版参考图；程序图标（yd.ico / icon-256 / icon-512 /
-            # png/yd-*.png）由 scripts/prepare-app-icon.py 从定稿母版
-            # brand/source/app-icon-master-v2.png 导出——那种"整张画布直接缩放"
-            # 的做法会让不透明浅底在 Windows 上渲染成白方块。
-            icon = cleaned.resize((1024, 1024), Image.Resampling.LANCZOS)
-            save_scaled(icon, RUNTIME / "app-icon-master.png", (512, 512))
-            print("提示：程序图标请运行 python scripts/prepare-app-icon.py")
             continue
         subject = crop_subject(cleaned)
         save_scaled(subject, RUNTIME / f"{name}.png", (512, 512))
