@@ -12,6 +12,8 @@
 | `npm test` | 领域、状态引擎、迁移、持久化、Avatar 契约的单元与集成测试 |
 | `npm run typecheck` | `tsc --noEmit` 全量类型检查 |
 | `npm run build` | esbuild 打包 main / UI 到 `dist/`（Electron verifier 的前置步骤） |
+| `npm run verify:vs2` | **VS2 视觉 / 运行时门禁统一入口**：依次运行 `scripts/visual-vs2.cjs` → `runtime-audit.cjs` → `runtime-audit-solo.cjs` → `verify-v030-dock.cjs` |
+| `npx electron scripts/visual-vs2.cjs` | 三档宽度（780×600 / 1050×780 / 1600×960）× 六个页面；课表周次与八节时间、设置六分区与共享 setting-row、Duo Dock 两区等宽、Solo Dock 单行无分隔与 Mini 单卡；报告含 `screen.getAllDisplays()` 缩放率与本次临时 userData 路径 |
 | `npx electron runtime-audit.cjs` | Together 工作区端到端运行时审计 |
 | `npx electron runtime-audit-solo.cjs` | Solo 工作区端到端运行时审计 |
 | `npx electron verify-v0220.cjs` | 桌宠十态契约、作息时间边界、提醒优先级、拖动稳定性 |
@@ -54,7 +56,6 @@ verify-v0213.cjs
 verify-v0215.cjs
 verify-v0215-fallback.cjs
 verify-v0216.cjs
-scripts/ui-audit.cjs
 ```
 
 These are retained for historical compatibility analysis and are not part of
@@ -63,6 +64,19 @@ the current v0.3 release gate.
 它们检查的是已经退役的产品契约（Phase 4A 之前的七态桌宠素材、已删除的旧猫
 fallback、视觉系统刷新前的按钮文案与窗口数量）。这些失败在不包含 Phase 4C2
 改动的基线中同样可以复现，因此不代表当前产品缺陷。
+
+### 已删除的可执行 verifier
+
+```text
+scripts/visual-v022.cjs   旧悬浮球（.presence-orb / .identity-mark）视觉审计
+scripts/ui-audit.cjs      视觉系统刷新前的按钮文案走查（加载 dist/index.html）
+```
+
+两者对应的 DOM 契约已经在 VS2 中彻底消失（旧 Orb 结构被 Dual Status Dock 取代、
+导航文案与页面结构重排），保留文件只会误导维护者，因此删除。覆盖已并入
+`npm run verify:vs2`：响应式宽度、无横向滚动、空状态与 Dock 结构分别由
+`scripts/visual-vs2.cjs`、`runtime-audit*.cjs`、`verify-v030-dock.cjs` 承担。
+历史 Phase 文档中"当时存在这两个脚本"的陈述仍然成立，不追溯修改。
 
 不要为了让这些脚本变绿而恢复旧素材、旧 UI 或旧契约；每个脚本顶部都有
 `@deprecated` 说明与它被谁取代。
@@ -85,9 +99,9 @@ Daily Summary 的改动无关。它们的覆盖已被当前门禁取代：
 
 | 旧脚本覆盖 | 当前替代 |
 | --- | --- |
-| 响应式宽度、无横向滚动 | `scripts/visual-mist.cjs` + `runtime-audit*.cjs` |
+| 响应式宽度、无横向滚动 | `scripts/visual-vs2.cjs`（三档宽度 × 六页）+ `runtime-audit*.cjs` |
 | 同行者页当前状态卡 | `runtime-audit.cjs` |
-| 空状态不居中 / 文档流布局 | `runtime-audit-solo.cjs`、`scripts/visual-mist.cjs` |
+| 空状态不居中 / 文档流布局 | `runtime-audit-solo.cjs`、`scripts/visual-vs2.cjs` |
 
 不要为了修这三个脚本去复活旧 mock 契约；若要恢复，应先让 `audit-preload.cjs`
 对齐 `LiveSnapshot` 现形（单独任务，不属于 Phase 1）。
@@ -106,7 +120,14 @@ node scripts/verify-current-release.cjs --skip-packaged  # 只做源码级检查
 ## 5. 运行环境
 
 - Electron verifier 需要真实 GUI 会话；无桌面环境时会失败，这是环境问题而非产品问题。
-- 所有 verifier 把 `DAYHUB_TEST_DATA` 指向仓库内 `test-data/`，不读写正式用户数据。
+- 所有 Electron verifier 都通过 `scripts/electron-test-profile.cjs` 把 userData 指向
+  `os.tmpdir()` 下的唯一临时目录（`app.setPath('userData'|'sessionData')` 同时设置），
+  并把 `DAYHUB_TEST_DATA` 指向同一目录；截图 / 报告仍写到仓库内 `test-data/`。
+  任何 verifier 都不会读取、迁移、恢复、删除或修改 `%APPDATA%\事务助手`。
+- 程序图标与字标是两条独立链路：程序图标 = `python scripts/prepare-app-icon.py`
+  （源：`brand/source/app-icon-master-v2.png`），字标 / 托盘 =
+  `npx electron scripts/brand-render.cjs`。判定 Windows 图标白边时以"四角 alpha 与
+  边缘亮像素"为准，可运行打包后的 `release/win-unpacked/YD.exe` 复查嵌入帧。
 - 桌宠显示/隐藏快捷键 `Ctrl+Alt+Y` 是机器级注册。运行 `verify-v0220.cjs` 前必须关闭
   其它 YD 实例（包含已安装版本；它们用各自的 userData 启动，不受单实例锁限制），
   否则该步骤会以「快捷键注册失败」失败，与代码改动无关。

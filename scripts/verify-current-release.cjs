@@ -7,6 +7,10 @@
 // See docs/verification-v030.md for what each gate covers and for the list of
 // historical verifiers that are deliberately NOT part of this run.
 //
+// VS2 视觉 / 运行时门禁（scripts/visual-vs2.cjs + 两个 runtime audit + Dock）
+// 有独立入口 `npm run verify:vs2`；这里把视觉脚本插在同一条链里，保持
+// "一次运行覆盖全部维护中的门禁"这一语义。
+//
 // Usage:
 //   node scripts/verify-current-release.cjs
 //   node scripts/verify-current-release.cjs --with-aux
@@ -37,6 +41,7 @@ const gates = [
   npmStep('npm test', ['test']),
   npmStep('npm run typecheck', ['run', 'typecheck']),
   npmStep('npm run build', ['run', 'build']),
+  electronStep(path.join('scripts', 'visual-vs2.cjs')),
   electronStep('runtime-audit.cjs'),
   electronStep('runtime-audit-solo.cjs'),
   electronStep('verify-v0220.cjs'),
