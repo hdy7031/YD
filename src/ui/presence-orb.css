@@ -23,12 +23,13 @@
 .pet-dock.orb-mode .pet-handle,
 .pet-handle.dock-handle {
   position:absolute;
-  /* 命中 / 拖动区域只覆盖可见牌面（含 4px 阴影画布）：画布上方预留给 hover 生长的
-     那部分是透明的，指针落在那里时窗口保持点击穿透，不会挡住下面的桌面。 */
+  /* 命中 / 拖动区域只覆盖可见牌面（含 4px 阴影画布）：画布里留给 hover 生长的
+     那部分是透明的，指针落在那里时窗口保持点击穿透，不会挡住下面的桌面。
+     牌面右下对齐画布，因此 hover 生长只会向左 / 上发生，窗口本身从不移动。 */
   left:0;
   right:0;
   bottom:0;
-  height:calc(var(--dock-height, 50px) + 8px);
+  height:calc(var(--dock-height-hover, 42px) + 8px);
   display:block;
   width:auto;
   aspect-ratio:auto;
@@ -43,50 +44,46 @@
   cursor:grab;
   touch-action:none;
   -webkit-tap-highlight-color:transparent;
-  transition:height 150ms ease;
 }
-.pet-dock.orb-mode:has(.dock-surface.is-expanded) .pet-handle { height:calc(var(--dock-height-hover, 70px) + 8px); }
 
 .pet-dock.orb-mode .pet-handle:active { cursor:grabbing; }
 .pet-dock.orb-mode .pet-handle:focus,
 .pet-dock.orb-mode .pet-handle:focus-visible { outline:0; box-shadow:none; }
 
 .dock-surface {
-  /* 状态语义色只在这里落地（取值与 src/companion-colors.ts 一致，见 docs/brand-assets.md）：
-     空闲 dusty rose / 即将 amber / 进行中 sage teal / 专注更深的 sage / 只有冲突才是红。 */
+  /* 指示灯语义色只在这里落地（取值与 src/companion-colors.ts 一致）：
+     绿 = 空闲；红 = 忙碌（上课 / 会议 / 教研 / 专注 / 用餐 / 通勤）；
+     灰 = 下线（睡眠，与桌宠夜间睡眠同源）。 */
   --dock-edge:rgba(79,119,115,.16);
   --dock-ink:#22302F;
   --dock-muted:#5F706E;
-  --dock-idle:#C18A9C;
-  --dock-active:#55A995;
-  --dock-focus:#60998F;
-  --dock-upcoming:#D7AD59;
-  --dock-alert:#C2726A;
-  --dock-finished:#9AA79F;
+  --dock-idle:#66A37F;
+  --dock-active:#C2726A;
+  --dock-focus:#C2726A;
+  --dock-upcoming:#66A37F;
+  --dock-alert:#B4574E;
   isolation:isolate;
   position:absolute;
-  left:4px;
+  /* 只钉住右 / 下两条边：展开时向左上方长，桌面上的锚点（右下角）不动。 */
   right:4px;
   bottom:4px;
   display:flex;
   align-items:stretch;
-  /* 默认牌面高度；hover 在固定画布内向上生长，底边不动。 */
-  height:var(--dock-height, 50px);
+  width:var(--dock-width, 176px);
+  height:var(--dock-height, 36px);
   box-sizing:border-box;
   overflow:hidden;
   padding:0 6px;
   border:1px solid var(--dock-edge);
-  /* Asset 04：默认与悬停共用同一块状态牌，两端是完整半圆（pill）。 */
   border-radius:999px;
   background:rgba(250,252,251,.92);
-  /* 阴影必须在这块 4px 透明画布内收敛：窗口边界处的合成 alpha 直接决定它会不会
-     变成"被切断的黑边"。0 2px 5px ≈ 在 4px 处 alpha < 2%，边缘不再有硬台阶。 */
   box-shadow:0 2px 5px rgba(31,43,44,.06),0 1px 2px rgba(31,43,44,.04),inset 0 1px rgba(255,255,255,.82);
   -webkit-backdrop-filter:blur(18px) saturate(108%);
   backdrop-filter:blur(18px) saturate(108%);
-  transition:height 150ms ease,border-color 150ms ease,box-shadow 150ms ease,background-color 150ms ease;
+  /* 展开是 layout transition（宽 / 高 / 透明度），不是 scale：文字不会跟着变糊变大。 */
+  transition:width 150ms ease,height 150ms ease,border-color 150ms ease,box-shadow 150ms ease,background-color 150ms ease;
 }
-.dock-surface.is-expanded { height:var(--dock-height-hover, 70px); }
+.dock-surface.is-expanded { width:var(--dock-width-hover, 212px); height:var(--dock-height-hover, 42px); }
 
 .pet-handle:hover .dock-surface { border-color:rgba(79,119,115,.28); background:rgba(252,253,253,.95); box-shadow:0 2px 6px rgba(31,43,44,.07),0 1px 2px rgba(31,43,44,.05),inset 0 1px rgba(255,255,255,.9); }
 .pet-handle:active .dock-surface,.pet-dock.is-dragging .dock-surface { border-color:rgba(79,119,115,.23); box-shadow:0 2px 5px rgba(31,43,44,.055),0 1px 2px rgba(31,43,44,.04); }
@@ -105,91 +102,104 @@
 
 .dock-row {
   --status:var(--dock-idle);
-  --status-rgb:193,138,156;
   position:relative;
-  display:grid;
-  grid-template-columns:26px 16px minmax(0,1fr);
+  /* 单列纵向堆叠：第一行永远垂直居中，第二行只在 hover 展开时占位。
+     因此展开是"牌面长大 + 第二行出现"，不是把第一行强行推走。 */
+  display:flex;
+  flex-direction:column;
   align-items:center;
-  column-gap:6px;
+  justify-content:center;
+  gap:2px;
   min-width:0;
   flex:1 1 0;
-  padding:0 8px;
-  transition:background-color 150ms ease,padding 150ms ease;
+  /* 内边距 / 间隙要留得下最常见的三字状态（上课中 / 教研中 / 通勤中 / 刚睡醒）：
+     3px 边距 + 3px 间隙 + 12px 状态点列，中档 81px 的列还剩 54px 给状态文字（13px 三字 ≈ 39px）。 */
+  padding:0 2px;
+  transition:background-color 150ms ease;
 }
 .dock-row + .dock-row::before { content:""; position:absolute; left:-1px; top:11px; bottom:11px; width:1px; background:rgba(79,119,115,.13); }
 /* 指针所在的那个人只有一层极淡的胶囊底，不铺满整块区域（Asset 04 的 hover 以文字为主）。 */
 .dock-row.is-hovered { background:rgba(79,119,115,.05); border-radius:999px; }
-.dock-row > .dock-alias,.dock-row > .status-core,.dock-row > .dock-status { transition:transform 140ms ease; }
-.dock-row.is-hovered > .dock-alias,.dock-row.is-hovered > .status-core,.dock-row.is-hovered > .dock-status { transform:translateY(-4px); }
-/* 展开时一级信息略微上移、首字母再抬高一点，第二行落在下方（参考稿的 hover 节奏）。 */
-.dock-surface.is-expanded > .dock-row > .dock-status { transform:translateY(-4px); }
-.dock-surface.is-expanded > .dock-row > .dock-alias,
-.dock-surface.is-expanded > .dock-row > .status-core { transform:translateY(-8px); }
-.dock-surface.solo { justify-content:center; padding:0 12px; }
-.dock-surface.solo .dock-row { flex:0 1 auto; width:100%; padding-left:6px; padding-right:6px; }
+/* 字母与状态之间的呼吸：展开时同步拉开，牌面长大了间距也跟着长。 */
+.dock-line { display:flex; align-items:center; gap:var(--dock-gap,5px); min-width:0; max-width:100%; transition:gap 150ms ease; }
+.dock-surface.is-expanded .dock-line { gap:var(--dock-gap-hover,8px); }
+.dock-surface.solo { justify-content:center; }
+.dock-surface.solo .dock-row { flex:0 1 auto; width:100%; }
 .dock-surface.solo .dock-row::before { display:none; }
-/* 单人参照图里首字母与状态文字差不多大（不像双人稿那样夸张）。 */
-.dock-surface.solo .dock-alias { font-size:17px; }
-.dock-surface.solo .dock-extra { bottom:9px; }
-/* Solo 的画布只比默认高 12px，一级信息要抬得更多才能和第二行拉开。 */
-.dock-surface.solo.is-expanded > .dock-row > .dock-alias,
-.dock-surface.solo.is-expanded > .dock-row > .status-core,
-.dock-surface.solo.is-expanded > .dock-row > .dock-status { transform:translateY(-11px); }
 /* 状态色只落在小圆点（Asset 04：实心点，无外环、无发光）。 */
-.dock-row.state-idle { --status:var(--dock-idle); --status-rgb:193,138,156; }
-.dock-row.state-busy { --status:var(--dock-active); --status-rgb:85,169,149; }
-.dock-row.state-focus { --status:var(--dock-focus); --status-rgb:96,153,143; }
-.dock-row.state-upcoming { --status:var(--dock-upcoming); --status-rgb:215,173,89; }
-.dock-row.state-dnd { --status:var(--dock-alert); --status-rgb:194,114,106; }
-.dock-row.state-offline { --status:#A3ACB0; --status-rgb:163,172,176; }
-/* 已完成（今日结束 / 学期结束）：sage gray，不和进行中的 active 一样饱和。 */
-.dock-row[data-code="DAY_FINISHED"],.dock-row[data-code="TERM_ENDED"] { --status:var(--dock-finished); --status-rgb:154,167,159; }
+.dock-row.state-idle { --status:var(--dock-idle); }
+.dock-row.state-busy { --status:var(--dock-active); }
+.dock-row.state-focus { --status:var(--dock-focus); }
+.dock-row.state-upcoming { --status:var(--dock-upcoming); }
+.dock-row.state-dnd { --status:var(--dock-alert); }
+.dock-row.state-offline { --status:#A3ACB0; }
 /* CurrentState.kind 只决定微小 indicator 的语义色，不染整块 surface。 */
-.dock-row.kind-meal { --status:#C7A775; --status-rgb:199,167,117; }
-.dock-row.kind-commute { --status:#738791; --status-rgb:115,135,145; }
-.dock-row.kind-nap,.dock-row.kind-sleep,.dock-row.kind-rest { --status:#8E91AE; --status-rgb:142,145,174; }
+/* 「今日课程已结束」是空闲的上下文，不是一个更"重要"的状态：
+   圆点保持空闲绿（见上），只有第二行文字更安静。 */
 
 .dock-alias {
-  color:var(--dock-ink);
-  /* Asset 04 的量取结果：首字母墨高约为状态牌高度的 35%，是状态文字的 1.7 倍。 */
-  font:600 24px/1 Georgia,"Times New Roman","Songti SC",serif;
-  letter-spacing:.01em;
+  /* 身份标记：更大、更轻、更淡；和状态文字（更小、更重、更深）形成层级，
+     两者不再是一模一样的字体样式。 */
+  color:#394A48;
+  font:500 16px/1 "Segoe UI Variable Display","Segoe UI","Microsoft YaHei UI",sans-serif;
+  letter-spacing:.04em;
   white-space:nowrap;
+  flex:none;
 }
 
 .dock-status {
-  color:var(--dock-muted);
-  font:580 14px/1.2 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
+  color:var(--dock-ink);
+  /* 13px：略小一点就能让三字状态完整显示，比继续加宽牌面更克制。 */
+  font:600 13px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
   font-variant-numeric:tabular-nums;
   text-align:left;
   white-space:nowrap;
   overflow:hidden;
+  /* 内置状态（≤3 字）在默认牌面里必须完整显示；省略号只是自定义超长文案的最后手段。 */
   text-overflow:ellipsis;
+  min-width:0;
 }
 
-/* 第二行与状态文字左对齐（8 边距 + 26 首字母列 + 6 + 16 状态点列 + 6 = 62px）。 */
-.dock-extra { position:absolute; left:62px; right:8px; bottom:14px; overflow:hidden; color:#8B9997; font:450 10.5px/1.1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-align:left; text-overflow:ellipsis; white-space:nowrap; opacity:0; transform:translateY(2px); transition:opacity 140ms ease,transform 140ms ease; }
-.dock-surface.solo .dock-extra { left:50px; }
+/* 第二行：Together 的列很窄，第二行从行首开始（与首字母左对齐）才放得下
+   「今日课程已结束」「下一项 明天 08:00」这类完整句子；Solo 空间宽松，保留缩进。 */
+.dock-extra {
+  display:block;
+  align-self:stretch;
+  max-width:100%;
+  box-sizing:border-box;
+  height:0;
+  padding-left:0;
+  overflow:hidden;
+  color:#7E8D8A;
+  font:450 10.5px/1.15 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
+  text-align:left;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  opacity:0;
+  transition:height 150ms ease,opacity 150ms ease;
+}
+.dock-surface.solo .dock-extra { padding-left:22px; }
 /* Hover 是二级信息揭示：整块状态牌一起显露第二行，而不是只放大被指到的那一行。 */
-.dock-surface.is-expanded .dock-extra,.dock-row.is-hovered .dock-extra { opacity:1; transform:none; }
+.dock-surface.is-expanded .dock-extra { height:12px; opacity:1; }
 .pet-dock.is-dragging .dock-row > * { transform:none !important; transition:none !important; }
 
 .status-core {
   position:relative;
   display:grid;
   place-items:center;
-  width:16px;
+  width:12px;
   height:16px;
+  flex:none;
 }
 
 .status-ring,
 .status-dot { position:absolute; display:block; border-radius:50%; }
 /* Asset 04 的状态点是实心圆：外环退场（保留节点，供既有结构断言引用）。 */
 .status-ring { inset:1px; border:0; box-shadow:none; opacity:0; }
-/* Asset 04：状态点直径约为状态牌高度的 20%（中档 50px 牌面 ≈ 10px）。 */
+/* 7–8px：状态点只表达此刻状态，颜色比尺寸更重要。 */
 .status-dot {
-  width:10px;
-  height:10px;
+  width:8px;
+  height:8px;
   background:var(--status);
   box-shadow:none;
 }
@@ -225,6 +235,6 @@
 }
 
 @media (prefers-reduced-motion:reduce) {
-  .dock-surface,.dock-row { transition:none; }
+  .dock-surface,.dock-row,.dock-extra { transition:none; }
   .motion .status-dot,.motion .status-ring { animation:none !important; }
 }

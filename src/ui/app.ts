@@ -384,15 +384,19 @@ function App(){
       kind==='tasks'?h(ManagementOverview,{tasks:[...s.tasks].sort((a,b)=>Number(a.done)-Number(b.done)||(a.due?epoch(a.due):Infinity)-(b.due?epoch(b.due):Infinity)),events:s.events,now,query,setQuery:search,taskCard,editEvent:(event:Event)=>open('events',event),deleteEvent:(event:Event)=>setDeletion({entity:'events',id:event.id}),createTask:()=>open('tasks'),createEvent:()=>open('events')}):null,
       kind==='courses'?h(React.Fragment,null,
         // 浏览是默认状态；课程增改只在显式进入编辑状态后出现。
+        // 课表管理顶部是横向工具栏：左侧选课表、中间课表元信息、右侧操作组。
+        // 三块各占一格，不再把整组控件放在卡片中央，也不再让日期和选择器粘在一起。
         h('div',{className:'course-toolbar'},
           h('div',{className:'course-toolbar-main'},
-            h('select',{'aria-label':'课表所属人',value:activePerson,onChange:(e:any)=>setPerson(e.target.value)},...personOptions(s).map(o=>h('option',{key:o.value,value:o.value},o.label))),
-            h('div',{className:'course-toolbar-copy'},h('strong',null,`${profile.startDate} 起 · ${profile.weeks} 周`),h('small',null,`课表更新于 ${fmt(profile.updatedAt,true)}`))),
+            h('select',{'aria-label':'课表所属人',value:activePerson,onChange:(e:any)=>setPerson(e.target.value)},...personOptions(s).map(o=>h('option',{key:o.value,value:o.value},o.label)))),
+          h('div',{className:'course-toolbar-copy'},h('strong',null,`${profile.startDate} 起 · ${profile.weeks} 周`),h('small',null,`课表更新于 ${fmt(profile.updatedAt,true)}`)),
           h('div',{className:'course-toolbar-actions'},
             scheduleMode==='edit'?b('添加课程',()=>open('courses'),'primary'):null,
-            b(scheduleMode==='edit'?'完成':'编辑课表',()=>setScheduleMode(scheduleMode==='edit'?'overview':'edit'),scheduleMode==='edit'?'secondary':'ghost'),
+            // 三个操作同属一个 action group，视觉权重一致（都是 secondary），
+            // 没有主 CTA：这里没有"必须按"的动作，只有并列的维护入口。
+            b(scheduleMode==='edit'?'完成':'编辑课表',()=>setScheduleMode(scheduleMode==='edit'?'overview':'edit'),'secondary'),
             h('button',{type:'button',className:'secondary icon-action',onClick:()=>open('profiles',profile)},uiIcon(Clock3),'节次时间'),
-            b(importing?'正在读取…':'导入课表',chooseSchedule,'ghost',importing||pending))),
+            b(importing?'正在读取…':'导入课表',chooseSchedule,'secondary',importing||pending))),
         h(ScheduleGrid,{state:s,profile,courses:active,now,mode:scheduleMode,edit:(course:Course)=>open('courses',course),create:(value:Partial<Course>)=>open('courses',{...newValue('courses',activePerson,selfId),...value})}),
         h('section',{className:'panel exceptions-panel'},
           h('div',{className:'section-head'},h('div',null,h('h2',null,'单次调课与停课'),h('small',{className:'section-subtitle'},exceptionList.length?`${exceptionList.length} 条记录`:'暂无记录'))),

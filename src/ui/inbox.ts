@@ -153,13 +153,17 @@ export function InboxHub({state,saved,selected,select,open}:Props){
             h('button',{className:'ghost',onClick:()=>{setMenu(false);setText('');setSource('MANUAL');}},'清空输入'))),
         button(busy?'整理中…':'整理通知',submitText,'primary',busy||!text.trim()))),
     h('nav',{className:'inbox-filters text-tabs','aria-label':'通知筛选'},...filterLabels.map(([value,label])=>h('button',{key:value,type:'button',className:filter===value?'active':'','aria-current':filter===value?'page':undefined,onClick:()=>{setFilter(value);select(null);}},h('span',null,label),h('small',null,String(counts[value]))))),
-    h('p',{className:'muted page-intro'},'原文先保存，整理结果核对后才会加入正式事务。'),
+    // 数据确认机制是产品原则，保留但降为一行的弱提示（11.5px muted + 轻 info 图标），
+    // 不再占据正文级段落的位置。
+    h('p',{className:'trust-note'},h('i',{'aria-hidden':true}),'整理结果经确认后才会加入正式事务'),
     error?h('p',{className:'error',role:'alert'},error):null,
     !state.notices.length
       ? h('div',{className:'page-empty-stage'},h(EmptyState,{title:'收件箱还是空的',description:'粘贴通知、截图或拖入图片，原文会先保存在本机，核对后再加入正式事务。',illustration:'assets/gen/empty-inbox.png'}))
       : h('div',{className:'inbox-hub'+(n?' has-selection':' is-hall')},
       h('section',{className:'inbox-list','aria-label':'通知列表'},
-        h('div',{className:'inbox-list-head'},h('span',null,`${list.length} 条通知`),h('span',{className:'muted'},n?'查看详情':'选择一条查看详情')),
+        // 列表标题 + 数量合成一个 section header；"选择一条查看详情"这类教学式说明直接删除，
+        // 可点击性由列表项自身的 hover / selected 表达。
+        h('div',{className:'inbox-list-head'},h('span',{className:'inbox-list-title'},'通知'),h('span',{className:'muted inbox-list-count'},`${list.length} 条`)),
         ...list.map(item=>h('button',{key:item.id,type:'button',className:'entry inbox-list-item kind-'+(item.detectedType||'UNKNOWN')+' status-'+displayStatus(item)+(item.id===selected?' selected':''),'aria-pressed':item.id===selected,onClick:()=>select(item.id===selected?null:item.id)},
           h('strong',null,noticeTitle(item)),
           h('p',{className:'notice-excerpt'},item.originalText||item.text||'图片通知 · 点击查看原图'),
@@ -167,7 +171,7 @@ export function InboxHub({state,saved,selected,select,open}:Props){
         !list.length?h('div',{className:'inbox-empty muted'},filter==='all'?'暂无通知。':'这个筛选下没有通知。'):null),
       h('section',{className:'inbox-detail-pane','aria-label':'通知详情'},
         n?h(InboxDetail,{key:n.id,notice:n,state,saved,open,back:()=>select(null),narrow})
-          :h('div',{className:'inbox-placeholder'},h('img',{src:'assets/gen/empty-inbox-selection.png',alt:'','aria-hidden':true,draggable:false}),h('div',null,h('strong',null,'选择一条通知查看详情'),h('p',{className:'muted'},'列表和筛选保留在左侧；右侧显示原始通知、提取文字与整理结果。'))))));
+          :h('div',{className:'inbox-placeholder'},h('img',{src:'assets/gen/empty-inbox-selection.png',alt:'','aria-hidden':true,draggable:false}),h('div',null,h('strong',null,'未选择通知'),h('p',{className:'muted'},'通知的原文与整理结果会显示在这里。'))))));
 }
 function InboxDetail({notice:n,state,saved,open,back,narrow}:{notice:Notice;state:State;saved:(s:State)=>void;open:Props['open'];back:()=>void;narrow:boolean}){
   const [draft,setDraft]=useState<ParsedDraft>(n.parsedData||blankDraft()),[text,setText]=useState(n.text),[error,err]=useState(''),[busy,setBusy]=useState(false),[allow,setAllow]=useState(false),[updateId,setUpdate]=useState(''),[deleting,setDeleting]=useState(false);
