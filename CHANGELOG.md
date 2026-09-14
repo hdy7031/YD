@@ -13,6 +13,8 @@
 - 状态语义色统一为：空闲 rose、即将 amber（不再是红）、进行中 sage teal、专注深一档、
   已完成 sage gray，只有真正的冲突才用红。
 - Asset 03 语义图标接入详情面板（presentation-only 映射，找不到映射就不显示图标）。
+- Hover 按参考稿向上生长（Together ≈1.4×、Solo ≈1.24×），差量预留在固定画布内：
+  窗口尺寸与位置不变、底边固定，命中区域只覆盖可见牌面。
 
 ### 品牌资源单一来源（`fix: centralize current YD production brand assets`）
 

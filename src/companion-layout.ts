@@ -65,7 +65,26 @@ export const companionDock = {
     medium: { width: 164, height: 58 },
     large: { width: 180, height: 62 },
   } as Record<CompanionSize, CompanionGeometry>,
+  /**
+   * Hover 时可见牌面向上的生长量（参考稿里 hover 的牌面比默认高约 1.4×）。
+   * 窗口尺寸 = 默认牌面 + 生长量 + 8px 阴影画布，**窗口本身永远不变**：
+   * 生长完全发生在画布内部，底边固定，因此不会产生几何漂移。
+   */
+  grow: { small: 18, medium: 20, large: 22 } as Record<CompanionSize, number>,
+  soloGrow: { small: 11, medium: 12, large: 14 } as Record<CompanionSize, number>,
 };
+
+/**
+ * 状态牌可见表面的尺寸契约（renderer 与主进程共用）：
+ *   default = 窗口 − 4px 边距
+ *   hover   = default + grow
+ */
+export function dockSurfaceMetrics(mode: CompanionMode, size: CompanionSize, people = 2): { defaultHeight: number; hoverHeight: number } {
+  const family = people <= 1 ? companionDock.solo : companionDock.collapsed;
+  const grow = people <= 1 ? companionDock.soloGrow[size] : companionDock.grow[size];
+  const defaultHeight = family[size].height - 8;
+  return { defaultHeight, hoverHeight: defaultHeight + grow };
+}
 
 export interface CompanionGeometry {
   width: number;
@@ -81,7 +100,9 @@ export function companionGeometry(mode: CompanionMode, size: CompanionSize, aspe
       ? (expanded ? companionDock.soloExpanded : companionDock.solo)
       : (expanded ? companionDock.expanded : companionDock.collapsed);
     const { width, height } = family[size];
-    return { width, height, shape: 'rounded' };
+    // 窗口高度始终按 hover 状态预留：可见的默认牌面更矮，多出来的部分是透明画布。
+    const grow = people <= 1 ? companionDock.soloGrow[size] : companionDock.grow[size];
+    return { width, height: height + grow, shape: 'rounded' };
   }
   // Avatar Pack supplies the canvas ratio; window policy stays generic.
   const character = companionCharacter.height[size];

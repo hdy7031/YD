@@ -93,17 +93,17 @@ app.whenReady().then(async () => {
     check('状态浮标单人行的短标签来自本人档案', await orb.webContents.executeJavaScript("document.querySelector('.dock-row .dock-alias')?.textContent.trim()==='A'"), await orb.webContents.executeJavaScript("document.querySelector('.dock-row .dock-alias')?.textContent.trim()"));
     check('Solo 没有 divider 或空白第二槽位',await orb.webContents.executeJavaScript("getComputedStyle(document.querySelector('.dock-row'),'::before').display==='none'&&!document.querySelector('.dock-row+.dock-row')"));
     // Solo 是重新配比的完整一等形态，不沿用 Together 的宽度。
-    check('Solo 默认几何独立、短而利落（中档 164×58）', (() => { const [width, height] = orb.getSize(); return Math.abs(width-164)<=2&&Math.abs(height-58)<=2; })(), JSON.stringify(orb.getSize()));
+    check('Solo 默认几何独立、短而利落（中档 164×70（含 hover 预留画布））', (() => { const [width, height] = orb.getSize(); return Math.abs(width-164)<=2&&Math.abs(height-70)<=2; })(), JSON.stringify(orb.getSize()));
     fs.writeFileSync(path.join(output,'dock-solo-default.png'),(await orb.capturePage()).toPNG());
     await orb.webContents.executeJavaScript("window.dayhub.presence('enter','alex')");
     await wait(250);
-    check('Solo hover 只展开内部信息，164×58 外框保持不变', !tip.isVisible()&&Math.abs(orb.getSize()[0]-164)<=2&&Math.abs(orb.getSize()[1]-58)<=2,JSON.stringify(orb.getSize()));
+    check('Solo hover 只展开内部信息，164×70 外框保持不变', !tip.isVisible()&&Math.abs(orb.getSize()[0]-164)<=2&&Math.abs(orb.getSize()[1]-70)<=2,JSON.stringify(orb.getSize()));
     check('Solo hover 补充信息短而完整',await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row.is-hovered').length===1&&!!document.querySelector('.dock-extra')&&!document.body.textContent.includes('undefined')"));
     fs.writeFileSync(path.join(output,'dock-solo-hover.png'),(await orb.capturePage()).toPNG());
     check('不存在的状态区域被拒绝而不是崩溃', await orb.webContents.executeJavaScript("window.dayhub.presence('enter','partner').then(()=>false).catch(()=>true)"));
     await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");
     await wait(180);
-    check('Solo hover 离开后外框稳定且无残留',!tip.isVisible()&&Math.abs(orb.getSize()[0]-164)<=2&&Math.abs(orb.getSize()[1]-58)<=2&&await orb.webContents.executeJavaScript("!document.querySelector('.dock-row.is-hovered')"));
+    check('Solo hover 离开后外框稳定且无残留',!tip.isVisible()&&Math.abs(orb.getSize()[0]-164)<=2&&Math.abs(orb.getSize()[1]-70)<=2&&await orb.webContents.executeJavaScript("!document.querySelector('.dock-row.is-hovered')"));
 
     /* ---------- Mini / Menu ---------- */
     await orb.webContents.executeJavaScript("window.dayhub.window('mini')");

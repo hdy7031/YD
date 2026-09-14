@@ -86,13 +86,13 @@ app.whenReady().then(async()=>{
     zones=await orb.webContents.executeJavaScript("!!document.querySelector('.dock-row.presence-me.state-busy')&&!!document.querySelector('.dock-row.presence-partner.state-focus')");
   }
   check('忙碌与专注状态映射到独立状态核心',zones);
-  await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(80);check('CASE 1 hover 只展开内部信息且外框不变',!tip.isVisible()&&Math.abs(orb.getSize()[0]-276)<=8&&orb.getSize()[1]===58&&await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row.is-hovered').length===1"));
+  await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(80);check('CASE 1 hover 只展开内部信息且外框不变',!tip.isVisible()&&Math.abs(orb.getSize()[0]-276)<=8&&orb.getSize()[1]===78&&await orb.webContents.executeJavaScript("document.querySelectorAll('.dock-row.is-hovered').length===1"));
   check('内部补充信息无 undefined',await orb.webContents.executeJavaScript("!!document.querySelector('.dock-row.is-hovered .dock-extra')&&!document.body.textContent.includes('undefined')"));
-  await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");await wait(80);check('CASE 2 离开后外框仍保持固定且无 tooltip',!tip.isVisible()&&Math.abs(orb.getSize()[0]-276)<=8&&orb.getSize()[1]===58);
+  await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");await wait(80);check('CASE 2 离开后外框仍保持固定且无 tooltip',!tip.isVisible()&&Math.abs(orb.getSize()[0]-276)<=8&&orb.getSize()[1]===78);
   // Windows 会把透明无边框窗口对齐到物理像素栅格（DPI 缩放下会 ±几 px），
   // 因此窗口尺寸允许物理像素取整；Dock 的固定布局常量由 layout 单测锁定。
   const beforeDrag=orb.getBounds();
-  check('状态浮标窗口为固定圆角状态牌',Math.abs(beforeDrag.width-276)<=8&&beforeDrag.height===58,JSON.stringify({width:beforeDrag.width,height:beforeDrag.height}));
+  check('状态浮标窗口为固定圆角状态牌',Math.abs(beforeDrag.width-276)<=8&&beforeDrag.height===78,JSON.stringify({width:beforeDrag.width,height:beforeDrag.height}));
   const pointer={x:beforeDrag.x+Math.round(beforeDrag.width/2),y:beforeDrag.y+Math.round(beforeDrag.height/2)};
   await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(30);
   await orb.webContents.executeJavaScript(`window.dayhub.beginDrag(${pointer.x},${pointer.y})`);

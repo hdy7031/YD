@@ -8,7 +8,7 @@ import {companionDisplayLabels} from '../companion-display.ts';
 import {companionVisualStates,type CompanionDisplayState} from '../companion-visual.ts';
 import {stateSourceLabel} from '../state/presentation.ts';
 import {companionTone} from '../companion-colors.ts';
-import {companionFrame,companionRail} from '../companion-layout.ts';
+import {companionFrame,companionRail,dockSurfaceMetrics} from '../companion-layout.ts';
 import {petRoutineSummary,type CompanionDisplay} from '../companion-display.ts';
 import {createDefaultRoutine,routineKindPriority,type RoutineRule} from '../routine.ts';
 import {EmptyState} from './views.ts';
@@ -187,10 +187,14 @@ export function DesktopPet(){
   const side=custom
     ?h('div',{className:'status-rail'},h('button',{'data-interactive':true,className:'companion-rail-button',title:people.length>1?'查看双方状态':'查看当前状态',onClick:()=>void api.window('mini')},h(CompanionRail,{live})))
     :null;
+  // 状态牌的可见高度契约来自 companion-layout（默认 / hover 两档），窗口尺寸固定不变。
+  const dockMetrics=dockSurfaceMetrics(p.mode==='orb'?'orb':'custom',p.size,people.length);
   return h('div',{className:`pet-dock ${p.mode==='orb'?'orb-mode':'custom-mode'}${dragging?' is-dragging':''}`,style:{
     '--rail-height':companionRail.height+'px',
     '--frame-pad-x':companionFrame.padX+'px',
     '--frame-pad-y':companionFrame.padY+'px',
+    '--dock-height':dockMetrics.defaultHeight+'px',
+    '--dock-height-hover':dockMetrics.hoverHeight+'px',
   } as React.CSSProperties},handle,side);
 }
 export function PresenceTip(){const live=useLive();useEffect(()=>{document.documentElement.classList.add('companion-root');document.body.classList.add('tip-body');return()=>document.body.classList.remove('tip-body');},[]);return live?.hoverTip?h('div',{className:`presence-tip tip-${live.hoverTip.state}`,role:'status'},live.hoverTip.text):null;}

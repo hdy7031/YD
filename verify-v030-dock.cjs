@@ -85,7 +85,8 @@ async function runTogether() {
   check('Dock 表面为 mist 白底与轻玻璃层', /rgba?\(\s*250\s*,\s*252\s*,\s*251/.test(String(structure.background)) && /blur\(18px\)/.test(String(structure.backdrop)), JSON.stringify({ background: structure.background, backdrop: structure.backdrop }));
   check('legacy orb 结构已不在 DOM 中', structure.legacy === false);
   const dockSize = dock.getSize();
-  check('Together 默认窗口尺寸与布局常量一致（中档 276×58）', Math.abs(dockSize[0] - 276) <= 2 && Math.abs(dockSize[1] - 58) <= 2, dockSize.join('x'));
+  // 窗口高度 = 默认牌面 50 + hover 生长 20 + 8px 阴影画布 = 78（窗口本身永不改变）。
+  check('Together 默认窗口尺寸与布局常量一致（中档 276×78，含 hover 预留画布）', Math.abs(dockSize[0] - 276) <= 2 && Math.abs(dockSize[1] - 78) <= 2, dockSize.join('x'));
   const dotColor = await pet("getComputedStyle(document.querySelector('.dock-row .status-dot')).backgroundColor");
   check('状态点颜色来自统一语义色板', /rgba?\(\d+, \d+, \d+/.test(dotColor), dotColor);
 
@@ -99,7 +100,7 @@ async function runTogether() {
   fs.writeFileSync(path.join(output,'dock-together-hover.png'),(await dock.capturePage()).toPNG());
   await pet("window.dayhub.presence('leave')");
   await wait(240);
-  check('离开后固定几何不变且无幽灵 tooltip',Math.abs(dock.getSize()[0]-276)<=2&&Math.abs(dock.getSize()[1]-58)<=2&&!tip.isVisible(),dock.getSize().join('x'));
+  check('离开后固定几何不变且无幽灵 tooltip',Math.abs(dock.getSize()[0]-276)<=2&&Math.abs(dock.getSize()[1]-78)<=2&&!tip.isVisible(),dock.getSize().join('x'));
   // 指针进入 / 离开状态牌：点击穿透窗口不会触发 CSS :hover，因此整块状态牌的
   // 二级信息展开由渲染层真实指针状态驱动（is-expanded）。这里派发真实 DOM 指针事件，
   // 走的是与运行时同一条 React 处理链（不是合成 IPC 消息）。
@@ -114,7 +115,7 @@ async function runTogether() {
     await pet("document.querySelector('.pet-handle').dispatchEvent(new PointerEvent('pointerout',{bubbles:true,pointerType:'mouse',relatedTarget:document.documentElement}))");
     await wait(320);
     const collapsed=await pet("!document.querySelector('.dock-surface').classList.contains('is-expanded')");
-    check('指针离开后第二行收起、外框与几何不变',collapsed&&Math.abs(dock.getSize()[0]-276)<=2&&dock.getSize()[1]===58,JSON.stringify({collapsed,size:dock.getSize()}));
+    check('指针离开后第二行收起、外框与几何不变',collapsed&&Math.abs(dock.getSize()[0]-276)<=2&&dock.getSize()[1]===78,JSON.stringify({collapsed,size:dock.getSize()}));
   }
   const mini = windowOf('mini');
   await pet("document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('click',{bubbles:true}))");
@@ -129,7 +130,7 @@ async function runTogether() {
   const start = dock.getBounds();
   // Windows 在 100%–150% DPI 下会把透明窗口的客户区重新对齐到物理像素（±1–7px），
   // 因此这里锁定的是"固定画布"契约：高度恒为布局常量，宽度只在常量附近小幅取整。
-  check('Dock 窗口尺寸稳定（高度等于布局常量，宽度仅物理像素取整）', start.height === 58 && Math.abs(start.width - 276) <= 7, JSON.stringify(start));
+  check('Dock 窗口尺寸稳定（高度等于布局常量，宽度仅物理像素取整）', start.height === 78 && Math.abs(start.width - 276) <= 7, JSON.stringify(start));
   const drag = async (fromX, fromY, points) => {
     await pet(`window.dayhub.beginDrag(${fromX},${fromY})`);
     for (const [x, y] of points) await pet(`window.dayhub.drag(${x},${y})`);

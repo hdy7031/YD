@@ -23,10 +23,14 @@
 .pet-dock.orb-mode .pet-handle,
 .pet-handle.dock-handle {
   position:absolute;
-  inset:0;
+  /* 命中 / 拖动区域只覆盖可见牌面（含 4px 阴影画布）：画布上方预留给 hover 生长的
+     那部分是透明的，指针落在那里时窗口保持点击穿透，不会挡住下面的桌面。 */
+  left:0;
+  right:0;
+  bottom:0;
+  height:calc(var(--dock-height, 50px) + 8px);
   display:block;
   width:auto;
-  height:auto;
   aspect-ratio:auto;
   box-sizing:border-box;
   max-width:none;
@@ -39,7 +43,9 @@
   cursor:grab;
   touch-action:none;
   -webkit-tap-highlight-color:transparent;
+  transition:height 150ms ease;
 }
+.pet-dock.orb-mode:has(.dock-surface.is-expanded) .pet-handle { height:calc(var(--dock-height-hover, 70px) + 8px); }
 
 .pet-dock.orb-mode .pet-handle:active { cursor:grabbing; }
 .pet-dock.orb-mode .pet-handle:focus,
@@ -58,12 +64,14 @@
   --dock-alert:#C2726A;
   --dock-finished:#9AA79F;
   isolation:isolate;
-  position:relative;
+  position:absolute;
+  left:4px;
+  right:4px;
+  bottom:4px;
   display:flex;
   align-items:stretch;
-  width:calc(100% - 8px);
-  height:calc(100% - 8px);
-  margin:4px;
+  /* 默认牌面高度；hover 在固定画布内向上生长，底边不动。 */
+  height:var(--dock-height, 50px);
   box-sizing:border-box;
   overflow:hidden;
   padding:0 6px;
@@ -76,8 +84,9 @@
   box-shadow:0 2px 5px rgba(31,43,44,.06),0 1px 2px rgba(31,43,44,.04),inset 0 1px rgba(255,255,255,.82);
   -webkit-backdrop-filter:blur(18px) saturate(108%);
   backdrop-filter:blur(18px) saturate(108%);
-  transition:border-color 150ms ease,box-shadow 150ms ease,background-color 150ms ease;
+  transition:height 150ms ease,border-color 150ms ease,box-shadow 150ms ease,background-color 150ms ease;
 }
+.dock-surface.is-expanded { height:var(--dock-height-hover, 70px); }
 
 .pet-handle:hover .dock-surface { border-color:rgba(79,119,115,.28); background:rgba(252,253,253,.95); box-shadow:0 2px 6px rgba(31,43,44,.07),0 1px 2px rgba(31,43,44,.05),inset 0 1px rgba(255,255,255,.9); }
 .pet-handle:active .dock-surface,.pet-dock.is-dragging .dock-surface { border-color:rgba(79,119,115,.23); box-shadow:0 2px 5px rgba(31,43,44,.055),0 1px 2px rgba(31,43,44,.04); }
@@ -111,13 +120,21 @@
 /* 指针所在的那个人只有一层极淡的胶囊底，不铺满整块区域（Asset 04 的 hover 以文字为主）。 */
 .dock-row.is-hovered { background:rgba(79,119,115,.05); border-radius:999px; }
 .dock-row > .dock-alias,.dock-row > .status-core,.dock-row > .dock-status { transition:transform 140ms ease; }
-.dock-row.is-hovered > .dock-alias,.dock-row.is-hovered > .status-core,.dock-row.is-hovered > .dock-status { transform:translateY(-6px); }
+.dock-row.is-hovered > .dock-alias,.dock-row.is-hovered > .status-core,.dock-row.is-hovered > .dock-status { transform:translateY(-4px); }
+/* 展开时一级信息略微上移、首字母再抬高一点，第二行落在下方（参考稿的 hover 节奏）。 */
+.dock-surface.is-expanded > .dock-row > .dock-status { transform:translateY(-4px); }
 .dock-surface.is-expanded > .dock-row > .dock-alias,
-.dock-surface.is-expanded > .dock-row > .status-core,
-.dock-surface.is-expanded > .dock-row > .dock-status { transform:translateY(-6px); }
+.dock-surface.is-expanded > .dock-row > .status-core { transform:translateY(-8px); }
 .dock-surface.solo { justify-content:center; padding:0 12px; }
 .dock-surface.solo .dock-row { flex:0 1 auto; width:100%; padding-left:6px; padding-right:6px; }
 .dock-surface.solo .dock-row::before { display:none; }
+/* 单人参照图里首字母与状态文字差不多大（不像双人稿那样夸张）。 */
+.dock-surface.solo .dock-alias { font-size:17px; }
+.dock-surface.solo .dock-extra { bottom:9px; }
+/* Solo 的画布只比默认高 12px，一级信息要抬得更多才能和第二行拉开。 */
+.dock-surface.solo.is-expanded > .dock-row > .dock-alias,
+.dock-surface.solo.is-expanded > .dock-row > .status-core,
+.dock-surface.solo.is-expanded > .dock-row > .dock-status { transform:translateY(-11px); }
 /* 状态色只落在小圆点（Asset 04：实心点，无外环、无发光）。 */
 .dock-row.state-idle { --status:var(--dock-idle); --status-rgb:193,138,156; }
 .dock-row.state-busy { --status:var(--dock-active); --status-rgb:85,169,149; }
@@ -151,7 +168,8 @@
 }
 
 /* 第二行与状态文字左对齐（8 边距 + 26 首字母列 + 6 + 16 状态点列 + 6 = 62px）。 */
-.dock-extra { position:absolute; left:62px; right:8px; bottom:5px; overflow:hidden; color:#8B9997; font:450 10.5px/1.1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-align:left; text-overflow:ellipsis; white-space:nowrap; opacity:0; transform:translateY(2px); transition:opacity 140ms ease,transform 140ms ease; }
+.dock-extra { position:absolute; left:62px; right:8px; bottom:14px; overflow:hidden; color:#8B9997; font:450 10.5px/1.1 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif; text-align:left; text-overflow:ellipsis; white-space:nowrap; opacity:0; transform:translateY(2px); transition:opacity 140ms ease,transform 140ms ease; }
+.dock-surface.solo .dock-extra { left:50px; }
 /* Hover 是二级信息揭示：整块状态牌一起显露第二行，而不是只放大被指到的那一行。 */
 .dock-surface.is-expanded .dock-extra,.dock-row.is-hovered .dock-extra { opacity:1; transform:none; }
 .pet-dock.is-dragging .dock-row > * { transform:none !important; transition:none !important; }
