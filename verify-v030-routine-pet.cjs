@@ -88,7 +88,14 @@ app.whenReady().then(async () => {
     /* ---------- 2. 设置页说明文字同样来自 Routine ---------- */
     await run("window.dayhub.window('settings')");
     await wait(400);
-    const settingsText = await run("document.querySelector('.pet-settings')?.textContent??''");
+    // VS2 设置页是"分区切换"：默认停在「角色与陪伴」，作息文案在「节奏与状态」分区里，
+    // 必须先切到该分区再读文本（只有一个 .pet-settings 挂载在当前选中分区）。
+    const settingsText = await run(`(async()=>{
+      const tab=[...document.querySelectorAll('.settings-nav button')].find(b=>b.textContent.trim()==='节奏与状态');
+      tab?.click();
+      await new Promise(r=>setTimeout(r,360));
+      return document.querySelector('.pet-settings')?.textContent??'';
+    })()`);
     check('设置页按新作息显示睡觉时段', settingsText.includes('01:00–09:00'), settingsText.slice(0, 200));
     check('设置页不再出现旧的写死时间', !settingsText.includes('23:30–07:30') && !settingsText.includes('12:30–14:00'), settingsText.slice(0, 200));
 
