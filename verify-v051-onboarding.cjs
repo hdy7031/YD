@@ -207,8 +207,9 @@ async function phaseSoloOff(driver, dataDir) {
     JSON.stringify({ profiles: done.state.profiles.length, courses: done.state.courses.length, tasks: done.state.tasks.length }));
   check('完成 Solo：桌宠主体偏好是本人', done.state.settings.petSubjectRole === 'self', String(done.state.settings.petSubjectRole));
   check('完成 Solo：CurrentState 仍由状态引擎决定（idle）', done.live.people.length === 1 && done.live.people[0].current.kind === 'idle', JSON.stringify(done.live.people[0].current));
+  // Phase 5B2 细化了派生规则：「小 / 老 / 阿」这类称呼前缀不算身份信息，短代号取后面的字素。
   check('完成 Solo：显示代号跟随新名字派生（不需要用户填 shortAlias）',
-    done.live.people[0].alias === '小', JSON.stringify({ alias: done.live.people[0].alias, shortAlias: done.state.profiles[0].shortAlias }));
+    done.live.people[0].alias === '宇', JSON.stringify({ alias: done.live.people[0].alias, shortAlias: done.state.profiles[0].shortAlias }));
   check('完成 Solo：DOM 首页只有一个状态行', done.setup.statusRows === 1 && !done.setup.navItems.some((label) => label.includes('的安排') && !label.includes('我的安排')), JSON.stringify(done.setup.navItems));
   fs.writeFileSync(path.join(dataDir, identityFile), JSON.stringify({
     id: done.state.profiles[0].id, name: done.state.profiles[0].name, avatar: done.state.profiles[0].avatar,
@@ -285,7 +286,7 @@ async function phaseSoloRestart(driver, dataDir) {
     && view.live.petInstance.avatarPackId === first.avatar.packId,
     JSON.stringify({ subject: view.state.settings.petSubjectRole, avatar: view.state.profiles[0].avatar }));
   check('重开：CurrentState 仍然合法（idle）', view.live.people.length === 1 && view.live.people[0].current.kind === 'idle');
-  check('重开：显示代号保持派生结果', view.live.people[0].alias === '小', JSON.stringify(view.live.people[0].alias));
+  check('重开：显示代号保持派生结果', view.live.people[0].alias === '宇', JSON.stringify(view.live.people[0].alias));
   check('重开：首页正常且没有 undefined', view.setup.homeTitle === '我的安排' && !view.setup.hasUndefined, JSON.stringify(view.setup.homeTitle));
 }
 

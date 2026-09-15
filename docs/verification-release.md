@@ -1,6 +1,7 @@
 # YD 发布验收门禁（跨版本）
 
-基线：分支 `v0.3-productization`，Phase 5A + Phase 5B1（P0 桌面交互 + 可选桌宠），`DOMAIN_VERSION = 7`。
+基线：分支 `v0.3-productization`，Phase 5A + Phase 5B1（P0 桌面交互 + 可选桌宠）+
+Phase 5B2（Profile 生命周期），`DOMAIN_VERSION = 7`。
 （本文档原为 `docs/verification-v030.md`，从 Phase 5 起升级为跨版本的发布验收文档。）
 
 本文档只回答两个问题：**哪些验证必须全绿**、**哪些脚本只是历史考古**。
@@ -41,7 +42,7 @@ Electron 子进程；`--packaged` 时用 `release/win-unpacked/YD.exe` + CDP）�
 | draft | 名字 / 使用方式 / 桌宠开关 / Avatar / 主体只存在于界面内存；不逐字写 Store，不落 draft 文件 |
 | 提交 | 单条 `completeSetup` 命令（`src/setup.ts`）：校验通过才一次性写入，`settings.setup=true` 只在完整完成后设置 |
 | self 身份 | 复用 5A 生成的同一个 PersonId；名称 trim 后 1—40 字符，Unicode / emoji 原样保留 |
-| shortAlias | 不强迫填写，沿用 `people.ts` 的派生；改名时只清掉"系统自己填过"的代号 |
+| shortAlias | 不强迫填写，沿用 `people.ts` 的派生（显式值 → 去掉「小 / 老 / 阿」称呼前缀后的首字素 → 名称首字素 → 我 / TA）；改名时只清掉"系统自己填过"的代号，不改写用户存过的 Y / D |
 | companion | 只有选 Together 才创建，走 `createCompanionProfile` + 现代 UUID，作息 / 课表 / 待办仍然全空 |
 | 桌宠开关 | `settings.petEnabled`：选「暂时不用」时跳过形象 / 主体 / 节奏引导，`petEnabled=false`；YD Core 照常完整可用 |
 | Avatar | 卡片来自 `listAvatarPacks()`；写入走 Phase 4 的 `setAvatarPack`，没动过的默认卡片保持 `source='default'`；关闭桌宠时不写入形象选择 |
@@ -74,6 +75,33 @@ toggle / abandon / abandon-restart），全部动作走真实 DOM 点击与输�
 由 `verify-v051-desktop-interaction.cjs` 锁定（真实光标 + 命中区矩阵 + 布局不变量矩阵 +
 拖动清理），`verify-v030-dock.cjs` 继续覆盖 Dock 的 hover / 详情 / 拖动 / z-order。
 
+## 0.3 Profile Lifecycle Contract（Phase 5B2）
+
+使用方式是"当前怎么用 YD"，不是档案清单：**模式切换 ≠ 删除人物**。
+`settings.usageMode`（`solo` / `together`）只在用户真的做过切换时才写入；缺失时由
+`people.ts` 的 `usageModeOf` 按档案事实推导（有 companion → Together，只有本人 → Solo），
+因此旧库、v1 备份与 fresh install 都不需要迁移（仍然是 `DOMAIN_VERSION = 7`，无新 migration）。
+
+| 维度 | 契约 |
+| --- | --- |
+| Solo | 恰好 1 个 self；**允许**保留 1 个 inactive companion（档案 / PersonId / 课表 / 作息 / Avatar / 临时状态全部保留） |
+| Together | 恰好 1 个 self + 恰好 1 个 companion；没有 companion 的 Together 状态非法 |
+| 上限 | companion 最多 1 个（不泛化成多人群组） |
+| Together → Solo | 只改 `settings.usageMode`；不删除、不改写任何 person-scoped 数据；幂等 |
+| Solo → Together | 有 retained companion → 恢复**同一个** PersonId（不重建）；没有 → 走 `createCompanionProfile`（现代 UUID / 空作息 / 空课表 / 默认形象） |
+| 档案身份 | 只有 `name` / `shortAlias` 可编辑（`profileIdentity` 命令，复用 5B1 的名称规则）；PersonId 与 role 不可修改；Avatar 走 `avatarSet`，作息走 Routine 设置 |
+| 活跃人物 | `live.people` / 导航 / 人员选项 / Dock / 桌宠几何只投影 `activeProfiles(state)`：Solo 下被保留的 companion 不出现，也不产生幽灵状态行 |
+| 桌宠偏好 | `petSubjectRole` 在 Solo 下原样保留（它是 Together 下的选择），运行时主体恒为本人；恢复 Together 后原偏好立即生效，不需要重启 |
+| 桌宠开关 | `petEnabled` 与使用方式完全解耦：模式切换不打开、也不关闭桌宠 |
+| 删除 | 本阶段**不做**永久删除陪伴对象（留给后续与 Backup/Restore 一起设计） |
+| schema | `DOMAIN_VERSION = 7`，无新 migration，无新持久化字段（`usageMode` 只在切换时按需写入） |
+
+由 `verify-v052-profile-lifecycle.cjs` 锁定：两个全新临时 userData 目录、八个 Electron 阶段
+（together / switch-solo / solo-restart / restore-together / identity-edit / final-restart /
+create-pet-off / pet-off-restart），用户动作全部走真实 DOM 点击与输入，切换前后对
+`PersonId / 档案 / 课表 / 作息 / Avatar / 临时状态` 做逐字段比较；
+`--packaged` 时用 `release/win-unpacked/YD.exe` + CDP 跑同样的清房生命周期。
+
 ## 1. 当前维护的 release gate（必须全绿）
 
 | 命令 | 覆盖 |
@@ -98,10 +126,12 @@ toggle / abandon / abandon-restart），全部动作走真实 DOM 点击与输�
 | `npx electron verify-v030-dock.cjs` | Dual Status Dock：结构 / label / hover / click / drag / 快速拖动 / 位置落盘与重启恢复（Solo 见 `runtime-audit-solo.cjs`） |
 | `node verify-v050-generalization.cjs` | **Fresh Install Contract**：空 userData → 第一次启动（Solo / 单 self / 全空 / idle / UI 无 undefined）/ 第二次启动同一 PersonId；含私人哨兵扫描 |
 | `node verify-v051-onboarding.cjs` | **First-Run Onboarding Contract**：空 userData → 真实点击完成 Solo / Together（含未完成关闭与两次重启）；不 seed 业务数据、不改 PersonId、无 ghost companion |
+| `node verify-v052-profile-lifecycle.cjs` | **Profile Lifecycle Contract**：Together → Solo → Together 的可逆切换（逐字段数据保留）、retained companion 的 UI / 导航 / Dock 收拢、第一次创建 companion 的通用默认、档案身份编辑、桌宠偏好与开关的解耦 |
 | `npx electron verify-v051-desktop-interaction.cjs` | **Desktop Interaction Contract**：主窗口 viewport 不变量 / 命中区矩阵 / hover / 拖动清理（真实光标） |
 | `node verify-v0220-packaged.cjs` | 打包版（`release/win-unpacked/YD.exe`）真实启动、Picker 热切换、冷启动持久化（数据由 `tests/fixtures/v3-together-synthetic.sqlite` 显式种下） |
 | `node verify-v050-generalization.cjs --packaged` | 打包版清房验证（本轮手动跑一次即可，见 Phase 5A 报告） |
 | `node verify-v051-onboarding.cjs --packaged` | 打包版清房 onboarding（Solo + Together + 重启；每轮手动跑一次即可，见 Phase 5B1 报告） |
+| `node verify-v052-profile-lifecycle.cjs --packaged` | 打包版清房生命周期（首次设置 → 切 Solo → 重启 → 恢复 Together → 再重启；每轮手动跑一次即可，见 Phase 5B2 报告） |
 
 两个 node 步骤都需要先 `npm run dist -- --config.electronDist=node_modules/electron/dist`
 生成打包产物；产物缺失时打包步骤失败，不做静默跳过。

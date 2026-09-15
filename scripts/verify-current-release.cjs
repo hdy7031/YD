@@ -72,6 +72,8 @@ const onboarding = nodeStep('verify-v051-onboarding.cjs');
 const desktopInteraction = electronStep('verify-v051-desktop-interaction.cjs');
 // Phase 5B1：一天安排列表的信息密度与语义（provenance 只留详情层 / 课程不退化 / 摘要只报范围）。
 const dayDensity = electronStep('verify-v051-day-density.cjs');
+// Phase 5B2：Profile 生命周期（可逆的 Solo / Together 切换、档案身份编辑、桌宠偏好保留）。
+const profileLifecycle = nodeStep('verify-v052-profile-lifecycle.cjs');
 const packaged = nodeStep('verify-v0220-packaged.cjs');
 
 if (!skipPackaged && !fs.existsSync(packagedExe)) {
@@ -82,7 +84,7 @@ if (!skipPackaged && !fs.existsSync(packagedExe)) {
 
 // fresh install 契约与 onboarding 都是源码级的，即使 --skip-packaged 也照跑；
 // 打包版清房验证跟随打包产物。（打包版 onboarding 路径另见 verify-v051-onboarding.cjs --packaged）
-const steps = [...gates, ...(withAux ? auxiliary : []), freshInstall, onboarding, desktopInteraction, dayDensity, ...(skipPackaged ? [] : [packaged])];
+const steps = [...gates, ...(withAux ? auxiliary : []), freshInstall, onboarding, desktopInteraction, dayDensity, profileLifecycle, ...(skipPackaged ? [] : [packaged])];
 const results = [];
 
 console.log(`YD v0.3 release gates · ${steps.length} 个步骤${withAux ? '（含辅助验证）' : ''}${skipPackaged ? '（跳过打包版验证）' : ''}`);
