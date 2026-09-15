@@ -87,26 +87,104 @@ function DockPerson({status,hovered,onHover}:{status:PersonStatus;hovered:boolea
 function CompanionDock({animate,people,hovered,expanded,onHover,nodeRef}:{animate:boolean;people:PersonStatus[];hovered?:PersonId;expanded?:boolean;onHover?:(person:PersonId)=>void;nodeRef?:React.Ref<HTMLDivElement>}){
   // 无障碍文案与 Mini / Tip / Tray 同源（statusLabel），不再有第二套粗粒度状态词。
   const labels=people.map(status=>`${status.name} ${statusLabel(status)}`).join('、');
-  return h('div',{ref:nodeRef,className:`dock-surface${people.length<2?' solo':''}${expanded?' is-expanded':''}${animate?' motion':''}`,'role':'status','aria-label':`当前状态：${labels}`},
+  return h('div',{ref:nodeRef,className:`dock-surface${people.length<2?' solo':''}${expanded?' is-expanded':''}${animate?' motion':''}`,'role':'status','aria-label':`当前状态：${labels}`,'data-hitbox':'hover'},
     ...people.flatMap((status,index)=>index===0
       ? [h(DockPerson,{key:status.person,status,hovered:hovered===status.person,onHover})]
       : [h('span',{key:`divider-${status.person}`,className:'dock-divider','aria-hidden':true}),h(DockPerson,{key:status.person,status,hovered:hovered===status.person,onHover})]));
 }
-function useSurface(name:string){
+
+// ---------------------------------------------------------------------------
+// 命中区（hit region）—— Phase 5B1 P0 · Bug 2 / Bug 3
+//
+// 桌宠 / Dock 是"透明 + 点击穿透（forward）"窗口，DOM 目标表达不了"人物真实可见
+// 范围"：整块画布（含大片透明留白）都会命中 .pet-handle，于是鼠标在桌宠旁边也会
+// 被桌宠拦下来，人物旁边的透明区域也变成了拖动区。
+//
+// 因此交互区域只由标记了 [data-hitbox] 的元素的**真实渲染矩形**加极小 padding 决定：
+//   data-hitbox="sprite" → 人物本体：可拖动（唯一能开始拖动的区域）
+//   data-hitbox="rail"   → 状态小框：hover / 点击，但不参与拖动
+//   data-hitbox="hover"  → 状态牌面：进入 hover 微展开
+//   data-hitbox="cloud"  → 提醒气泡
+// 其余透明区域继续 setIgnoreMouseEvents(true,{forward:true})，把鼠标还给桌面。
+//
+// 另一个必须成立的不变量：**鼠标穿透状态只在真正变化时才写一次**。以前每次
+// mousemove 都发一次 IPC + setIgnoreMouseEvents，Windows 会跟着重新合成透明窗口，
+// hover / pointerenter 就在这条链路上被丢掉（Bug 2 的根因）。
+// ---------------------------------------------------------------------------
+const HIT_PADDING = 6;
+interface HitState { interactive: boolean; hover: boolean }
+
+function hitRegionAt(x: number, y: number, padding = HIT_PADDING): HitState {
+  const state: HitState = { interactive: false, hover: false };
+  for (const node of Array.from(document.querySelectorAll<HTMLElement>('[data-hitbox]'))) {
+    const rect = node.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    if (x < rect.left - padding || x > rect.right + padding || y < rect.top - padding || y > rect.bottom + padding) continue;
+    state.interactive = true;
+    if (node.dataset.hitbox === 'hover') state.hover = true;
+  }
+  return state;
+}
+
+function useSurface(name:string,onHit?:(hit:HitState)=>void){
+  const handler=useRef(onHit);
+  handler.current=onHit;
   useEffect(()=>{
     document.documentElement.classList.add('companion-root');document.body.classList.add(name);
     // 拖动期间不再切换“点击穿透”：拖动中改动鼠标穿透会让 Windows 重新合成透明窗口，
     // 既可能丢 pointerup，也会让贴图出现残影。
     const dragging=()=>document.querySelector('.pet-dock')?.classList.contains('is-dragging')===true;
-    const pointer=(e:MouseEvent)=>{if(dragging())return;void api.pointer(!!(e.target as Element)?.closest('[data-interactive]'));};
+    let appliedInteractive:boolean|null=null;
+    let appliedSignature:string|null=null;
+    const publish=(hit:HitState,force=false)=>{
+      const signature=`${hit.interactive}|${hit.hover}`;
+      if(!force&&signature===appliedSignature)return;
+      appliedSignature=signature;
+      if(appliedInteractive!==hit.interactive){
+        appliedInteractive=hit.interactive;
+        // 把"当前是否接收鼠标"写到 DOM 上：既是排查手段，也让验收脚本能断言
+        // 透明留白确实在点击穿透（而不是只看 CSS）。
+        document.body.dataset.hit=hit.interactive?'interactive':'through';
+      }
+      handler.current?.(hit);
+    };
+    /**
+     * 命中矩形上报：主进程按这些矩形 + 真实系统光标位置决定点击穿透
+     * （点击穿透窗口里渲染层收不到真实 mousemove，所以只能由主进程判定）。
+     */
+    const report=()=>{
+      const regions=Array.from(document.querySelectorAll<HTMLElement>('[data-hitbox]')).map(node=>{
+        const rect=node.getBoundingClientRect();
+        return {x:rect.x,y:rect.y,w:rect.width,h:rect.height,hover:node.dataset.hitbox==='hover'};
+      }).filter(region=>region.w>0&&region.h>0);
+      void api.reportHitRegions(regions).catch(()=>{});
+    };
+    // DOM 路径只在窗口"接收鼠标"时才有事件（点击穿透窗口收不到真实 mousemove），
+    // 因此它只负责"当下的即时反馈"；指针离开后的收起由主进程的指针状态兜底。
+    const pointer=(e:MouseEvent)=>{if(dragging())return;publish(hitRegionAt(e.clientX,e.clientY));};
+    const leave=()=>publish({interactive:false,hover:false});
+    // 布局变化（hover 展开 / 换 Pack / 打开详情 / 画布 resize）之后只需要重新上报命中矩形：
+    // 判定由主进程按新的矩形 + 真实光标位置重算，渲染层不再用可能已经过期的 DOM 坐标覆盖它。
+    const resync=()=>{report();};
+    // 主进程的指针状态是权威来源（窗口接收鼠标时 DOM 事件才是即时的补充）。
+    const offPointer=api.onPointer(state=>publish({interactive:state.inside,hover:state.hover}));
     document.addEventListener('mousemove',pointer);
-    const leave=()=>{if(dragging())return;void api.pointer(false);};
     document.addEventListener('mouseleave',leave);
-    return()=>{document.removeEventListener('mousemove',pointer);document.removeEventListener('mouseleave',leave);};
+    window.addEventListener('resize',resync);
+    const observer=typeof ResizeObserver==='function'?new ResizeObserver(resync):null;
+    observer?.observe(document.documentElement);
+    report();
+    const refresh=setInterval(resync,500);
+    return ()=>{offPointer();clearInterval(refresh);document.removeEventListener('mousemove',pointer);document.removeEventListener('mouseleave',leave);window.removeEventListener('resize',resync);observer?.disconnect();};
   },[name]);
 }
 export function DesktopPet(){
-  const live=useLive(),assets=useCompanionAssets(live?.petInstance.avatarPackId,true),drag=useRef<{x:number;y:number;pointerId:number;target:HTMLButtonElement}|null>(null),moved=useRef(false),draggingRef=useRef(false),hoverArmed=useRef(true),clickTimer=useRef<ReturnType<typeof setTimeout>|null>(null),leaveTimer=useRef<ReturnType<typeof setTimeout>|null>(null),[dragging,setDragging]=useState(false),[hovering,setHovering]=useState(false);useSurface('pet-body');
+  const live=useLive(),assets=useCompanionAssets(live?.petInstance.avatarPackId,true),drag=useRef<{x:number;y:number;pointerId:number;target:HTMLButtonElement}|null>(null),moved=useRef(false),draggingRef=useRef(false),hoverArmed=useRef(true),clickTimer=useRef<ReturnType<typeof setTimeout>|null>(null),leaveTimer=useRef<ReturnType<typeof setTimeout>|null>(null),[dragging,setDragging]=useState(false),[hovering,setHovering]=useState(false);
+  // hover 展开由真实命中区驱动（见 useSurface 的说明）：指针落在状态牌面上就展开，
+  // 落在人物本体 / 状态小框 / 透明留白上就收起。CSS :hover 在点击穿透窗口里不生效。
+  const hoverCtl=useRef<{enter:()=>void;leave:()=>void}|null>(null);
+  const hitState=useRef<HitState>({interactive:false,hover:false});
+  useSurface('pet-body',hit=>{hitState.current=hit;if(hit.hover)hoverCtl.current?.enter();else hoverCtl.current?.leave();});
   const p=live?.preferences??petDefaults;
   // 专属角色桌宠是唯一默认形象：素材即使读不到也只用“同一形象的待机帧”，
   // 不会再切换到其它角色。
@@ -162,6 +240,9 @@ export function DesktopPet(){
   // 只留一个 90ms 的极短防抖计时器兜住边缘抖动；enter / drag / blur / 卸载都会清掉它。
   const leaveDock=()=>{cancelLeave();setHovering(false);setDockView(current=>current==='dragging'?current:'collapsed');hidePresence();if(draggingRef.current)return;leaveTimer.current=setTimeout(()=>{leaveTimer.current=null;setDockView(current=>current==='dragging'?current:'collapsed');},90);};
   const setView=(next:'collapsed'|'hover'|'detail'|'dragging')=>{cancelLeave();setDockView(next);};
+  // 命中区驱动与指针事件驱动共用同一对动作，避免出现第二套 hover 状态机。
+  // hover 展开需要同时置 hovering（view 的判据）与 dockView（展开档位）。
+  hoverCtl.current={enter:()=>{setHovering(true);enterDock();},leave:leaveDock};
   useEffect(()=>()=>{if(leaveTimer.current)clearTimeout(leaveTimer.current);},[]);
   const finishDrag=(target?:HTMLButtonElement,pointerId?:number)=>{
     const active=drag.current,wasDragging=draggingRef.current;drag.current=null;draggingRef.current=false;setDragging(false);
@@ -193,6 +274,11 @@ export function DesktopPet(){
     onContextMenu:(e:React.MouseEvent)=>{e.preventDefault();hoverArmed.current=false;hidePresence();void api.window('menu');},
     onPointerDown:(e:React.PointerEvent<HTMLButtonElement>)=>{
       if(e.button!==0)return;
+      // 拖动只能从真实命中区开始：透明留白（画布 padding）不属于人物，也不是状态牌面。
+      // 真正的机制是点击穿透（透明区根本收不到 pointerdown）；这里再用真实事件坐标兜一层，
+      // 覆盖"指针刚离开命中区、穿透状态还没写回"的那一帧。没有坐标的合成事件不做判断。
+      const located=e.clientX!==0||e.clientY!==0;
+      if(located&&!hitRegionAt(e.clientX,e.clientY,0).interactive&&!hitState.current.interactive)return;
       moved.current=false;
       cancelLeave();
       drag.current={x:e.screenX,y:e.screenY,pointerId:e.pointerId,target:e.currentTarget};
@@ -263,10 +349,10 @@ export function DesktopPet(){
     custom
       // 固定画布：stage 只负责角色本体与动作，rail 是它的兄弟节点，
       // 两者的 transform / 动画永远不会互相影响，拖动时也不会被裁掉。
-      ?h('div',{className:'sprite-stage'},h('div',{className:'sprite-inner'},h('span',{className:'sprite-shadow','aria-hidden':true}),h(CustomCompanionArt,{assets,display:live?.display,frozen:dragging,...motion})))
+      ?h('div',{className:'sprite-stage'},h('div',{className:'sprite-inner'},h('span',{className:'sprite-shadow','aria-hidden':true}),h(CustomCompanionArt,{assets,display:live?.display,frozen:dragging,hitbox:true,...motion})))
       :h(CompanionDock,{animate:motion.animate,people,hovered:live?.hoverTip?.person,expanded:view==='hover',onHover:hover,nodeRef:surfaceRef}));
   const side=custom
-    ?h('div',{className:'status-rail'},h('button',{'data-interactive':true,className:'companion-rail-button',title:people.length>1?'查看双方状态':'查看当前状态',onClick:()=>void api.window('mini')},h(CompanionRail,{live})))
+    ?h('div',{className:'status-rail'},h('button',{'data-interactive':true,'data-hitbox':'rail',className:'companion-rail-button',title:people.length>1?'查看双方状态':'查看当前状态',onClick:()=>void api.window('mini')},h(CompanionRail,{live})))
     :null;
   // 状态牌契约（默认 / hover 两档牌面 + 窗口尺寸）与排版数值都来自 companion-layout，
   // 宽度取渲染层实测的文字宽度：内容完整优先，不为对称牺牲信息。
@@ -317,7 +403,14 @@ export function PetMenu(){
         h('span',{className:'pet-menu-label'},item.label),
         item.kind==='item'&&item.hint?h('span',{className:'pet-menu-hint'},item.hint):null)));
 }
-export function Bubble(){const live=useLive();useSurface('bubble-body');return live?.bubble?h('section',{'data-interactive':true,className:'speech-cloud'+(live.bubble.below?' cloud-below':''),role:'status',onMouseEnter:()=>void api.bubble('hold'),onMouseLeave:()=>void api.bubble('release')},h('button',{className:'cloud-close',title:'收起气泡',onClick:()=>void api.bubble('close')},'×'),h('small',null,'时间小提醒'),h('div',{className:'cloud-text'},live.bubble.text),h('button',{className:'text-button',onClick:()=>void api.window('mini')},'查看状态 →')):null;}
+// 提醒气泡：只有气泡本体是命中区，窗口的透明留白继续把鼠标交给桌面。
+// 指针离开命中区时窗口会立刻回到点击穿透，此时收不到 mouseleave，因此用主进程的
+// 指针状态兜底释放"悬停保持"。
+export function Bubble(){
+  const live=useLive();
+  useSurface('bubble-body');
+  useEffect(()=>api.onPointer(state=>{if(!state.inside)void api.bubble('release');}),[]);
+  return live?.bubble?h('section',{'data-interactive':true,'data-hitbox':'cloud',className:'speech-cloud'+(live.bubble.below?' cloud-below':''),role:'status',onMouseEnter:()=>void api.bubble('hold'),onMouseLeave:()=>void api.bubble('release')},h('button',{className:'cloud-close',title:'收起气泡',onClick:()=>void api.bubble('close')},'×'),h('small',null,'时间小提醒'),h('div',{className:'cloud-text'},live.bubble.text),h('button',{className:'text-button',onClick:()=>void api.window('mini')},'查看状态 →')):null;}
 /**
  * 详情卡（轻量桌面状态卡，不是 dashboard）。
  *

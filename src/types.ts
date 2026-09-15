@@ -70,6 +70,10 @@ export interface DesktopAPI {
   bubble(action:'close'|'hold'|'release'):Promise<void>;
   presence(action:'enter'|'leave',person?:PersonId):Promise<void>;
   pointer(interactive:boolean):Promise<void>;
+  // 命中区：渲染层上报"人物 / 状态小框 / 状态牌面 / 气泡"的真实矩形（窗口内 DIP），
+  // 主进程据此决定这个透明窗口此刻是接收鼠标还是点击穿透（Phase 5B1 P0）。
+  reportHitRegions(regions:{x:number;y:number;w:number;h:number;hover?:boolean}[]):Promise<void>;
+  onPointer(callback:(state:{inside:boolean;hover:boolean})=>void):()=>void;
 
   parseNotice(id:string,text?:string,fromOcr?:boolean):Promise<State>; clipboardText():Promise<string>;
   get(): Promise<State>; change(command: Command): Promise<State>;

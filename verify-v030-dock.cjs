@@ -337,7 +337,15 @@ async function runTogether() {
   const afterClosePlate = await plateOnScreen();
   // 指针如果还在状态牌上就是 hover（第二行可见），但绝不能停留在 detail。
   check('再点 Dock 收起详情并回到状态牌画布', afterClose !== 'detail' && Math.abs(afterCloseBounds.width - beforeDetailBounds.width) <= 1 && Math.abs(afterCloseBounds.height - beforeDetailBounds.height) <= 1, JSON.stringify({ afterClose, afterCloseBounds, beforeDetailBounds }));
-  check('收起详情后牌面仍在原来的位置', !!afterClosePlate && Math.abs(afterClosePlate.x - beforeDetailPlate.x) <= 2 && Math.abs(afterClosePlate.y - beforeDetailPlate.y) <= 2, JSON.stringify({ beforeDetailPlate, afterClosePlate }));
+  // 详情是用"点击牌面"打开的，因此收起时指针仍然落在牌面上 —— 牌面处于 hover 展开档
+  // （Phase 5B1 P0 起 hover 由主进程按真实光标位置驱动，不再依赖点击穿透窗口收不到的
+  // DOM pointerenter）。因此这里锁定的是**右下锚点**：hover 只向左 / 上生长，牌面的
+  // 屏幕落点不变。
+  const plateRight = (p) => p.x + p.width, plateBottom = (p) => p.y + p.height;
+  check('收起详情后牌面保持右下锚点（hover 展开只向左 / 上生长）',
+    !!afterClosePlate && Math.abs(plateRight(afterClosePlate) - plateRight(beforeDetailPlate)) <= 3
+    && Math.abs(plateBottom(afterClosePlate) - plateBottom(beforeDetailPlate)) <= 3,
+    JSON.stringify({ beforeDetailPlate, afterClosePlate }));
 
   /* ---------- H(2). Win32 层级检查（真实 z-order，不是 Electron 缓存标志） ---------- */
   {

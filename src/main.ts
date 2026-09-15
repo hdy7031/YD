@@ -37,7 +37,7 @@ let companion:Companion|undefined;
 let inboxService:InboxService;
 const delivery=new DesktopDelivery(toast);
 let quitting=false, orb:BrowserWindow, panel:BrowserWindow, tray:Tray, store:Store, attachments:string, data:string;
-let busy=false, ocrBusy=false, lastTick=Date.now(), timer:ReturnType<typeof setInterval>;
+let busy=false, ocrBusy=false, lastTick=Date.now(), timer:ReturnType<typeof setInterval>, pointerTimer:ReturnType<typeof setInterval>|undefined;
 // 拖动锚点同时记录窗口原点、渲染层指针与系统光标：真实拖动时以系统光标为准
 // （多显示器与 125%/150% 缩放下不会越拖越偏），无光标移动的自动化场景退回
 // 渲染层指针增量，两条路径都只改窗口位置，不碰任何 CSS 变换。
@@ -47,8 +47,64 @@ const windows=()=>[orb,panel,companion?.bubble,companion?.mini,companion?.tip,co
 // 正式日志先写文件；控制台只在开发环境或控制台仍可用时作为镜像。
 function runtimeLog(level:string,message:string){logLine(level,message);}
 function changed(){companion?.reset();for(const w of windows())w.webContents.send('dayhub:changed');}
-function showPanel(){if(panel.isMinimized())panel.restore();panel.show();panel.focus();}
+function showPanel(){if(panel.isMinimized())panel.restore();panel.show();panel.focus();void syncPanelViewport('showPanel');}
 function errorMessage(error:unknown){return error instanceof Error?error.message:String(error);}
+const delay=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+// ---------------------------------------------------------------------------
+// Bug 1 · 主窗口 viewport 不变量（Phase 5B1 P0）
+//
+// 症状：窗口尺寸正常，但内容只占左侧一部分、右侧露出窗口底色，文档 scrollbar
+// 落在窗口中间 —— 也就是渲染层 viewport 停留在旧宽度，比窗口客户区窄。
+//
+// 取证（test-data/layout-probe.cjs，隔离 userData）：
+//   1. 正常 resize：window 1701 / viewport 1700 / shell 1694（差 1px 是 frameless 取整）；
+//   2. 最大化：window bounds 1722 / viewport 1707 / workArea 1707 —— BrowserWindow
+//      bounds 与渲染层客户区本来就相差 15px（thickFrame 边框），所以"窗口尺寸正常"
+//      不等于"内容宽度正确"，两者从来没有被任何代码核对过；
+//   3. 跨窗口污染已排除：dockSize → Companion.setDockMeasure 只写 orb 的 setBounds，
+//      主进程没有任何一处会把 Dock 的尺寸写进主窗口。
+//
+// 因此这里把不变量显式化：渲染层 CSS viewport 必须等于窗口客户区（除以缩放）。
+// 每条几何路径（resize / maximize / restore / 显示设置变化 / 从托盘恢复）之后核对一次，
+// 不一致时才强制重排：先让渲染层做一次样式 / 布局失效，必要时再用 1px 真实 resize
+// 让 Chromium 重发 resize（最大化状态下 setSize 不会退出最大化，已实测）。
+// ---------------------------------------------------------------------------
+const PANEL_VIEWPORT_TOLERANCE=1;
+let panelViewportBusy=false;
+async function syncPanelViewport(reason:string){
+  if(panelViewportBusy||!panel||panel.isDestroyed()||!panel.isVisible())return;
+  panelViewportBusy=true;
+  try{
+    // 用 window.innerWidth / innerHeight：documentElement.clientWidth 会扣掉经典滚动条
+    // 宽度，和窗口客户区本来就差 6px，拿它比较会误判成"viewport 落后"。
+    const read=()=>panel.webContents.executeJavaScript('({w:window.innerWidth,h:window.innerHeight})',true) as Promise<{w:number;h:number}>;
+    const expected=()=>{const area=panel.getContentBounds(),zoom=panel.webContents.getZoomFactor()||1;return {w:Math.round(area.width/zoom),h:Math.round(area.height/zoom)};};
+    // 宽度是本次 Bug 的判据（严格 1px）；高度在 frameless 窗口上允许 4px 的取整差异。
+    const agree=(got:{w:number;h:number}|null,want:{w:number;h:number})=>!!got&&Math.abs(got.w-want.w)<=PANEL_VIEWPORT_TOLERANCE&&Math.abs(got.h-want.h)<=4;
+    let want=expected();
+    let got=await read().catch(()=>null);
+    if(!got||agree(got,want))return;
+    runtimeLog('warn',`主窗口 viewport 与客户区不一致（${reason}）：renderer=${got.w}×${got.h} 期望=${want.w}×${want.h}，强制重排`);
+    await panel.webContents.executeJavaScript('(()=>{const root=document.documentElement;root.classList.remove("yd-relayout");void root.offsetWidth;root.classList.add("yd-relayout");return true;})()',true).catch(()=>{});
+    got=await read().catch(()=>null);want=expected();
+    if(agree(got,want)){runtimeLog('info','主窗口 viewport 重排后已与客户区一致');return;}
+    const [width,height]=panel.getSize();
+    panel.setSize(width+1,height,false);panel.setSize(width,height,false);
+    await delay(80);
+    const fixed=await read().catch(()=>null);want=expected();
+    runtimeLog(agree(fixed,want)?'info':'error',fixed?`主窗口 viewport 重排后=${fixed.w}×${fixed.h}（期望 ${want.w}×${want.h}）`:'主窗口 viewport 重排后无法读取渲染层宽度');
+  }finally{panelViewportBusy=false;}
+}
+/**
+ * 页面缩放锁：CSS 像素必须等于窗口客户区 DIP。缩放会让"窗口宽度"与"内容宽度"
+ * 永远对不上，也是唯一能让两者合法分离的用户路径（Ctrl+滚轮 / Ctrl+加号）。
+ */
+function lockZoom(w:BrowserWindow){
+  w.webContents.setVisualZoomLevelLimits(1,1).catch(()=>{});
+  const reset=()=>{if(w.isDestroyed())return;if(w.webContents.getZoomFactor()!==1)w.webContents.setZoomFactor(1);};
+  w.webContents.on('zoom-changed',reset);
+  reset();
+}
 // Leaving through the tray or the companion menu stops desktop reminders, so
 // the confirmation says that in plain words instead of just quitting.
 function confirmQuit(){
@@ -218,13 +274,93 @@ function setupHandlers(){
   ipcMain.removeHandler('dayhub:pointer');
   // 退出过程中窗口可能已经被销毁：这里先排除 destroyed 的窗口，避免把
   // 正常的关闭流程变成一条主进程错误日志。
+  // 鼠标穿透状态只在真的变化时才写一次：以前每次 mousemove 都调用
+  // setIgnoreMouseEvents，Windows 会跟着重新合成透明窗口，hover / pointerenter
+  // 就在这条链路上被丢掉（Dock 与桌宠 status rail 的 hover 失效根因）。
+  const clickThrough=new WeakMap<Electron.BrowserWindow,boolean>();
   ipcMain.handle('dayhub:pointer',(event,interactive:unknown)=>{
     const w=[orb,companion?.bubble].find(candidate=>candidate&&!candidate.isDestroyed()&&candidate.webContents===event.sender);
     if(!w||event.senderFrame!==event.sender.mainFrame||typeof interactive!=='boolean')throw new Error('不允许的窗口操作');
+    if(clickThrough.get(w)===!interactive)return;
+    clickThrough.set(w,!interactive);
     w.setIgnoreMouseEvents(!interactive,{forward:true});
     // 点击穿透会改写窗口的扩展样式位，改完立刻确认 Dock 仍然置顶。
     assertDockTopmost();
   });
+  // ---------------------------------------------------------------------------
+  // Phase 5B1 P0 · 命中区（hit region）驱动的点击穿透
+  //
+  // 实测（test-data/hover-probe.cjs）：`setIgnoreMouseEvents(true,{forward:true})` 在这个
+  // Electron / Windows 组合下**不会**把真实鼠标移动交给渲染层 —— 窗口点击穿透期间
+  // 渲染层收到 0 个 mousemove / pointerenter；一旦 setIgnoreMouseEvents(false)，
+  // 事件立刻恢复（move/enter/over 全部出现）。于是：
+  //   * 旧实现把整块透明画布当交互区，任何让它"接收鼠标"的路径都会挡住桌面点击（Bug 3）；
+  //   * 而常驻点击穿透又让依赖 DOM 指针事件的 hover 完全失效（Bug 2）。
+  //
+  // 所以命中判定必须挪到主进程：渲染层只上报"人物本体 / 状态小框 / 状态牌面 / 气泡"
+  // 的真实矩形，主进程按**真实系统光标位置**决定此刻是否接收鼠标，并把结果推回渲染层
+  // （渲染层据此展开 / 收起 hover，因为离开命中区时它收不到 pointerleave）。
+  // ---------------------------------------------------------------------------
+  const HIT_PADDING=4;
+  interface HitRect{x:number;y:number;w:number;h:number;hover:boolean}
+  const hitRegions=new WeakMap<Electron.BrowserWindow,HitRect[]>();
+  const pointerInside=new WeakMap<Electron.BrowserWindow,boolean>();
+  const pointerHover=new WeakMap<Electron.BrowserWindow,boolean>();
+  const finite=(value:unknown)=>typeof value==='number'&&Number.isFinite(value);
+  const sanitizeHitRegions=(value:unknown):HitRect[]=>{
+    if(!Array.isArray(value))throw new Error('命中区无效');
+    if(value.length>8)throw new Error('命中区过多');
+    return value.map(entry=>{
+      const item=entry as {x?:unknown;y?:unknown;w?:unknown;h?:unknown;hover?:unknown};
+      if(!item||!finite(item.x)||!finite(item.y)||!finite(item.w)||!finite(item.h))throw new Error('命中区无效');
+      const rect={x:Math.round(item.x as number),y:Math.round(item.y as number),w:Math.round(item.w as number),h:Math.round(item.h as number),hover:item.hover===true};
+      if(rect.w<0||rect.h<0||rect.w>4000||rect.h>4000)throw new Error('命中区无效');
+      return rect;
+    });
+  };
+  ipcMain.removeHandler('dayhub:hitRegions');
+  ipcMain.handle('dayhub:hitRegions',(event,regions:unknown)=>{
+    const w=[orb,companion?.bubble].find(candidate=>candidate&&!candidate.isDestroyed()&&candidate.webContents===event.sender);
+    if(!w||event.senderFrame!==event.sender.mainFrame)throw new Error('不允许的窗口操作');
+    hitRegions.set(w,sanitizeHitRegions(regions));
+  });
+  // 拖动期间不动穿透状态：拖动中改鼠标穿透会重新合成透明窗口，丢 pointerup 并留下残影。
+  const petDragging=()=>Boolean(dragAnchor);
+  const applyPointerState=(w:Electron.BrowserWindow,inside:boolean,hover:boolean)=>{
+    const changed=pointerInside.get(w)!==inside;
+    const hoverChanged=pointerHover.get(w)!==hover;
+    if(!changed&&!hoverChanged)return;
+    pointerInside.set(w,inside);pointerHover.set(w,hover);
+    if(changed){
+      clickThrough.set(w,!inside);
+      w.setIgnoreMouseEvents(!inside,{forward:true});
+      if(w===orb)assertDockTopmost();
+    }
+    // 只在真的切换时记一行：命中区 / 穿透状态是桌面交互问题最需要的第一手证据。
+    runtimeLog('info',`命中区 ${w===orb?'桌宠':'气泡'} ${inside?'进入':'离开'}（接收鼠标=${inside}）`);
+    if(!w.isDestroyed())w.webContents.send('dayhub:pointerState',{inside,hover});
+  };
+  pointerTimer=setInterval(()=>{
+    if(quitting)return;
+    const cursor=screen.getCursorScreenPoint();
+    for(const w of [orb,companion?.bubble]){
+      if(!w||w.isDestroyed())continue;
+      const rects=hitRegions.get(w);
+      if(!rects||!rects.length)continue;
+      if(!w.isVisible()){applyPointerState(w,false,false);continue;}
+      // 拖动进行中：保持当前状态直到拖动结束（见 petDragging 的说明）。
+      if(w===orb&&petDragging())continue;
+      const bounds=w.getBounds();
+      const x=cursor.x-bounds.x,y=cursor.y-bounds.y;
+      let inside=false,hover=false;
+      for(const rect of rects){
+        if(x<rect.x-HIT_PADDING||x>rect.x+rect.w+HIT_PADDING||y<rect.y-HIT_PADDING||y>rect.y+rect.h+HIT_PADDING)continue;
+        inside=true;
+        if(rect.hover)hover=true;
+      }
+      applyPointerState(w,inside,hover);
+    }
+  },60);
   handler('bubble',(action:string)=>{if(!['hold','release','close'].includes(action))throw new Error('无效操作');companion?.action(action);});
   // 悬停区域可以是任意存在的档案 id（单人工作区只有一个人），由 Companion 自己校验存在性。
   handler('presence',(action:string,person?:PersonId)=>{if(action!=='enter'&&action!=='leave')throw new Error('无效状态操作');companion?.presence(action,person);});
@@ -355,7 +491,7 @@ else{
     changed();showPanel();
   });
   app.on('window-all-closed',()=>{});
-  app.on('before-quit',()=>{quitting=true;if(timer)clearInterval(timer);companion?.stop();globalShortcut.unregisterAll();});
+  app.on('before-quit',()=>{quitting=true;if(timer)clearInterval(timer);if(pointerTimer)clearInterval(pointerTimer);companion?.stop();globalShortcut.unregisterAll();});
   app.whenReady().then(async()=>{
     data=app.getPath('userData');attachments=path.join(data,'attachments');fs.mkdirSync(attachments,{recursive:true});
     configureLogging({file:path.join(data,'dayhub.log'),mirrorConsole:!app.isPackaged});
@@ -399,6 +535,11 @@ else{
     orb=new BrowserWindow({...windowOptions(),width:initial.width,height:initial.height,thickFrame:false,hasShadow:false,roundedCorners:false,x:pos.x,y:pos.y,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false});
     panel=new BrowserWindow({...windowOptions(),width:1050,height:780,minWidth:750,minHeight:550,title:'YD · Your Day',icon:path.join(__dirname,PANEL_ICON_FILE),frame:false,show:false});
     lockWindow(orb);lockWindow(panel);
+    // Bug 1：主窗口 viewport 不变量 + 页面缩放锁（两者都必须成立，否则内容宽度会
+    // 与窗口客户区分离）。
+    lockZoom(panel);lockZoom(orb);
+    for(const event of ['resize','maximize','unmaximize','restore','show'] as const)panel.on(event as 'resize',()=>void syncPanelViewport(`panel.${event}`));
+    panel.webContents.on('did-finish-load',()=>void syncPanelViewport('panel.did-finish-load'));
     orb.setTitle('YD · 桌宠');
     companion=new Companion(store,orb,panel,windowOptions(),path.join(__dirname,'index.html'),lockWindow);
     companion.setMenuActions({
@@ -429,6 +570,8 @@ else{
     nativeTheme.on('updated',applyTrayTheme);
     refreshTrayMenu(true);tray.on('double-click',showPanel);
     const reposition=()=>{void savePosition().catch(error=>logError(error,'保存桌宠位置失败'));};screen.on('display-removed',reposition);screen.on('display-metrics-changed',reposition);
+    // 显示设置 / DPI 变化是"渲染层 viewport 落后于窗口"的另一条真实路径（Bug 1）。
+    screen.on('display-metrics-changed',()=>void syncPanelViewport('display-metrics-changed'));
     const resume=()=>{void processReminders(true).then(()=>companion?.pulse(true));};powerMonitor.on('resume',resume);powerMonitor.on('unlock-screen',resume);
     // 一键隐藏 / 显示桌宠。注册失败（被别的程序占用）时只是不显示提示，
     // 菜单与托盘里的入口仍然可用。
@@ -439,6 +582,7 @@ else{
     runtimeLog(shortcutReady?'info':'warn',`桌宠显示/隐藏快捷键 ${companionToggleShortcut.label} ${shortcutReady?'已注册':'注册失败（可能被其它程序占用）'}`);
     const openedAtLogin=app.getLoginItemSettings().wasOpenedAtLogin;
     orb.showInactive();assertDockTopmost();if(showPanelOnLaunch(openedAtLogin,store.state.settings.setup))showPanel();
+    void syncPanelViewport('startup');
     runtimeLog('info',`启动显示 主窗口=${panel.isVisible()} 开机自启=${openedAtLogin}`);
     if(store.recovered)dialog.showMessageBox(panel,{type:'warning',message:'已从上一份本地副本恢复',detail:'原数据库读取失败，损坏文件已保留。请核对最近的修改。'});
     await processReminders(true);await companion.pulse(true);timer=setInterval(()=>{void processReminders();tray.setToolTip(snapshot(store.state,Date.now()).people.map(p=>`${p.alias} · ${statusLabel(p)}`).join('\n'));refreshTrayMenu();},1000);

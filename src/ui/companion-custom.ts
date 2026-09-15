@@ -153,12 +153,14 @@ interface ArtProps {
   animate:boolean;
   reduceMotion:boolean;
   frozen?:boolean;
+  /** 桌宠窗口专用：把当前帧标成真实命中区（人物本体）。预览卡片不需要。 */
+  hitbox?:boolean;
 }
 
 // 同一个 stage 里只换帧、不换舞台：每帧按 Avatar Pack 自己的 geometry
 // 摆放（底边中点锚点 + 每个姿态允许的少量偏移），
 // 因此换动作时人物的桌面落点基本不动。
-export function CustomCompanionArt({assets,display,animate,reduceMotion,frozen=false}:ArtProps){
+export function CustomCompanionArt({assets,display,animate,reduceMotion,frozen=false,hitbox=false}:ArtProps){
   const frame=companionImage(assets,display);
   const motion=animate&&!reduceMotion;
   const visualKey=assets?`${assets.resolvedPackId}@${assets.pack.version}`:undefined;
@@ -184,6 +186,7 @@ export function CustomCompanionArt({assets,display,animate,reduceMotion,frozen=f
         alt:'',
         draggable:false,
         decoding:'async',
+        'data-hitbox':hitbox&&index===layers.length-1?'sprite':undefined,
         style:{'--pet-scale':layer.geometry.scale,'--pet-x':layer.geometry.offsetX+'px','--pet-y':layer.geometry.offsetY+'px'} as React.CSSProperties,
       });
     })));
