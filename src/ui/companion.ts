@@ -500,11 +500,13 @@ const avatarPreviewDisplay=(state:CompanionDisplayState):CompanionDisplay=>({
   scheduled:state==='night_sleep'||state==='wake_up'||state==='eating'||state==='nap'?state:null,
 });
 
-function AvatarPackCard({pack,active,selected,busy,onPreview}:{pack:AvatarPackManifest;active:boolean;selected:boolean;busy:boolean;onPreview:()=>void}){
+// Phase 4 的唯一 Avatar Pack 卡片。首次使用的 onboarding 复用同一张卡
+// （见 ui/onboarding.ts），只换掉两行说明文字，不复制第二套选择控件。
+export function AvatarPackCard({pack,active,selected,busy,onPreview,selectedLabel='当前使用',idleLabel='点击预览'}:{pack:AvatarPackManifest;active:boolean;selected:boolean;busy:boolean;onPreview:()=>void;selectedLabel?:string;idleLabel?:string}){
   const assets=useAvatarPreviewAssets(pack.id);
   return h('button',{type:'button',className:`avatar-pack-card${active?' is-previewing':''}${selected?' is-selected':''}`,'data-avatar-pack-option':pack.id,'aria-pressed':active,disabled:busy,onClick:onPreview},
     h('span',{className:'avatar-pack-card-art'},h(CustomCompanionArt,{assets,display:avatarPreviewDisplay(pack.previewState),animate:false,reduceMotion:true})),
-    h('span',{className:'avatar-pack-card-copy'},h('strong',null,pack.name),h('small',null,selected?'当前使用':'点击预览')));
+    h('span',{className:'avatar-pack-card-copy'},h('strong',null,pack.name),h('small',null,selected?selectedLabel:idleLabel)));
 }
 
 function AvatarPersonPicker({profile,busy,run}:{profile:Profile;busy:boolean;run:(fn:()=>Promise<unknown>)=>Promise<unknown>}){

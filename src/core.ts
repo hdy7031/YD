@@ -6,6 +6,7 @@ import { assertRoutineProfile, emptyRoutine } from './routine.ts';
 import { MANUAL_LABEL_LIMIT, MANUAL_OVERRIDE_LIMIT, assertManualOverride, isManualStateKind, pruneManualOverrides } from './state/manual.ts';
 import { assertAvatarSelection, resetAvatarPack, setAvatarPack } from './avatar-selection.ts';
 import { DEFAULT_AVATAR_PACK_ID } from './avatar.ts';
+import { completeSetup } from './setup.ts';
 import type { State, Profile, PersonId, ProfileRole, Course, Task, Event, Notice, Exception, Occurrence, Reminder, Command, Entity, SchedulePackage } from './types.ts';
 import type { RoutineProfile } from './routine.ts';
 export const DAY = 86400000;
@@ -28,8 +29,9 @@ export function weekday(date: string): number { return new Date(date + 'T12:00:0
 //
 // 校历占位（Phase 5B gap）：当前 schema 用 startDate / weeks / periods 表达学期，
 // 没有"尚未配置"这一档，因此这里给出一组与任何真实学校无关的中性占位值
-// （本周周一 + 20 周 + 八节等长节次）。settings.setup=false 才是"还没核对校历"的
-// 产品信号；Phase 5B onboarding 会让用户自己填真实学期。
+// （本周周一 + 20 周 + 八节等长节次）。settings.setup=false 是"首次使用还没完成"的
+// 产品信号：主窗口会显示 onboarding（src/setup.ts），完成后才进入正常 Home。
+// onboarding 不要求用户填写校历，所以"设置完成"不等于"校历已配置"。
 export const NEUTRAL_SELF_NAME = '我';
 export const NEUTRAL_COMPANION_NAME = 'TA';
 export const PLACEHOLDER_TERM_WEEKS = 20;
@@ -294,6 +296,10 @@ export function apply(state: State, cmd: Command, now=Date.now()): State {
     setAvatarPack(s,cmd.personId,cmd.packId,now);
   }else if(cmd.type==='avatarReset'){
     resetAvatarPack(s,cmd.personId,now);
+  }else if(cmd.type==='completeSetup'){
+    // Phase 5B1：首次使用的唯一写入路径。draft 只活在 UI 内存里，
+    // 完成时一次性提交（含 companion 创建与 Avatar），失败则整份克隆被丢弃。
+    completeSetup(s,cmd.value,now);
   }else throw new Error('不支持的操作');
   return migrateInbox(s);
 }

@@ -11,6 +11,8 @@ import { DailySummary, DailyAgendaList, DailyEmptyState } from './daily-summary.
 import { dailyItemState, dailyPlanFrom, type DailyAgendaItem } from './daily-plan.ts';
 import { getCompanionProfile, requireSelfProfile, resolvePetSubject } from '../people.ts';
 import { personOptions, profileLabelFor, shellTabs, tabShortcuts, tabWidthPolicy, companionDisplayName, type ShellTab } from './shell.ts';
+import { OnboardingPanel } from './onboarding.ts';
+import type { SetupInput } from '../setup.ts';
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BellRing, CalendarClock, CalendarDays, Clock3, Inbox, ListTodo, Settings, Table2 } from 'lucide-react';
@@ -274,6 +276,9 @@ function App(){
   // 桌宠右键菜单的「设置当前状态」：主进程拉起主窗口后投递这个事件。
   useEffect(()=>api.onStatus(()=>{setTab('today');setManualOpen(true);}),[]);
   async function change(cmd:Command){setPending(true);err('');try{const s=await api.change(cmd);set(s);return s;}catch(e){err(msg(e));return null;}finally{setPending(false);}}
+  // Phase 5B1：首次使用的提交路径。失败时把说明交回 onboarding 面板自己显示
+  // （背景页在这段时间是只读的，顶部的错误横幅用户看不到）。
+  async function finishSetup(value:SetupInput){setPending(true);err('');try{const next=await api.change({type:'completeSetup',value});set(next);return '';}catch(e){return msg(e);}finally{setPending(false);}}
   function open(entity:Entity,value?:any,convert?:string){if(entity==='notices'){setTab('inbox');setSelectedNotice(value?.id||null);return;}edit({entity,value:value||newValue(entity,activePerson,selfId),convert});err('');}
   function addCompanion(){
     const self=requireSelfProfile(s);
@@ -362,7 +367,6 @@ function App(){
       h('header',{className:'page-head'},h('div',null,h('div',{className:'eyebrow'},h('span',null,`${dateOf(now)} · ${fmt(now)}`),h('em',{className:'eyebrow-zone'},'北京时间')),h('h1',null,labels[tabSpec.key]),kind==='today'?h('p',{className:'page-tagline'},'让每一天，更从容。'):null),kind==='today'?h('div',{className:'actions'},b('新建待办',()=>open('tasks'),'primary'),b('新建会议',()=>open('events'),'secondary')):null),
       error?h('div',{className:'error banner',role:'alert'},error,b('关闭',()=>err(''),'ghost')):null,
       message?h('div',{className:'banner',role:'status'},message,b('知道了',()=>say(''),'ghost')):null,
-       !s.settings.setup?h('section',{className:'setup-banner'},h('h2',null,s.profiles.length>1?'先核对每个人的学校作息':'先核对学校作息'),h('p',null,'请核对第一教学周和节次时间；已有记录会保留。'),h('div',{className:'actions'},...s.profiles.map(p=>b(`设置${p.name}的作息`,()=>open('profiles',p),'secondary')),b('已核对，开始使用',()=>change({type:'settings',setup:true}),'primary',pending))):null,
       kind==='today'?h(React.Fragment,null,
         h(StatusRows,{live,onSetStatus:()=>setManualOpen(true)}),
         attention.total?h('section',{className:'attention-panel'},h('div',{className:'attention-title'},h('div',null,h('div',{className:'eyebrow'},'需要处理'),h('h2',null,`需要处理 ${attention.total}`))),h('div',{className:'attention-items'},attention.notices?b(`${attention.notices} 条通知待核对`,()=>setTab('inbox'),'attention-link'):null,attention.reminders?b(`${attention.reminders} 个提醒已到时间`,()=>setTab('reminders'),'attention-link'):null,attention.overdue?b(`${attention.overdue} 个待办已逾期`,()=>setTab('tasks'),'attention-link'):null)):null,
@@ -417,6 +421,9 @@ function App(){
           settingsSection==='about'?h(AboutPanel,null):null)):null
       )
     ),
+    // Phase 5B1：settings.setup 是首次使用的唯一真相。未完成时它盖在正常界面之上，
+    // 背景保持只读（焦点锁在面板里），完成后自动消失，不做第二次初始化。
+    !s.settings.setup?h(OnboardingPanel,{state:s,pending,submit:finishSetup}):null,
     editor?h(Editor,{key:editor.entity+editor.value.id,entity:editor.entity,value:editor.value,convert:editor.convert,state:s,close:()=>edit(null),sourceOpen:(id:string)=>{edit(null);setTab('inbox');setSelectedNotice(id);},saved:(next:State)=>{set(next);say('已保存到本机。');},remove:(entity:Entity,id:string)=>{edit(null);setDeletion({entity,id});},duplicate:(course:Course)=>edit({entity:'courses',value:{...course,id:id(),title:course.title+'（副本）',checklist:course.checklist.map(x=>({...x,id:id(),done:false}))}})}):null,
     manualOpen?h(ManualStatusDialog,{live,state:s,close:()=>setManualOpen(false),change,pending}):null,
     schedule?h('div',{className:'modal-backdrop'},h('section',{className:'modal small',role:'dialog','aria-modal':true,'aria-label':'核对课表导入'},h('div',{className:'import-kicker'},'课表文件已读取'),h('h2',null,schedule.termName),h('p',{className:'muted'},`共 ${schedule.courses.length} 门课程。载入后会替换下列人员当前已有的课程与临时调课，待办、会议和通知不受影响。`),h('div',{className:'import-summary'},...schedule.profiles.map(p=>h('div',{key:p.id},h('strong',null,p.name),h('span',null,`${p.startDate} 起 · ${p.weeks} 周`),h('small',null,`${schedule.courses.filter(c=>c.person===p.id).length} 门课程 · ${p.periods.length} 节作息`)))),h('div',{className:'modal-foot'},b('取消',()=>setSchedule(null),'ghost',pending),b(pending?'正在载入…':'确认载入课表',async()=>{if(await change({type:'importSchedule',value:schedule})){setSchedule(null);say(`${schedule.termName}课表已载入。`);}},'primary',pending)))):null,

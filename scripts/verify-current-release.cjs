@@ -66,6 +66,8 @@ const auxiliary = [
 const nodeStep = (script) => ({ name: script, command: process.execPath, args: [path.join(root, script)] });
 // Phase 5A：全新安装契约（空 userData → 两次启动）。它自己管理子进程，因此用 node 运行。
 const freshInstall = nodeStep('verify-v050-generalization.cjs');
+// Phase 5B1：首次使用 onboarding（空 userData → 真实点击完成 Solo / Together / 中途关闭）。
+const onboarding = nodeStep('verify-v051-onboarding.cjs');
 const packaged = nodeStep('verify-v0220-packaged.cjs');
 
 if (!skipPackaged && !fs.existsSync(packagedExe)) {
@@ -74,8 +76,9 @@ if (!skipPackaged && !fs.existsSync(packagedExe)) {
   process.exit(1);
 }
 
-// fresh install 契约是源码级的，即使 --skip-packaged 也照跑；打包版清房验证跟随打包产物。
-const steps = [...gates, ...(withAux ? auxiliary : []), freshInstall, ...(skipPackaged ? [] : [packaged])];
+// fresh install 契约与 onboarding 都是源码级的，即使 --skip-packaged 也照跑；
+// 打包版清房验证跟随打包产物。（打包版 onboarding 路径另见 verify-v051-onboarding.cjs --packaged）
+const steps = [...gates, ...(withAux ? auxiliary : []), freshInstall, onboarding, ...(skipPackaged ? [] : [packaged])];
 const results = [];
 
 console.log(`YD v0.3 release gates · ${steps.length} 个步骤${withAux ? '（含辅助验证）' : ''}${skipPackaged ? '（跳过打包版验证）' : ''}`);

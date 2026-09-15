@@ -2671,6 +2671,36 @@ body.main-body {
 .inbox-placeholder > div { grid-column:1; grid-row:1; align-self:center; }
 .inbox-placeholder p { max-width:420px; margin-top:8px; line-height:1.65; }
 
+/* —— Phase 5B1 首次使用（onboarding）：安静的第一步 —— */
+/* 只在 settings.setup === false 时出现；盖在主界面之上（标题栏仍在最上层，窗口照常可拖）。
+   居中单栏 panel：一层标题 + 一层说明 + 一个控件区，不堆功能卡片。 */
+.setup-gate { position:fixed; inset:0; z-index:15; display:flex; align-items:center; justify-content:center; padding:62px 24px 30px; background:rgba(243,246,247,.86); backdrop-filter:blur(6px); }
+.setup-panel { display:grid; gap:20px; width:640px; max-width:100%; max-height:calc(100vh - 92px); padding:30px 32px 26px; overflow:auto; border:1px solid var(--yd-line); border-radius:var(--yd-radius-lg); background:var(--yd-surface); box-shadow:0 1px 2px rgba(27,32,30,.03), 0 26px 70px rgba(27,32,30,.10); }
+.setup-panel:focus { outline:none; }
+.setup-head { display:grid; gap:4px; }
+.setup-progress { color:var(--yd-faint); font-size:11.5px; font-weight:560; letter-spacing:.08em; font-variant-numeric:tabular-nums; }
+.setup-head h2 { margin:2px 0 0; color:var(--yd-ink); font-size:23px; font-weight:620; }
+.setup-lede { margin:0; color:var(--yd-muted); font-size:13px; }
+.setup-form { display:grid; gap:16px; }
+.setup-field { margin-bottom:0; }
+.setup-field input { font-size:14px; }
+.setup-note { margin:0; color:var(--yd-faint); font-size:11.5px; }
+.setup-modes { display:grid; gap:10px; }
+.setup-mode { display:grid; gap:4px; padding:13px 16px; text-align:left; border:1px solid var(--yd-line); border-radius:var(--yd-radius-md); background:var(--yd-surface-2); color:inherit; }
+.setup-mode:hover { background:var(--yd-surface-2); border-color:var(--yd-brand-line); }
+.setup-mode strong { color:var(--yd-ink); font-size:13.5px; font-weight:600; }
+.setup-mode small { color:var(--yd-muted); font-size:11.5px; line-height:1.45; }
+.setup-mode.active { border-color:var(--yd-brand); background:var(--yd-brand-soft); box-shadow:0 0 0 2px rgba(70,108,106,.10); }
+.setup-avatar-group { display:grid; gap:8px; }
+.setup-avatar-title { margin:0; color:var(--yd-muted); font-size:12.5px; font-weight:600; }
+.setup-avatar-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+/* 首次使用的卡片只用来"选一个"，比设置页的完整预览卡矮一档：
+   Together 两个人都选也不会把 panel 撑出窗口。 */
+.setup-avatar-grid .avatar-pack-card { min-height:132px; grid-template-rows:86px auto; }
+.setup-avatar-grid .avatar-pack-card-art { height:86px; }
+.setup-hint { margin:0; color:var(--yd-danger); font-size:12px; }
+.setup-actions { display:flex; align-items:center; justify-content:flex-end; gap:10px; }
+
 @media (max-width:900px) {
   .schedule-view-actions { align-items:flex-end; flex-direction:column; gap:8px; }
   .reminder-item { align-items:flex-start; flex-direction:column; }
@@ -2801,16 +2831,25 @@ body.main-body .settings-nav button.active::before { top:auto; right:0; bottom:-
 .solo-foot i { display:block; width:26px; height:1px; background:rgba(79,119,115,.28); }
 
 @media (max-width:900px) {
+  .setup-panel { padding:24px 24px 20px; gap:16px; }
   .course-toolbar { align-items:flex-start; flex-direction:column; }
   .course-toolbar-actions { justify-content:flex-start; width:100%; }
   .management-subbar { align-items:stretch; flex-direction:column; gap:8px; }
   .management-filters { justify-content:flex-start; padding:0; }
 }
 @media (max-width:720px) {
+  .setup-panel { padding:22px 18px 20px; }
   .course-toolbar-main { align-items:flex-start; flex-direction:column; }
   .course-toolbar-main select { width:100%; }
   .course-toolbar-actions button { flex:1 1 auto; }
   .schedule-toolbar { align-items:flex-start; flex-direction:column; }
   .setting-row { grid-template-columns:minmax(0,1fr); gap:10px; }
   .setting-row-control { justify-content:flex-start; }
+}
+
+/* 窗口不高时把桌宠卡片再收矮一档：双人选择也能一眼看到「开始使用 YD」。 */
+@media (max-height:760px) {
+  .setup-panel { padding:22px 26px 20px; gap:14px; }
+  .setup-avatar-grid .avatar-pack-card { min-height:108px; grid-template-rows:62px auto; }
+  .setup-avatar-grid .avatar-pack-card-art { height:62px; }
 }

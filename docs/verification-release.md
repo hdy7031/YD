@@ -1,6 +1,6 @@
 # YD 发布验收门禁（跨版本）
 
-基线：分支 `v0.3-productization`，Phase 5A，`DOMAIN_VERSION = 6`。
+基线：分支 `v0.3-productization`，Phase 5A + Phase 5B1，`DOMAIN_VERSION = 6`。
 （本文档原为 `docs/verification-v030.md`，从 Phase 5 起升级为跨版本的发布验收文档。）
 
 本文档只回答两个问题：**哪些验证必须全绿**、**哪些脚本只是历史考古**。
@@ -21,11 +21,34 @@
 | ManualOverride | 空 → `CurrentState = idle` |
 | Routine | 空规则（`{source:'user',rules:[]}`）；「使用默认作息」是用户主动选择的 preset |
 | Avatar | 官方默认 Pack（`yd-default` / `default`） |
-| 校历 | 中性占位（本周周一 + 20 周 + 八节等长节次）+ `settings.setup=false`；真实校历留给 Phase 5B onboarding |
+| 校历 | 中性占位（本周周一 + 20 周 + 八节等长节次）+ `settings.setup=false`；真实校历留给 Phase 5B3 的 Academic 领域表达 |
 | 第二次启动 | 复用同一个 PersonId，不重复建档案 |
 
 由 `verify-v050-generalization.cjs` 锁定：它用全新临时 userData 启动两次（源码级两个
 Electron 子进程；`--packaged` 时用 `release/win-unpacked/YD.exe` + CDP），并做私有哨兵扫描。
+
+## 0.1 First-Run Onboarding Contract（Phase 5B1）
+
+`settings.setup` 是"首次使用是否完成"的唯一真相，也是显示 onboarding 的唯一条件
+（不用姓名 / 档案数量 / 是否有课程来猜）。流程最多三步：**关于你 → 使用方式 → 桌宠形象**，
+默认「只为自己」，只有明确选择「我和另一位」才创建 companion。
+
+| 维度 | 契约 |
+| --- | --- |
+| 触发 | `settings.setup === false`（fresh install 与"没做完就关掉"的下一次启动） |
+| draft | 名字 / 使用方式 / Avatar 只存在于界面内存；不逐字写 Store，不落 draft 文件 |
+| 提交 | 单条 `completeSetup` 命令（`src/setup.ts`）：校验通过才一次性写入，`settings.setup=true` 只在完整完成后设置 |
+| self 身份 | 复用 5A 生成的同一个 PersonId；名称 trim 后 1—40 字符，Unicode / emoji 原样保留 |
+| shortAlias | 不强迫填写，沿用 `people.ts` 的派生；改名时只清掉"系统自己填过"的代号 |
+| companion | 只有选 Together 才创建，走 `createCompanionProfile` + 现代 UUID，作息 / 课表 / 待办仍然全空 |
+| Avatar | 卡片来自 `listAvatarPacks()`；写入走 Phase 4 的 `setAvatarPack`，没动过的默认卡片保持 `source='default'` |
+| 不 seed | 不创建课表 / 待办 / 会议 / 作息示例数据；`CurrentState` 仍由状态引擎给出 idle |
+| 老用户 | `settings.setup === true` 时直接进入 Home，`completeSetup` 一律拒绝，State 零改写 |
+| schema | `DOMAIN_VERSION` 仍为 6，本阶段不新增 migration |
+
+由 `verify-v051-onboarding.cjs` 锁定：三个全新临时 userData 目录、六个 Electron 阶段
+（solo / solo-restart / together / together-restart / abandon / abandon-restart），
+全部动作走真实 DOM 点击与输入；`--packaged` 时用 `release/win-unpacked/YD.exe` + CDP 跑同样路径。
 
 ## 1. 当前维护的 release gate（必须全绿）
 
@@ -50,8 +73,10 @@ Electron 子进程；`--packaged` 时用 `release/win-unpacked/YD.exe` + CDP）�
 | `npx electron verify-v030-avatar-picker.cjs` | Picker / Preview / avatarSet / avatarReset / 重启持久化 |
 | `npx electron verify-v030-dock.cjs` | Dual Status Dock：结构 / label / hover / click / drag / 快速拖动 / 位置落盘与重启恢复（Solo 见 `runtime-audit-solo.cjs`） |
 | `node verify-v050-generalization.cjs` | **Fresh Install Contract**：空 userData → 第一次启动（Solo / 单 self / 全空 / idle / UI 无 undefined）/ 第二次启动同一 PersonId；含私人哨兵扫描 |
+| `node verify-v051-onboarding.cjs` | **First-Run Onboarding Contract**：空 userData → 真实点击完成 Solo / Together（含未完成关闭与两次重启）；不 seed 业务数据、不改 PersonId、无 ghost companion |
 | `node verify-v0220-packaged.cjs` | 打包版（`release/win-unpacked/YD.exe`）真实启动、Picker 热切换、冷启动持久化（数据由 `tests/fixtures/v3-together-synthetic.sqlite` 显式种下） |
 | `node verify-v050-generalization.cjs --packaged` | 打包版清房验证（本轮手动跑一次即可，见 Phase 5A 报告） |
+| `node verify-v051-onboarding.cjs --packaged` | 打包版清房 onboarding（Solo + Together + 重启；每轮手动跑一次即可，见 Phase 5B1 报告） |
 
 两个 node 步骤都需要先 `npm run dist -- --config.electronDist=node_modules/electron/dist`
 生成打包产物；产物缺失时打包步骤失败，不做静默跳过。
