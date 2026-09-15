@@ -2175,12 +2175,13 @@ input:hover, select:hover, textarea:hover { border-color: #C3CDC8; }
    production companion renderer; the surrounding controls only choose a
    local candidate until the explicit action button is pressed. */
 .avatar-settings { display:grid; gap:18px; }
-.avatar-person-picker { display:grid; gap:12px; padding:14px; border:1px solid var(--line,#e6dfd5); border-radius:16px; background:rgba(255,255,255,.48); }
+.avatar-person-picker { display:grid; gap:10px; padding:14px; border:1px solid var(--line,#e6dfd5); border-radius:16px; background:rgba(255,255,255,.48); }
 .avatar-picker-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
-.avatar-picker-head h4 { margin:0 0 3px; font-size:15px; }
+/* 「我的形象 / Sam 的形象」= 当前编辑人物的局部标签，不是第二个 section 标题。 */
+.avatar-picker-head h4 { margin:0 0 2px; color:var(--yd-ink-2); font-size:14.5px; font-weight:600; }
 .avatar-picker-head p { margin:0; }
 .avatar-unavailable { padding:4px 8px; border-radius:999px; color:var(--yd-muted); background:var(--yd-surface-2); font-size:12px; font-weight:700; }
-.avatar-picker-layout { display:grid; grid-template-columns:minmax(220px,.82fr) minmax(300px,1.18fr); gap:14px; align-items:start; }
+.avatar-picker-layout { display:grid; grid-template-columns:minmax(240px,.9fr) minmax(280px,1.1fr); gap:14px; align-items:start; }
 .avatar-pack-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .avatar-pack-card { min-height:170px; padding:10px; display:grid; grid-template-rows:124px auto; gap:8px; color:inherit; text-align:left; border:1px solid var(--line,#e6dfd5); border-radius:14px; background:rgba(255,255,255,.7); box-shadow:none; }
 .avatar-pack-card:hover { border-color:var(--yd-brand-line); transform:translateY(-1px); }
@@ -2190,7 +2191,7 @@ input:hover, select:hover, textarea:hover { border-color: #C3CDC8; }
 .avatar-pack-card-copy { display:grid; gap:2px; }
 .avatar-pack-card-copy strong { font-size:14px; }
 .avatar-pack-card-copy small { color:var(--muted,#746f68); }
-.avatar-preview { min-width:0; display:grid; grid-template-rows:160px auto auto; gap:9px; padding:12px; border-radius:14px; background:linear-gradient(145deg,rgba(247,243,236,.92),rgba(255,255,255,.72)); }
+.avatar-preview { min-width:0; display:grid; grid-template-rows:138px auto auto; gap:9px; padding:12px; border-radius:14px; background:linear-gradient(145deg,rgba(247,243,236,.92),rgba(255,255,255,.72)); }
 .avatar-preview-stage { position:relative; min-height:0; overflow:hidden; border-radius:11px; }
 .avatar-preview-meta { display:flex; justify-content:space-between; gap:12px; font-size:13px; }
 .avatar-preview-meta span { color:var(--muted,#746f68); }
@@ -2200,7 +2201,7 @@ input:hover, select:hover, textarea:hover { border-color: #C3CDC8; }
 .avatar-picker-actions { margin-top:0; }
 @media(max-width:860px) {
   .avatar-picker-layout { grid-template-columns:1fr; }
-  .avatar-preview { grid-template-rows:148px auto auto; }
+  .avatar-preview { grid-template-rows:128px auto auto; }
 }
 
 /* V0.3 Phase 3C — 临时手动状态：状态行入口 + 对话框里的类型 / 时长选择 */
@@ -2795,6 +2796,25 @@ body.main-body .settings-nav button.active::before { top:auto; right:0; bottom:-
 /* 一行就能说完的一组：标题与控件同行（例如「桌宠表示 [我] [TA]」）。 */
 .setting-block-inline { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:16px; }
 .setting-block-inline h3 { margin:0; }
+/* 行为组（桌面桌宠 + 桌宠表示）是同一组：组内不再分隔，只在进入「桌宠形象」前画一条线；
+   上半部分整体再收紧约 15%。 */
+.setting-block-behavior { padding:15px 0 14px; }
+.setting-block-behavior .setting-row { min-height:46px; padding:4px 0; }
+.setting-row-inline .setting-row-copy { display:flex; align-items:center; }
+/* 桌宠表示：两个独立的轻量选择 Chip。选中 > hover > 常态，只用背景 / 描边 / 字重区分，
+   不共用灰色胶囊底座、不做实心大按钮、不加阴影。 */
+.choice-chips { display:flex; align-items:center; gap:9px; }
+.choice-chip {
+  display:inline-flex; align-items:center; justify-content:center;
+  min-height:38px; padding:0 20px; border:1px solid var(--yd-line-2); border-radius:11px;
+  background:var(--yd-surface); color:var(--yd-ink-2);
+  font-size:13px; font-weight:560; box-shadow:none;
+  transition:background-color 140ms ease,border-color 140ms ease,color 140ms ease;
+}
+.choice-chip:hover { border-color:var(--yd-brand-line); background:#F4F8F7; color:var(--yd-ink); }
+.choice-chip.active { border-color:var(--yd-brand-line); background:var(--yd-brand-soft); color:var(--yd-brand-deep); font-weight:620; }
+.choice-chip:focus-visible { outline:2px solid #5E8583; outline-offset:2px; }
+.choice-chip:disabled { opacity:.55; cursor:not-allowed; }
 .setting-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(180px,auto); align-items:center; gap:20px; width:100%; max-width:none; min-height:54px; padding:8px 0; }
 .setting-row-copy { display:grid; gap:3px; min-width:0; }
 .setting-row-copy strong { color:var(--yd-ink); font-size:13px; font-weight:600; }

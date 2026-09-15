@@ -595,7 +595,7 @@ const avatarPreviewDisplay=(state:CompanionDisplayState):CompanionDisplay=>({
 
 // Phase 4 的唯一 Avatar Pack 卡片。首次使用的 onboarding 复用同一张卡
 // （见 ui/onboarding.ts），只换掉两行说明文字，不复制第二套选择控件。
-export function AvatarPackCard({pack,active,selected,busy,onPreview,selectedLabel='当前使用',idleLabel='点击预览'}:{pack:AvatarPackManifest;active:boolean;selected:boolean;busy:boolean;onPreview:()=>void;selectedLabel?:string;idleLabel?:string}){
+export function AvatarPackCard({pack,active,selected,busy,onPreview,selectedLabel='当前使用',idleLabel='预览'}:{pack:AvatarPackManifest;active:boolean;selected:boolean;busy:boolean;onPreview:()=>void;selectedLabel?:string;idleLabel?:string}){
   const assets=useAvatarPreviewAssets(pack.id);
   return h('button',{type:'button',className:`avatar-pack-card${active?' is-previewing':''}${selected?' is-selected':''}`,'data-avatar-pack-option':pack.id,'aria-pressed':active,disabled:busy,onClick:onPreview},
     h('span',{className:'avatar-pack-card-art'},h(CustomCompanionArt,{assets,display:avatarPreviewDisplay(pack.previewState),animate:false,reduceMotion:true})),
@@ -656,25 +656,26 @@ export function PetSettings({live,settings,state,section='companionship'}:{live:
   const companionProfile=state?getCompanionProfile(state):undefined;
   const subjectRole=state?petSubjectRoleOf(state):'self';
   const petEnabled=state?state.settings.petEnabled!==false:true;
-  // 紧凑分段控件：这是"做选择"，不是介绍 Pet Subject 概念。
-  const subjectChoices=h('div',{className:'segmented setting-segmented','data-pet-subject':'true',role:'radiogroup','aria-label':'桌宠表示'},
+  // 两个独立的轻量选择 Chip（不是黏在一起的 segmented control）：这是"二选一"，不是按钮组。
+  const subjectChoices=h('div',{className:'choice-chips','data-pet-subject':'true',role:'radiogroup','aria-label':'桌宠表示'},
     ...([['self','我','桌宠显示你的状态'],['companion',companionProfile?.name||'TA',`桌宠显示 ${companionProfile?.name||'TA'} 的状态`]] as const).map(([value,label,note])=>h('button',{
       key:value,type:'button',role:'radio','aria-checked':subjectRole===value,'data-pet-subject-option':value,
-      className:subjectRole===value?'active':'',title:note,disabled:busy,
+      className:subjectRole===value?'choice-chip active':'choice-chip',title:note,disabled:busy,
       onClick:()=>{if(subjectRole!==value)void run(()=>api.change({type:'settings',petSubjectRole:value}));},
     },label)));
   // 设置页负责"做选择"，不负责解释系统架构：左边导航已经是这一页的标题，
   // 因此这里没有外层 h2；每一组只保留一个标题 + 一个控件。
   return h('section',{className:'pet-settings'},
-    // 1) 桌面桌宠：开关就在标题同行。
-    section==='companionship'&&state?h('div',{className:'setting-block'},
+    // 1) 行为组：桌宠开关 + 桌宠表示属于同一组（组内不分段，只在进入形象之前分隔）。
+    section==='companionship'&&state?h('div',{className:'setting-block setting-block-behavior'},
       h('div',{className:'setting-row'},
-        h('div',{className:'setting-row-copy'},h('strong',null,'桌面桌宠'),h('small',null,'在桌面显示桌宠，并跟随所选对象的状态变化。')),
-        h('div',{className:'setting-row-control'},h('label',{className:'setting-switch'},h('input',{type:'checkbox',checked:petEnabled,disabled:busy,'aria-label':'桌面桌宠','data-pet-enabled':'true',onChange:(e:React.ChangeEvent<HTMLInputElement>)=>void run(()=>api.change({type:'settings',petEnabled:e.target.checked}))}),h('span',{'aria-hidden':true}))))):null,
-    // 2) 桌宠表示：只有"用桌宠 + 有第二个人"才有意义（Solo 不给无意义选择）。
-    section==='companionship'&&state&&petEnabled&&together?h('div',{className:'setting-block setting-block-inline'},
-      h('h3',null,'桌宠表示'),subjectChoices):null,
-    // 3) 桌宠形象：形象永远属于某个人（Solo 只有一个）。
+        h('div',{className:'setting-row-copy'},h('strong',null,'桌面桌宠'),h('small',null,together?'在桌面显示桌宠，并跟随所选对象的状态。':'在桌面显示桌宠，并跟随你的状态变化。')),
+        h('div',{className:'setting-row-control'},h('label',{className:'setting-switch'},h('input',{type:'checkbox',checked:petEnabled,disabled:busy,'aria-label':'桌面桌宠','data-pet-enabled':'true',onChange:(e:React.ChangeEvent<HTMLInputElement>)=>void run(()=>api.change({type:'settings',petEnabled:e.target.checked}))}),h('span',{'aria-hidden':true})))),
+      // 桌宠表示：只有"用桌宠 + 有第二个人"才有意义（Solo 不给无意义选择）。
+      petEnabled&&together?h('div',{className:'setting-row setting-row-inline'},
+        h('div',{className:'setting-row-copy'},h('strong',null,'桌宠表示')),
+        h('div',{className:'setting-row-control'},subjectChoices)):null):null,
+    // 2) 桌宠形象：形象永远属于某个人（Solo 只有一个）。
     section==='companionship'&&state?h('div',{className:'setting-block'},
       h('h3',null,'桌宠形象'),h(AvatarSettings,{state,busy,run})):null,
     section==='companionship'?block('呈现方式',h(React.Fragment,null,
