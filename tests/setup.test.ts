@@ -10,6 +10,7 @@ import { apply, createCompanionProfile, createFreshState, epoch } from '../src/c
 import { completeSetup, needsSetup, normalizeSetupName, setupNameProblem, type SetupInput } from '../src/setup.ts';
 import { getAvatarPack, listAvatarPacks, DEFAULT_AVATAR_PACK_ID } from '../src/avatar.ts';
 import { getCompanionProfile, getSelfProfile, petSubjectRoleOf, profileAlias, resolvePetSubject, roleCounts, type PetSubjectRole } from '../src/people.ts';
+import { academicOf } from '../src/academic.ts';
 import { resolvePetInstance } from '../src/pet-instance.ts';
 import { DOMAIN_VERSION } from '../src/domain.ts';
 import { getCurrentState } from '../src/state/engine.ts';
@@ -74,7 +75,7 @@ test('Solo：即使 draft 偷偷带上 companion，主体仍被强制为本人',
 });
 
 test('Together：只有明确选择双人才创建 companion，且数据完全通用', () => {
-  const state = fresh(), selfId = state.profiles[0].id, startDate = state.profiles[0].startDate;
+  const state = fresh(), selfId = state.profiles[0].id;
   const next = complete(state, input({ selfName: '小宇', mode: 'together', companion: { name: '  丹丹 ' } }));
   assert.equal(next.settings.setup, true);
   assert.equal(next.profiles.length, 2);
@@ -89,8 +90,12 @@ test('Together：只有明确选择双人才创建 companion，且数据完全�
   assert.equal(profileAlias(companion, 1), '丹');
   assert.deepEqual(companion.routine, { source: 'user', updatedAt: NOW, rules: [] }, '不继承任何作息');
   assert.deepEqual(companion.avatar, { packId: DEFAULT_AVATAR_PACK_ID, source: 'default' });
-  assert.deepEqual(companion.periods, state.profiles[0].periods, '沿用中性学期占位，不继承课程');
-  assert.equal(companion.startDate, startDate);
+  // Phase 5B3：新同伴不继承、也不发明学业配置（学期 / 教学周 / 节次都不是身份的一部分）。
+  assert.equal(academicOf(companion), undefined, 'companion 没有假学期');
+  assert.equal(academicOf(getSelfProfile(next)!), undefined, '本人也没有被塞进假学期');
+  assert.equal(companion.startDate, undefined);
+  assert.equal(companion.weeks, undefined);
+  assert.equal(companion.periods, undefined);
   assert.deepEqual(next.courses, []);
   assert.equal(resolvePetInstance(next).subjectId, companion.id, 'Together 默认桌宠仍代表 TA');
   assert.equal(snapshot(next, NOW).people.length, 2);
@@ -241,7 +246,7 @@ test('已经有陪伴对象的工作区：不能借首次设置删除或重建 T
   assert.equal(next.profiles.length, 2);
   assert.equal(getCompanionProfile(next)!.id, companionId, '既有 companion 原样保留');
   assert.equal(getSelfProfile(next)!.name, '小宇');
-  assert.equal(getSelfProfile(next)!.startDate, legacy.profiles[0].startDate, '既有校历 / 课程范围不被 onboarding 改写');
+  assert.deepEqual(academicOf(getSelfProfile(next)!), academicOf(legacy.profiles[0]), '既有学期 / 课程范围不被 onboarding 改写');
   assert.equal(next.settings.petSubjectRole, 'companion', '既有 Together 的桌宠主体保持同行者');
 });
 

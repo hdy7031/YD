@@ -6,6 +6,7 @@
 import { createFreshState } from '../../src/core.ts';
 import { DEFAULT_AVATAR_PACK_ID } from '../../src/avatar.ts';
 import { emptyRoutine, legacyDefaultRoutine } from '../../src/routine.ts';
+import { suggestedTermStart, STANDARD_PERIOD_PRESET, SUGGESTED_TERM_WEEKS } from '../../src/academic.ts';
 import type { Profile, State } from '../../src/types.ts';
 
 /**
@@ -15,9 +16,16 @@ import type { Profile, State } from '../../src/types.ts';
  */
 export function togetherWorkspace(now = 0): State {
   const state = createFreshState(now);
-  const { startDate, weeks, periods } = state.profiles[0];
+  // Phase 5B3：生产 fresh state 不再生成学业配置（普通用户不需要学期与节次）。
+  // 这个 helper 表达的是"学生双人工作区"，因此在这里**显式**写下等价的学业配置：
+  // 本周周一 + 20 周 + 八节等长节次 —— 与 5B3 之前的生产占位值逐字段相同。
+  const { startDate, weeks, periods } = {
+    startDate: suggestedTermStart(now),
+    weeks: SUGGESTED_TERM_WEEKS,
+    periods: structuredClone(STANDARD_PERIOD_PRESET),
+  };
   const base = {
-    startDate, weeks, periods: structuredClone(periods),
+    startDate, weeks, periods,
     avatar: { packId: DEFAULT_AVATAR_PACK_ID, source: 'default' as const },
     updatedAt: now,
   };

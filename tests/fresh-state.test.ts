@@ -11,6 +11,7 @@ import { emptyRoutine, legacyDefaultRoutine } from '../src/routine.ts';
 import { DOMAIN_VERSION } from '../src/domain.ts';
 import { DEFAULT_AVATAR_PACK_ID } from '../src/avatar.ts';
 import { LEGACY_COMPANION_ID, LEGACY_SELF_ID, profileAlias } from '../src/people.ts';
+import { academicOf, academicPresence, STANDARD_PERIOD_PRESET } from '../src/academic.ts';
 
 const now = epoch('2027-03-03T09:00');
 // 私有默认哨兵：fresh state 与派生投影里都不允许出现（合成 fixture 的名字也不允许）。
@@ -55,15 +56,19 @@ test('fresh install：PersonId 用正式生成器，不使用 legacy me / partne
   assert.notEqual(first.profiles[0].id, second.profiles[0].id, '每次初始化都生成新的合法 PersonId');
 });
 
-test('fresh install：中性身份与中性校历占位（没有私人姓名 / 学校 / 真实开学日）', () => {
+test('fresh install：中性身份 + 没有学业配置（Phase 5B3：不再伪造学期占位）', () => {
   const state = createFreshState(now);
   const self = state.profiles[0];
   assert.equal(self.name, '我', 'Phase 5B 之前用中性临时身份');
   assert.equal(self.shortAlias, undefined, '不把 Y / D 之类代号写进新用户档案');
   assert.equal(profileAlias(self, 0), '我', '显示代号从名称派生');
-  // 校历占位：本周周一（2027-03-03 是周三 → 2027-03-01），与任何真实学校无关。
-  assert.equal(self.startDate, '2027-03-01');
-  assert.equal(new Date(self.startDate + 'T12:00:00Z').getUTCDay(), 1, '学期起始日必须是周一');
+  // 普通用户不背假学期：fresh install 不带 startDate / weeks / periods，
+  // 「没有学业配置」是合法状态（Phase 5B3 Academic Decoupling）。
+  assert.deepEqual(academicOf(self), undefined, 'fresh install 没有学业配置');
+  assert.equal(academicPresence(self), 'absent');
+  assert.equal(self.startDate, undefined);
+  assert.equal(self.weeks, undefined);
+  assert.equal(self.periods, undefined);
   const json = JSON.stringify(state);
   for (const sentinel of PRIVATE_SENTINELS) assert.ok(!json.includes(sentinel), `fresh state 不含私人/合成哨兵：${sentinel}`);
 });
@@ -72,8 +77,8 @@ test('fresh state 直接通过 validateState，并且确定性字段可复现', 
   const a = createFreshState(now), b = createFreshState(now);
   validateState(a); validateState(b);
   assert.deepEqual(
-    { startDate: a.profiles[0].startDate, weeks: a.profiles[0].weeks, periods: a.profiles[0].periods, updatedAt: a.profiles[0].updatedAt },
-    { startDate: b.profiles[0].startDate, weeks: b.profiles[0].weeks, periods: b.profiles[0].periods, updatedAt: b.profiles[0].updatedAt }
+    { academic: academicOf(a.profiles[0]), updatedAt: a.profiles[0].updatedAt },
+    { academic: academicOf(b.profiles[0]), updatedAt: b.profiles[0].updatedAt }
   );
   assert.deepEqual({ ...a, profiles: [] }, { ...b, profiles: [] }, '除人以外的一切都由 now 决定');
 });
@@ -112,6 +117,8 @@ test('现有 v6 用户的启动归一化逐字段保持：自定义名 / Y D / �
   const base = createFreshState(now);
   const self = base.profiles[0];
   const companion = createCompanionProfile(now, self);
+  // v6 用户是学生：他的档案本来就带学业配置（Phase 5B3 只让 absence 合法，不改老数据）。
+  const academic = { startDate: '2027-03-01', weeks: 20, periods: structuredClone(STANDARD_PERIOD_PRESET) };
   const course = {
     id: 'keep-course', person: companion.id, title: '既有课程', place: '教学楼', notes: '', activity: 'teaching' as const,
     weekday: 1, first: 1, last: 1, weeks: [1], reminders: [10], checklist: [], updatedAt: now, createdAt: now,
@@ -120,8 +127,8 @@ test('现有 v6 用户的启动归一化逐字段保持：自定义名 / Y D / �
   const existing = {
     ...base,
     profiles: [
-      { ...self, name: '自定义名字', shortAlias: 'Y', routine: legacyDefaultRoutine(now) },
-      { ...companion, name: '同行者名字', shortAlias: 'D', routine: emptyRoutine(now) },
+      { ...self, ...academic, name: '自定义名字', shortAlias: 'Y', routine: legacyDefaultRoutine(now) },
+      { ...companion, ...academic, name: '同行者名字', shortAlias: 'D', routine: emptyRoutine(now) },
     ],
     courses: [course],
     tasks: [task],

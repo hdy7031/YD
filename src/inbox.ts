@@ -1,4 +1,5 @@
 import { apply, id, epoch, dateOf, occurrences } from './core.ts';
+import { academicOf } from './academic.ts';
 import type { State, Notice, Command } from './types.ts';
 import { validDraft } from './inbox-types.ts';
 import type { InboundPayload, ParsedDraft, ParserAdapter, ParseContext } from './inbox-types.ts';
@@ -52,7 +53,9 @@ export function draftErrors(s:State,d:ParsedDraft):string[]{
   if(d.type==='EVENT'&&d.endTime&&(!validTime(d.endTime)||d.endTime<=d.startTime))errors.push('结束时间必须晚于开始时间。');
   if(d.type==='COURSE_CHANGE'){
     const c=s.courses.find(c=>c.id===d.courseId);if(!c)errors.push('请选择已有课程。');
-    else if(validDate(d.date)){const p=s.profiles.find(p=>p.id===c.person)!;const day=Math.round((epoch(d.date)-epoch(p.startDate))/86400000);if(day<0||day%7!==c.weekday-1||!c.weeks.includes(Math.floor(day/7)+1))errors.push('原日期不属于该课程的教学周。');}
+    // 课程按教学周展开，因此它一定属于某个有学业配置的档案（见 core.validate）；
+    // 这里仍显式处理 absence（例如旧备份里遗留的课程 + 已被移除的学业配置）。
+    else if(validDate(d.date)){const calendar=academicOf(s.profiles.find(p=>p.id===c.person));if(!calendar)errors.push('该课程所属人缺少学期与节次，请先在「课表与学校」里设置。');else{const day=Math.round((epoch(d.date)-epoch(calendar.startDate))/86400000);if(day<0||day%7!==c.weekday-1||!c.weeks.includes(Math.floor(day/7)+1))errors.push('原日期不属于该课程的教学周。');}}
     if(d.operation==='RESCHEDULE'&&(!validDate(d.newDate)||!validTime(d.startTime)||!validTime(d.endTime)||d.endTime<=d.startTime))errors.push('请补全新的日期和起止时间。');
     if(d.operation==='LOCATION_CHANGE'&&!d.location.trim())errors.push('请填写新地点。');
   }
@@ -72,9 +75,10 @@ export function confirmDraft(state:State,cmd:Extract<Command,{type:'review'}>,no
     s=apply(s,{type:'save',entity:'events',value:{...base,...(old?{id:old.id,createdAt:old.createdAt,checklist:old.checklist}:{}),start:`${d.date}T${d.startTime}`,end:d.endTime?`${d.date}T${d.endTime}`:null,place:d.location}},now);
   }
   if(d.type==='COURSE_CHANGE'){
-    const c=s.courses.find(c=>c.id===d.courseId)!,p=s.profiles.find(p=>p.id===c.person)!,old=s.exceptions.find(e=>e.courseId===c.id&&e.date===d.date);
+    const c=s.courses.find(c=>c.id===d.courseId)!,calendar=academicOf(s.profiles.find(p=>p.id===c.person)),old=s.exceptions.find(e=>e.courseId===c.id&&e.date===d.date);
+    if(!calendar)throw new Error('该课程所属人缺少学期与节次，请先在「课表与学校」里设置。');
     targetEntityType='exceptions';targetEntityId=old?.id||id();
-    const start=d.operation==='RESCHEDULE'?`${d.newDate}T${d.startTime}`:old?.start||`${d.date}T${p.periods[c.first-1].start}`,end=d.operation==='RESCHEDULE'?`${d.newDate}T${d.endTime}`:old?.end||`${d.date}T${p.periods[c.last-1].end}`;
+    const start=d.operation==='RESCHEDULE'?`${d.newDate}T${d.startTime}`:old?.start||`${d.date}T${calendar.periods[c.first-1].start}`,end=d.operation==='RESCHEDULE'?`${d.newDate}T${d.endTime}`:old?.end||`${d.date}T${calendar.periods[c.last-1].end}`;
     s=apply(s,{type:'save',entity:'exceptions',value:{id:targetEntityId,courseId:c.id,date:d.date,cancelled:d.operation==='CANCEL',start,end,place:d.location||old?.place||c.place,sourceInboxItemId:n.id,createdAt:old?.createdAt??now,updatedAt:now}},now);
   }
   Object.assign(s.notices.find(x=>x.id===n.id)!,{parsedData:structuredClone(d),detectedType:d.type,confidence:d.confidence,parseStatus:'CONFIRMED',state:'archived',targetEntityType,targetEntityId,processedAt:now,updatedAt:now});

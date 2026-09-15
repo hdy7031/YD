@@ -16,6 +16,7 @@ import { getCurrentState } from '../src/state/engine.ts';
 import { listAvatarPacks } from '../src/avatar.ts';
 import { emptyRoutine } from '../src/routine.ts';
 import { personOptions, shellTabs } from '../src/ui/shell.ts';
+import { academicOf, STANDARD_PERIOD_PRESET } from '../src/academic.ts';
 import { togetherWorkspace } from './helpers/workspaces.ts';
 import type { Command, Profile, State } from '../src/types.ts';
 
@@ -40,6 +41,9 @@ function together(now = NOW): State {
   const [packA, packB] = listAvatarPacks();
   state = change(state, { type: 'avatarSet', personId: sam.id, packId: packB.id }, now);
   state = change(state, { type: 'save', entity: 'profiles', value: { ...sam, routine: { source: 'user', updatedAt: now, rules: [{ id: 'sam-lunch', kind: 'meal', label: '午饭', start: '12:00', end: '13:00', days: [1, 2, 3, 4, 5], enabled: true, priority: 20 }] } } }, now);
+  // 课程是学业语义的载体（Phase 5B3：新 companion 不再自动继承学期与节次），
+  // 因此这里先显式给 Sam 配置学期与节次 —— 这正是真实用户会做的事。
+  state = change(state, { type: 'save', entity: 'profiles', value: { ...companion(state), startDate: '2027-05-10', weeks: 16, periods: structuredClone(STANDARD_PERIOD_PRESET) } }, now);
   state = change(state, { type: 'save', entity: 'courses', value: { id: 'sam-course', person: sam.id, title: 'Sam 的课', place: 'B-201', notes: '', activity: 'teaching', weekday: 1, first: 1, last: 2, weeks: [1, 2, 3], reminders: [], checklist: [], updatedAt: now } }, now);
   state = change(state, { type: 'manual', kind: 'focus', label: '写论文', endAt: null }, now);
   assert.deepEqual(self(state).avatar, { packId: packA.id, source: 'default' }, '本人形象保持默认（没有被顺手改写）');
@@ -154,7 +158,9 @@ test('第一次进入双人模式：新 companion 用现代 UUID、空作息 / �
   assert.deepEqual(created.routine, { source: 'user', updatedAt: NOW, rules: [] }, '不复制本人的作息');
   assert.deepEqual(created.avatar, { packId: 'yd-default', source: 'default' }, '先用默认形象，之后由 Picker 改');
   assert.deepEqual(state.courses, [], '不复制本人的课表');
-  assert.equal(created.startDate, selfProfile.startDate, '沿用中性学期占位，不发明第二个学期');
+  // Phase 5B3：新 companion 是一个普通 Person —— 不继承、也不发明任何学业配置。
+  assert.equal(academicOf(created), undefined, '不为自己和同伴生成假学期');
+  assert.equal(academicOf(selfProfile), undefined, '本人也仍然没有学期与节次（fresh install 不伪造）');
   assert.equal(usageModeOf(state), 'together');
   assert.equal(state.settings.petSubjectRole, 'companion', '第一次 Together 的桌宠默认表示 TA');
   // 缺名字 / 非法名字都被拒绝，且不留下半个 companion。

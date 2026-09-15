@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { epoch, dateOf, addDays, occurrences, conflicts, apply, tick, validateState, showPanelOnLaunch, DAY } from '../src/core.ts';
 import { togetherWorkspace } from './helpers/workspaces.ts';
+import { academicOf } from '../src/academic.ts';
 import type { State, Course, Task, Event, SchedulePackage } from '../src/types.ts';
 const start=epoch('2026-09-07T00:00');
 function state(){return togetherWorkspace(start);}
@@ -38,12 +39,12 @@ test('更新输入不会原地改变旧状态',()=>{const s=state();const next=a
 test('整理后的课表包会原子替换对应人员课程并保留其他资料',()=>{
   let s=add(state(),'courses',course());s=add(s,'tasks',task());
   s=apply(s,{type:'save',entity:'exceptions',value:{id:'x1',courseId:'c1',date:'2026-09-07',cancelled:true}},start);
-  const p=s.profiles[0],value:SchedulePackage={format:'dayhub-schedule',version:1,termName:'2026 秋季',profiles:[{id:'me',name:'我',startDate:'2026-09-07',weeks:18,periods:p.periods}],courses:[{id:'fall-physics',person:'me',title:'大学物理',place:'理科楼 201',notes:'',weekday:2,first:1,last:2,weeks:[1,2,3],reminders:[10],checklist:[]}]};
+  const p=s.profiles[0],calendar=academicOf(p)!,value:SchedulePackage={format:'dayhub-schedule',version:1,termName:'2026 秋季',profiles:[{id:'me',name:'我',startDate:'2026-09-07',weeks:18,periods:calendar.periods}],courses:[{id:'fall-physics',person:'me',title:'大学物理',place:'理科楼 201',notes:'',weekday:2,first:1,last:2,weeks:[1,2,3],reminders:[10],checklist:[]}]};
   const next=apply(s,{type:'importSchedule',value},start);
   assert.deepEqual(next.courses.map(c=>c.title),['大学物理']);assert.equal(next.exceptions.length,0);assert.equal(next.tasks.length,1);assert.equal(next.settings.setup,true);assert.ok(next.reminders.some(r=>r.target==='courses:fall-physics'));
 });
 test('课表包中的非法课程不会产生部分写入',()=>{
-  const s=state(),p=s.profiles[0],value:SchedulePackage={format:'dayhub-schedule',version:1,termName:'2026 秋季',profiles:[{id:'me',name:'我',startDate:'2026-09-07',weeks:18,periods:p.periods}],courses:[{id:'bad',person:'me',title:'错误课程',place:'',notes:'',weekday:8,first:1,last:2,weeks:[1],reminders:[10],checklist:[]}]};
+  const s=state(),p=s.profiles[0],calendar=academicOf(p)!,value:SchedulePackage={format:'dayhub-schedule',version:1,termName:'2026 秋季',profiles:[{id:'me',name:'我',startDate:'2026-09-07',weeks:18,periods:calendar.periods}],courses:[{id:'bad',person:'me',title:'错误课程',place:'',notes:'',weekday:8,first:1,last:2,weeks:[1],reminders:[10],checklist:[]}]};
   assert.throws(()=>apply(s,{type:'importSchedule',value},start),/星期/);assert.equal(s.courses.length,0);assert.equal(s.profiles[0].weeks,20);
 });
 test('手动双击总是显示主窗口，只有已设置的开机自启保持收起',()=>{assert.equal(showPanelOnLaunch(false,true),true);assert.equal(showPanelOnLaunch(false,false),true);assert.equal(showPanelOnLaunch(true,false),true);assert.equal(showPanelOnLaunch(true,true),false);});

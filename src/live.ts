@@ -2,6 +2,7 @@ import { pendingReminders } from './selectors.ts';
 import { occurrences, epoch, dateOf, DAY } from './core.ts';
 import { companionDisplay, type CompanionDisplay } from './companion-display.ts';
 import { activeProfiles, defaultAliasFor, effectiveRole, personAlias, profileAlias } from './people.ts';
+import { academicOf } from './academic.ts';
 import { resolvePetInstance, type PetInstance } from './pet-instance.ts';
 import { getCurrentState, getRoutineState, STATE_SOURCE_PRIORITY } from './state/engine.ts';
 import { buildPersonStatusPresentation, stateLabel, stateTone, type PersonStatusPresentation } from './state/presentation.ts';
@@ -56,7 +57,11 @@ export interface PersonStatus {
   today:Occurrence[];
   todayCount:number;
   nextChange?:number;
-  termStart:string;
+  /**
+   * 学业配置存在时才有学期起始日（Phase 5B3：Academic 是可选能力）。
+   * 没有学业配置的人不显示任何「第 X 教学周 / 学期」信息，也不显示占位。
+   */
+  termStart?:string;
   tentative:boolean;
 }
 export type PresenceState='idle'|'upcoming'|'busy'|'focus'|'dnd'|'offline';
@@ -126,7 +131,7 @@ export function personStatus(s:State,now:number,person:PersonId):PersonStatus {
   const index=s.profiles.findIndex(p=>p.id===person),p=index<0?undefined:s.profiles[index];
   // 单人工作区（Phase 1A 起合法）没有同行者档案：返回“状态暂不可用”而不是抛错。
   // 双人工作区一定命中档案，行为与之前完全一致。
-  if(!p)return {person,code:'UNKNOWN',alias:defaultAliasFor({id:person}),at:now,role:'self',name:person,conflict:false,routine:null,current:{personId:person,kind:'idle',label:'空闲',source:'idle',startAt:now,priority:STATE_SOURCE_PRIORITY.idle},today:[],todayCount:0,termStart:'',tentative:false};
+  if(!p)return {person,code:'UNKNOWN',alias:defaultAliasFor({id:person}),at:now,role:'self',name:person,conflict:false,routine:null,current:{personId:person,kind:'idle',label:'空闲',source:'idle',startAt:now,priority:STATE_SOURCE_PRIORITY.idle},today:[],todayCount:0,tentative:false};
   // 唯一的"现在在做什么"来源：统一状态引擎。日程投影（next / today / 学期）另行计算。
   const current=getCurrentState(s,person,now);
   const all=occurrences(s,-Infinity,Infinity,person),ongoing=all.filter(o=>o.start<=now&&now<o.end),next=all.find(o=>o.start>now);
@@ -135,11 +140,25 @@ export function personStatus(s:State,now:number,person:PersonId):PersonStatus {
   const today=all.filter(o=>o.start<dayEnd&&o.end>dayStart);
   const todayCourses=today.filter(o=>o.kind==='course');
   const hasSchedule=s.courses.some(c=>c.person===person);
-  const termStart=epoch(p.startDate),termEnd=termStart+p.weeks*7*DAY;
+  // Phase 5B3：学业配置是可选能力。没有它的人（上班族 / 自由职业 / 退休人员…）
+  // 走**通用日程阶段**：不出现「尚未录入课表 / 学期尚未开始 / 本学期已结束 / 今天无课」
+  // 这些学业文案，也不产生「第 0 周」这类占位 —— 只有"即将有安排"与"空闲"两种结论。
+  // 有学业配置的学生 / 教师保持原有分支一字不变（兼容性）。
+  const calendar=academicOf(p);
+  // 学业窗口只在真的有学业配置时存在；没有它就是 undefined（绝不伪造学期边界）。
+  const term=calendar?{start:epoch(calendar.startDate),end:epoch(calendar.startDate)+calendar.weeks*7*DAY}:undefined;
+  const soon=(at:number|undefined)=>at!==undefined&&at-now<=30*60000;
   // BUSY_* 由引擎选出的状态派生（不再各自判断"是不是在上课"）；其余码是日程阶段。
-  const code:StatusCode=current.source==='schedule'?(current.meta?.scheduleKind==='course'?'BUSY_CLASS':'BUSY_EVENT'):!hasSchedule?'NO_SCHEDULE':now<termStart?'TERM_NOT_STARTED':now>=termEnd&&!nextCourse?'TERM_ENDED':todayCourses.length&&todayCourses.every(o=>o.end<=now)?'DAY_FINISHED':!todayCourses.length?'NO_CLASS_TODAY':nextCourse&&nextCourse.start-now<=30*60000?'UPCOMING':'FREE';
-  const boundaries=[...ongoing.map(o=>o.end),...(next?[next.start]:[]),termStart,termEnd].filter(n=>n>now);
-  return {person,code,alias:profileAlias(p,index),at:now,role:effectiveRole(p,index),name:p.name,conflict:current.meta?.conflict===true,current,routine:getRoutineState(s,person,now),next,nextCourse,today,todayCount:todayCourses.length,nextChange:boundaries.length?Math.min(...boundaries):undefined,termStart:p.startDate,tentative:!!p.tentative};
+  const code:StatusCode=current.source==='schedule'?(current.meta?.scheduleKind==='course'?'BUSY_CLASS':'BUSY_EVENT')
+    :!calendar?(next&&soon(next.start)?'UPCOMING':'FREE')
+    :!hasSchedule?'NO_SCHEDULE'
+    :term&&now<term.start?'TERM_NOT_STARTED'
+    :term&&now>=term.end&&!nextCourse?'TERM_ENDED'
+    :todayCourses.length&&todayCourses.every(o=>o.end<=now)?'DAY_FINISHED'
+    :!todayCourses.length?'NO_CLASS_TODAY'
+    :soon(nextCourse?.start)?'UPCOMING':'FREE';
+  const boundaries=[...ongoing.map(o=>o.end),...(next?[next.start]:[]),...(term?[term.start,term.end]:[])].filter(n=>n>now);
+  return {person,code,alias:profileAlias(p,index),at:now,role:effectiveRole(p,index),name:p.name,conflict:current.meta?.conflict===true,current,routine:getRoutineState(s,person,now),next,nextCourse,today,todayCount:todayCourses.length,nextChange:boundaries.length?Math.min(...boundaries):undefined,...(calendar?{termStart:calendar.startDate}:{}),tentative:!!p.tentative};
 }
 
 /**

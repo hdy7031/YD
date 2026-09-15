@@ -7,12 +7,26 @@ export type ProfileRole = 'self' | 'companion';
 export type AvatarSelectionSource = 'default' | 'user';
 export interface AvatarSelection { packId: import('./avatar.ts').AvatarPackId; source: AvatarSelectionSource }
 export interface ChecklistItem { id: string; text: string; done: boolean }
-export interface AcademicCalendar { startDate: string; weeks: number }
+/** 一节课的起止时间（HH:mm，北京时间）。 */
+export interface ClassPeriod { start: string; end: string }
+/**
+ * 学业语义（Phase 5B3 起是**可选能力**，不是 YD Core 的前提）：
+ * 学期起始日（第一教学周的周一）+ 教学周数 + 节次表，三者构成一个完整单元。
+ *
+ * 普通上班族 / 自由职业者 / 退休人员不需要它；学生与教师使用它来把
+ * 「周三 3–4 节 / 第 2–16 周」展开成真实的日程 occurrence。
+ * 判断"有没有"请用 src/academic.ts 的 academicOf / academicPresence，
+ * 不要在业务代码里各自拼 `profile.startDate && profile.weeks`。
+ */
+export interface AcademicCalendar { startDate: string; weeks: number; periods: ClassPeriod[] }
 // role 在 v1 旧数据里不存在（由 src/people.ts 按 角色→历史 id→位置 解析）；
 // 迁移到 v2 之后必须显式存在。
 // routine 在 v3 及更早的数据里不存在（v4 起由 src/routine.ts 提供，迁移会补齐）；
 // 它嵌套在档案下，所以自身不再存 personId：Profile.id 就是唯一身份。
-export interface Profile extends AcademicCalendar { shortAlias?: string; tentative?: boolean; role?: ProfileRole; routine?: import('./routine.ts').RoutineProfile; avatar?: AvatarSelection; id: PersonId; name: string; startDate: string; weeks: number; periods: { start: string; end: string }[]; updatedAt: number }
+// 学业字段在 Profile 上是**可选**的：三者要么都存在（学业用户），要么都不存在
+// （普通用户）。字段保持扁平持久化结构（startDate / weeks / periods），
+// 因此旧库不需要 migration，absence 也天然向后兼容。
+export interface Profile { shortAlias?: string; tentative?: boolean; role?: ProfileRole; routine?: import('./routine.ts').RoutineProfile; avatar?: AvatarSelection; id: PersonId; name: string; startDate?: string; weeks?: number; periods?: ClassPeriod[]; updatedAt: number }
 export interface Course { createdAt?: number; activity?: 'teaching'|'research'; id: string; person: PersonId; title: string; place: string; notes: string; weekday: number; first: number; last: number; weeks: number[]; reminders: number[]; checklist: ChecklistItem[]; sourceId?: string; updatedAt: number }
 export interface Exception { createdAt?: number; sourceInboxItemId?: string; id: string; courseId: string; date: string; cancelled: boolean; start?: string; end?: string; place?: string; updatedAt: number }
 // v3 起会议/活动必须归属某个档案（迁移会为旧数据补上工作区本人）；
@@ -36,7 +50,9 @@ export interface State { inboxVersion?: number; bubbleHistory?: {id:string;at:nu
 export interface SchedulePackage {
   format: 'dayhub-schedule'; version: 1; termName: string;
   // 课表包只承载"学期 + 节次 + 课程"：不携带 Routine，导入永远不会覆盖用户自己的作息规则。
-  profiles: Array<Omit<Profile, 'updatedAt' | 'routine' | 'avatar'>>;
+  // 它本身是学业语义的载体，因此必须携带完整的学期与节次（Phase 5B3 之后 Profile
+  // 允许没有学业配置，但课表包这种"按教学周排课"的文件不能）。
+  profiles: Array<Omit<Profile, 'updatedAt' | 'routine' | 'avatar'> & AcademicCalendar>;
   courses: Array<Omit<Course, 'updatedAt'>>;
 }
 export interface Occurrence {

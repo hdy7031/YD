@@ -8,6 +8,7 @@ import { assertAvatarSelection, resetAvatarPack, setAvatarPack } from './avatar-
 import { DEFAULT_AVATAR_PACK_ID } from './avatar.ts';
 import { completeSetup } from './setup.ts';
 import { switchUsageMode, updateProfileIdentity } from './profile-lifecycle.ts';
+import { academicOf, academicPresence } from './academic.ts';
 import type { State, Profile, PersonId, ProfileRole, Course, Task, Event, Notice, Exception, Occurrence, Reminder, Command, Entity, SchedulePackage } from './types.ts';
 import type { RoutineProfile } from './routine.ts';
 export const DAY = 86400000;
@@ -28,25 +29,13 @@ export function weekday(date: string): number { return new Date(date + 'T12:00:0
 //     （routine.ts 的 createDefaultRoutine）仍然是用户主动选择的 preset；
 //   * Avatar 用官方 default Pack（产品默认视觉资源，不是私人数据）。
 //
-// 校历占位（Phase 5B gap）：当前 schema 用 startDate / weeks / periods 表达学期，
-// 没有"尚未配置"这一档，因此这里给出一组与任何真实学校无关的中性占位值
-// （本周周一 + 20 周 + 八节等长节次）。settings.setup=false 是"首次使用还没完成"的
-// 产品信号：主窗口会显示 onboarding（src/setup.ts），完成后才进入正常 Home。
-// onboarding 不要求用户填写校历，所以"设置完成"不等于"校历已配置"。
+// Phase 5B3（Academic Decoupling）：学业语义（学期 / 教学周 / 节次）是**可选能力**，
+// 因此 fresh install **不再**写入任何 startDate / weeks / periods —— 普通用户不需要
+// 为了"让 Profile 合法"而背一个假学期。学生与教师在「课表与学校」里显式配置
+// （src/academic.ts 的 preset 只做表单初值）。settings.setup=false 是"首次使用还没完成"
+// 的产品信号：主窗口会显示 onboarding（src/setup.ts），完成后才进入正常 Home。
 export const NEUTRAL_SELF_NAME = '我';
 export const NEUTRAL_COMPANION_NAME = 'TA';
-export const PLACEHOLDER_TERM_WEEKS = 20;
-export const PLACEHOLDER_PERIODS: { start: string; end: string }[] = [
-  { start: '08:00', end: '08:45' }, { start: '08:55', end: '09:40' },
-  { start: '10:00', end: '10:45' }, { start: '10:55', end: '11:40' },
-  { start: '14:00', end: '14:45' }, { start: '14:55', end: '15:40' },
-  { start: '16:00', end: '16:45' }, { start: '16:55', end: '17:40' },
-];
-/** 中性学期占位：本周周一（不含任何真实校历信息）。 */
-export function placeholderTermStart(now: number): string {
-  const date = dateOf(now);
-  return addDays(date, 1 - weekday(date));
-}
 /** 全新安装的唯一状态工厂：纯函数，不读 UI / DOM / 网络 / fixture / 真实用户文件。 */
 export function createFreshState(now = Date.now()): State {
   const self: Profile = {
@@ -55,9 +44,6 @@ export function createFreshState(now = Date.now()): State {
     name: NEUTRAL_SELF_NAME,
     routine: emptyRoutine(now),
     avatar: { packId: DEFAULT_AVATAR_PACK_ID, source: 'default' },
-    startDate: placeholderTermStart(now),
-    weeks: PLACEHOLDER_TERM_WEEKS,
-    periods: structuredClone(PLACEHOLDER_PERIODS),
     updatedAt: now,
   };
   return {
@@ -77,6 +63,10 @@ export function createFreshState(now = Date.now()): State {
  *
  * 它只是模板：真实写入仍然走 `usageMode` 命令 → validateState；
  * 名称由用户在同一个流程里填写，代号继续由显示规则派生。
+ *
+ * Phase 5B3：新同伴是一个**普通合法 Person** —— 不再从本人档案复制学期 / 教学周 /
+ * 节次（旧实现会把 self 的学业配置顺手复制成"第二个假学期"）。需要学业语义时由
+ * 用户在「课表与学校」里显式配置；`self` 参数保留只是调用签名的一部分。
  */
 export function createCompanionProfile(now: number, self: Profile): Profile {
   return {
@@ -85,9 +75,6 @@ export function createCompanionProfile(now: number, self: Profile): Profile {
     name: NEUTRAL_COMPANION_NAME,
     routine: emptyRoutine(now),
     avatar: { packId: DEFAULT_AVATAR_PACK_ID, source: 'default' },
-    startDate: self.startDate,
-    weeks: self.weeks,
-    periods: structuredClone(self.periods),
     updatedAt: now,
   };
 }
@@ -115,23 +102,37 @@ export function validate(entity: Entity, v: any, state: State) {
     // 整个 State 的"每个档案都必须有合法 RoutineProfile"不变式见 validateState。
     if(v.routine!==undefined)assertRoutineProfile(v.routine,'个人作息');
     if(v.avatar!==undefined)assertAvatarSelection(v.avatar,'个人 Avatar 选择');
-    assert(date(v.startDate) && weekday(v.startDate)===1, '学期起始日必须是第一教学周的周一');
-    assert(Number.isInteger(v.weeks) && v.weeks>=1 && v.weeks<=60, '教学周数应为 1—60');
-    assert(Array.isArray(v.periods) && v.periods.length>0 && v.periods.length<=24, '请配置 1—24 节作息');
-    v.periods.forEach((p:any,i:number)=>assert(time(p.start) && time(p.end) && p.start<p.end && (!i || v.periods[i-1].end<=p.start), '节次时间无效、重叠或未按顺序排列'));
-    for(const c of state.courses.filter(c=>c.person===v.id)) assert(c.last<=v.periods.length && c.weeks.every(w=>w<=v.weeks), '现有课程超出新作息或教学周范围，请先编辑课程');
+    // Phase 5B3：学业配置（学期起始日 / 教学周数 / 节次）是可选能力，因此
+    //   * 完全没有 → 合法（普通上班族 / 自由职业者 / 退休人员…）；
+    //   * 只有一部分 → 坏数据，明确拒绝（optional ≠ unvalidated）；
+    //   * 三样都在 → 必须满足原有的内部约束（下面逐项校验，规则一字未松）。
+    const presence = academicPresence(v);
+    assert(presence!=='partial', '学期起始日、教学周数与节次必须一起设置（或都不设置）');
+    if(presence==='complete'){
+      assert(date(v.startDate) && weekday(v.startDate)===1, '学期起始日必须是第一教学周的周一');
+      assert(Number.isInteger(v.weeks) && v.weeks>=1 && v.weeks<=60, '教学周数应为 1—60');
+      assert(Array.isArray(v.periods) && v.periods.length>0 && v.periods.length<=24, '请配置 1—24 节作息');
+      v.periods.forEach((p:any,i:number)=>assert(time(p.start) && time(p.end) && p.start<p.end && (!i || v.periods[i-1].end<=p.start), '节次时间无效、重叠或未按顺序排列'));
+    }
+    for(const c of state.courses.filter(c=>c.person===v.id)){
+      assert(presence==='complete', '该档案还有课程，不能移除学期与节次');
+      assert(c.last<=v.periods.length && c.weeks.every(w=>w<=v.weeks), '现有课程超出新作息或教学周范围，请先编辑课程');
+    }
   } else if(entity==='courses') {
     assert(v.activity===undefined||['teaching','research'].includes(v.activity),'课程活动类型无效'); common(v); const p=state.profiles.find(p=>p.id===v.person); assert(p, '请选择课表所属人');
+    // 课程是学业语义的载体：按教学周与节次展开，因此必须有人替它提供学期与节次。
+    const calendar=academicOf(p); assert(calendar,'该档案还没有学期与节次，请先在「课表与学校」里设置');
     assert(Number.isInteger(v.weekday) && v.weekday>=1 && v.weekday<=7, '星期无效');
-    assert(Number.isInteger(v.first) && Number.isInteger(v.last) && v.first>=1 && v.last>=v.first && v.last<=p.periods.length, '课程节次超出作息范围');
-    assert(Array.isArray(v.weeks) && v.weeks.length>0 && v.weeks.length<=60 && new Set(v.weeks).size===v.weeks.length && v.weeks.every((w:any)=>Number.isInteger(w)&&w>=1&&w<=p.weeks), '教学周次无效或重复');
+    assert(Number.isInteger(v.first) && Number.isInteger(v.last) && v.first>=1 && v.last>=v.first && v.last<=calendar.periods.length, '课程节次超出作息范围');
+    assert(Array.isArray(v.weeks) && v.weeks.length>0 && v.weeks.length<=60 && new Set(v.weeks).size===v.weeks.length && v.weeks.every((w:any)=>Number.isInteger(w)&&w>=1&&w<=calendar.weeks), '教学周次无效或重复');
     assert(text(v.place,300), '地点无效');
   } else if(entity==='events') { common(v); assert(stamp(v.start)&&(v.end===null||v.end===''||stamp(v.end)&&epoch(v.end)>epoch(v.start)), '结束时间必须晚于开始时间'); assert(text(v.place,300), '地点无效'); assert(v.person===undefined||state.profiles.some(p=>p.id===v.person), '会议所属人不存在'); }
   else if(entity==='tasks') { common(v); assert(v.due==='' || stamp(v.due), '截止时间无效'); assert(typeof v.done==='boolean', '完成状态无效'); }
   else if(entity==='notices') { assert(v.parseStatus===undefined||['UNPARSED','PARSING','NEEDS_REVIEW','CONFIRMED','FAILED','IGNORED'].includes(v.parseStatus),'解析状态无效');assert(v.parsedData===undefined||validDraft(v.parsedData),'草稿格式无效'); assert(text(v.title,200)&&text(v.text,200000), '通知内容过长或无效'); assert(v.originalText===undefined || text(v.originalText,200000),'原文无效');assert(['inbox','later','archived'].includes(v.state), '收件箱状态无效'); assert(v.image===undefined || /^[a-f0-9]{64}\.png$/.test(v.image), '图片编号无效'); }
   else if(entity==='exceptions') {
     const c=state.courses.find(c=>c.id===v.courseId); assert(c && date(v.date), '课程或原日期无效');
-    const p=state.profiles.find(p=>p.id===c.person)!; const week=Math.floor((epoch(v.date)-epoch(p.startDate))/DAY/7)+1;
+    const profile=state.profiles.find(p=>p.id===c.person); const calendar=academicOf(profile); assert(calendar,'该课程所属人缺少学期与节次');
+    const week=Math.floor((epoch(v.date)-epoch(calendar.startDate))/DAY/7)+1;
     assert(weekday(v.date)===c.weekday && c.weeks.includes(week), '原日期不属于该课程的教学周');
     assert(typeof v.cancelled==='boolean', '停课状态无效');
     assert(v.cancelled || (stamp(v.start)&&stamp(v.end)&&epoch(v.end)>epoch(v.start)), '调课起止时间无效');
@@ -142,11 +143,16 @@ export function occurrences(state: State, from: number, to: number, person?: str
   const result: Occurrence[]=[];
   for(const c of state.courses) {
     if(person && c.person!==person) continue;
-    const p=state.profiles.find(p=>p.id===c.person)!;
+    const p=state.profiles.find(p=>p.id===c.person);
+    // 课程按"教学周 + 节次"展开，因此只有具备学业配置的档案才能产生 occurrence。
+    // 合法状态里课程必然有学期与节次（见 validate）；这里只是防御性跳过，
+    // 绝不为缺失学业配置的人发明一个学期。
+    const calendar=academicOf(p);
+    if(!p || !calendar) continue;
     for(const w of c.weeks) {
-      const d=addDays(p.startDate,(w-1)*7+c.weekday-1), ex=state.exceptions.find(e=>e.courseId===c.id&&e.date===d);
+      const d=addDays(calendar.startDate,(w-1)*7+c.weekday-1), ex=state.exceptions.find(e=>e.courseId===c.id&&e.date===d);
       if(ex?.cancelled && !options.includeCancelled) continue;
-      const start=epoch(ex?.start || `${d}T${p.periods[c.first-1].start}`), end=epoch(ex?.end || `${d}T${p.periods[c.last-1].end}`);
+      const start=epoch(ex?.start || `${d}T${calendar.periods[c.first-1].start}`), end=epoch(ex?.end || `${d}T${calendar.periods[c.last-1].end}`);
       if(start<to && end>from) result.push({id:`c:${c.id}:${d}`,target:`courses:${c.id}`,title:c.title,start,end,place:ex?.place??c.place,notes:c.notes,person:c.person,kind:'course',courseId:c.id,date:d,checklist:c.checklist,sourceId:ex?.sourceInboxItemId||c.sourceId,sourceInboxItemId:ex?.sourceInboxItemId,createdAt:c.createdAt??c.updatedAt,updatedAt:ex?.updatedAt??c.updatedAt,cancelled:!!ex?.cancelled,rescheduled:!!ex&&!ex.cancelled&&(ex.start!==undefined||ex.end!==undefined||ex.place!==undefined)});
     }
   }

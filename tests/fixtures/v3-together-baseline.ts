@@ -9,7 +9,8 @@
 //     而且"第 4 节 = 10:55–11:40"这类节次算术与旧的默认工作区完全一致；
 //   * 保持在 v3（Phase 2A 之前）：没有 routine / avatar / manualOverrides，
 //     由 app 启动时的正式迁移补齐，顺带覆盖"老库升级"路径。
-import { PLACEHOLDER_PERIODS, epoch } from '../../src/core.ts';
+import { epoch } from '../../src/core.ts';
+import { STANDARD_PERIOD_PRESET } from '../../src/academic.ts';
 import { ROUTINE_DOMAIN_VERSION } from '../../src/migration.ts';
 import { effectiveRole } from '../../src/people.ts';
 import type { Profile, State } from '../../src/types.ts';
@@ -27,7 +28,7 @@ export function v3TogetherBaseline(now = togetherBaselineNow): State {
       ...incoming,
       role: effectiveRole({ id: incoming.id }, index),
       // 不沿用课表包里的"某所学校"时间表：门禁用平台中性占位作息。
-      periods: structuredClone(PLACEHOLDER_PERIODS),
+      periods: structuredClone(STANDARD_PERIOD_PRESET),
       // 与旧默认工作区一致：中性 20 周学期，门禁可以自由写入 1—20 周的课程。
       weeks: 20,
       updatedAt: now,

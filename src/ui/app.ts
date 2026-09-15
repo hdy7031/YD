@@ -10,6 +10,7 @@ import { ScheduleGrid, ManagementOverview, EmptyState } from './views.ts';
 import { DailySummary, DailyAgendaList, DailyEmptyState } from './daily-summary.ts';
 import { dailyItemState, dailyPlanFrom, type DailyAgendaItem } from './daily-plan.ts';
 import { activeCompanionProfile, activeProfiles, requireSelfProfile, resolvePetSubject } from '../people.ts';
+import { academicOf, STANDARD_PERIOD_PRESET, SUGGESTED_TERM_WEEKS, suggestedTermStart } from '../academic.ts';
 import { personOptions, profileLabelFor, shellTabs, tabShortcuts, tabWidthPolicy, companionDisplayName, type ShellTab } from './shell.ts';
 import { ProfileLifecycleSettings } from './profile-settings.ts';
 import { OnboardingPanel, type SetupIntent } from './onboarding.ts';
@@ -57,9 +58,11 @@ const dateWithWeekday=(date:string)=>`${date}（周${weekdayText[weekday(date)-1
 function courseTiming(state:State,course?:Course){
   if(!course)return null;
   const profile=state.profiles.find(p=>p.id===course.person);
-  if(!profile)return null;
-  const start=profile.periods[course.first-1]?.start??'';
-  const end=profile.periods[course.last-1]?.end??'';
+  // 课程时间来自"所属人的学期与节次"这一可选学业配置；缺失时没有可解析的原时间。
+  const calendar=academicOf(profile);
+  if(!profile||!calendar)return null;
+  const start=calendar.periods[course.first-1]?.start??'';
+  const end=calendar.periods[course.last-1]?.end??'';
   const periodText=course.first===course.last?`第 ${course.first} 节`:`第 ${course.first}—${course.last} 节`;
   return {profile,start,end,periodText};
 }
@@ -174,13 +177,18 @@ interface EditorProps { sourceOpen?:(id:string)=>void; entity:Entity; value:any;
 function Editor({entity,value,state,close,saved,convert,duplicate,remove,sourceOpen}:EditorProps){
   const [d,set]=useState<any>(structuredClone(entity==='profiles'?{...value,shortAlias:profileAlias(value)}:value)),[error,err]=useState(''),[saving,busy]=useState(false),[recognizing,ocrBusy]=useState(false),[source,showSource]=useState(false);
   const [weeks,setWeeks]=useState(Array.isArray(value.weeks)?value.weeks.join(','):''),[reminders,setReminders]=useState(Array.isArray(value.reminders)?value.reminders.join(','):''),[checks,setChecks]=useState((value.checklist||[]).map((x:ChecklistItem)=>(x.done?'[x] ':'')+x.text).join('\n'));
-  const [periods,setPeriods]=useState((value.periods||[]).map((p:any)=>`${p.start}-${p.end}`).join('\n'));
+  // 学业配置是可选能力：还没有配置的人在「学期与节次」里看到的是标准节次初值（preset），
+  // 学期起始日与教学周数保持空白、由用户自己填 —— 绝不为普通用户预置一个假学期。
+  const [periods,setPeriods]=useState((value.periods?.length?value.periods:STANDARD_PERIOD_PRESET).map((p:any)=>`${p.start}-${p.end}`).join('\n'));
   const update=(key:string,v:any)=>set((old:any)=>({...old,[key]:v}));
   const input=(key:string,type='text',required=false)=>h('input',{type,value:d[key]??'',required,onChange:(e:any)=>update(key,type==='number'?Number(e.target.value):e.target.value)});
   const area=(key:string,rows=4)=>h('textarea',{value:d[key]??'',rows,onChange:(e:any)=>update(key,e.target.value)});
   const select=(key:string,options:{v:any;t:string}[])=>h('select',{value:d[key],onChange:(e:any)=>update(key,typeof options[0].v==='number'?Number(e.target.value):e.target.value)},...options.map(x=>h('option',{key:x.v,value:x.v},x.t)));
   const field=(label:string,child:any)=>h(Field,{label},child);
   const p=state.profiles.find(p=>p.id===d.person)??requireSelfProfile(state);
+  // 课程编辑依赖"所属人的学期与节次"这一可选学业配置；缺失时给出明确指引，
+  // 而不是渲染一个没有节次可选的空下拉。
+  const ownerCalendar=academicOf(p);
   useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!saving&&!recognizing)close();};document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);},[close,saving,recognizing]);
   const title=({profiles:'学校作息与学期',courses:'课程',events:'会议 / 活动',tasks:convert?'核对并转为待办':'待办',notices:'原始通知 / 课表图片',exceptions:'仅修改这一次课程'} as any)[entity];
   async function save(e:any){
@@ -200,9 +208,9 @@ function Editor({entity,value,state,close,saved,convert,duplicate,remove,sourceO
   return h('div',{className:'modal-backdrop'},h('section',{className:'modal',role:'dialog','aria-modal':true,'aria-label':title},
     h('header',{className:'modal-head'},h('h2',null,title),b('关闭',close,'ghost',saving)),
     h('form',{onSubmit:save},
-      entity==='profiles'?h('div',{className:'form-grid'},field('显示名称',input('name','text',true)),field('状态短代号',input('shortAlias','text',true)),field('第一教学周的周一',input('startDate','date',true)),field('教学周数',input('weeks','number',true)),field('结束周数',h('label',null,h('input',{type:'checkbox',checked:!!d.tentative,onChange:(e:any)=>update('tentative',e.target.checked)}),' 暂定（待校历确认）')),h('div',{className:'full'},field('各节起止时间（每行一节，例如 08:00-08:45）',h('textarea',{rows:9,value:periods,onChange:(e:any)=>setPeriods(e.target.value)})),h('p',{className:'muted'},'这里只设置作息，不会自动生成课程。请分别核对两所学校的时间。'))):null,
+      entity==='profiles'?h('div',{className:'form-grid'},!academicOf(value)?h('p',{className:'muted full','data-academic-absent':'true'},'这个档案还没有学期与节次：填写后才会按教学周与节次排课；不填也不影响会议、待办与当前状态。'):null,field('显示名称',input('name','text',true)),field('状态短代号',input('shortAlias','text',true)),field('第一教学周的周一',input('startDate','date',true)),field('教学周数',input('weeks','number',true)),field('结束周数',h('label',null,h('input',{type:'checkbox',checked:!!d.tentative,onChange:(e:any)=>update('tentative',e.target.checked)}),' 暂定（待校历确认）')),h('div',{className:'full'},field('各节起止时间（每行一节，例如 08:00-08:45）',h('textarea',{rows:9,value:periods,onChange:(e:any)=>setPeriods(e.target.value)})),h('p',{className:'muted'},'这里只设置学期与节次，不会自动生成课程；请按学校或机构的实际上课时间核对。'))):null,
       ['courses','events','tasks'].includes(entity)?h(React.Fragment,null,field('标题',input('title','text',true)),
-        entity==='courses'?h('div',{className:'form-grid'},field('所属课表',select('person',personOptions(state).map(o=>({v:o.value,t:o.label})))),field('活动类型',select('activity',[{v:'teaching',t:'授课'},{v:'research',t:'教研'}])),field('星期',select('weekday',Array.from({length:7},(_,i)=>({v:i+1,t:'星期'+'一二三四五六日'[i]})))),field('开始节次',select('first',p.periods.map((t,i)=>({v:i+1,t:`第 ${i+1} 节 · ${t.start}`})))),field('结束节次',select('last',p.periods.map((t,i)=>({v:i+1,t:`第 ${i+1} 节 · ${t.end}`})))),h('div',{className:'full'},field('教学周（用逗号分隔）',h('input',{value:weeks,onChange:(e:any)=>setWeeks(e.target.value),placeholder:'例如 1,3,5,7'})),h('div',{className:'actions'},...['每周','单周','双周'].map((label,i)=>b(label,()=>setWeeks(Array.from({length:p.weeks},(_,w)=>w+1).filter(w=>i===0||w%2===(i===1?1:0)).join(',')))))),field('地点',input('place'))):null,
+        entity==='courses'?h('div',{className:'form-grid'},field('所属课表',select('person',personOptions(state).map(o=>({v:o.value,t:o.label})))),!ownerCalendar?h('p',{className:'muted full','data-academic-absent':'true'},'该档案还没有学期与节次：请先在「课表与学校」里设置，才能按教学周与节次排课。会议与待办不受影响。'):null,field('活动类型',select('activity',[{v:'teaching',t:'授课'},{v:'research',t:'教研'}])),field('星期',select('weekday',Array.from({length:7},(_,i)=>({v:i+1,t:'星期'+'一二三四五六日'[i]})))),ownerCalendar?h(React.Fragment,null,field('开始节次',select('first',(ownerCalendar.periods).map((t,i)=>({v:i+1,t:`第 ${i+1} 节 · ${t.start}`})))),field('结束节次',select('last',(ownerCalendar.periods).map((t,i)=>({v:i+1,t:`第 ${i+1} 节 · ${t.end}`})))),h('div',{className:'full'},field('教学周（用逗号分隔）',h('input',{value:weeks,onChange:(e:any)=>setWeeks(e.target.value),placeholder:'例如 1,3,5,7'})),h('div',{className:'actions'},...['每周','单周','双周'].map((label,i)=>b(label,()=>setWeeks(Array.from({length:ownerCalendar.weeks},(_,w)=>w+1).filter(w=>i===0||w%2===(i===1?1:0)).join(','))))))):null,field('地点',input('place'))):null,
         entity==='events'?h('div',{className:'form-grid'},field('开始时间（北京时间）',input('start','datetime-local',true)),field('结束时间（北京时间）',input('end','datetime-local')),field('地点',input('place'))):null,
         entity==='tasks'?h('div',{className:'form-grid'},field('截止时间（可不填，北京时间）',input('due','datetime-local')),field('状态',h('select',{value:d.done?'done':'todo',onChange:(e:any)=>update('done',e.target.value==='done')},h('option',{value:'todo'},'待处理'),h('option',{value:'done'},'已完成')))):null,
         field('备注',area('notes')),
@@ -310,9 +318,14 @@ function App(){
   const companionRows=companion?occurrences(s,epoch(selectedDate),epoch(addDays(selectedDate,1)),companion.id,{includeCancelled:true}):[];
   const hasCompanionSchedule=!!companion&&s.courses.some(c=>c.person===companion.id),selectedIsToday=selectedDate===dateOf(now);
   const selectedDateText=`${shortDate(selectedDate)} 周${weekdayText[weekday(selectedDate)-1]}`;
-  const companionEmptyText=!hasCompanionSchedule?'尚未录入课表':selectedIsToday?'今天无课':'这一天没有课程安排';
+  // 学业文案只属于有学业配置的人：普通同伴（没有学期与节次）不说「尚未录入课表」。
+  const companionAcademic=companion?academicOf(companion):undefined;
+  const companionEmptyText=!hasCompanionSchedule?(companionAcademic?'尚未录入课表':'这一天没有安排'):selectedIsToday?'今天无课':'这一天没有课程安排';
   const labels:Record<string,string>=Object.fromEntries(tabs.map(t=>[t.key,t.label])),widthPolicy=tabWidthPolicy;
   const profile=s.profiles.find(p=>p.id===activePerson)??requireSelfProfile(s);
+  // 学业配置是可选能力：没有它的档案不渲染课表网格（也不显示「第 0 周」这类占位），
+  // 而是给出一个入口去配置「学期与节次」。会议 / 待办 / 状态完全不依赖它。
+  const profileCalendar=academicOf(profile);
   tabsRef.current=tabs;
   function cardSource(sourceId?:string){return sourceId?b('查看来源',()=>{const n=s.notices.find(n=>n.id===sourceId);if(n)open('notices',n);},'text-button'):null;}
   function checklist(entity:Entity,item:any){return item.checklist?.length?h('div',{className:'checklist'},...item.checklist.map((c:ChecklistItem)=>h('div',{key:c.id,className:'check-row'},h('label',null,h('input',{type:'checkbox',checked:c.done,disabled:pending,onChange:()=>change({type:'save',entity,value:{...item,checklist:item.checklist.map((x:ChecklistItem)=>x.id===c.id?{...x,done:!x.done}:x)}})}),h('span',{className:c.done?'done':''},c.text)),b('单独提醒',()=>open('tasks',{...newValue('tasks',activePerson,selfId),title:c.text,notes:`准备事项，来自：${item.title}`,sourceId:item.sourceId}),'text-button')))):null;}
@@ -411,11 +424,11 @@ function App(){
         h('div',{className:'daily-plan'},
           h(PartnerStatusCard,{status:companionStatus,updatedAt:companion.updatedAt,now}),
           h('section',{className:'panel daily-panel'},
-            h(DailySummary,{plan:companionPlan,heading:'今日安排',unit:'节课',countPrefix:selectedIsToday?'今天':'这天',rangeLabel:'',emptyRangeText:hasCompanionSchedule?'今天没有课程占用时间段':'还没有录入课表',icon:uiIcon(CalendarClock,'section-icon'),
+            h(DailySummary,{plan:companionPlan,heading:'今日安排',unit:'节课',countPrefix:selectedIsToday?'今天':'这天',rangeLabel:'',emptyRangeText:hasCompanionSchedule?'今天没有课程占用时间段':companionAcademic?'还没有录入课表':'当天没有需要占用的时间段',icon:uiIcon(CalendarClock,'section-icon'),
               actions:h('input',{'aria-label':`查看 ${companionDisplayName(companion)} 的日期`,type:'date',value:selectedDate,onChange:(e:any)=>{if(e.target.value)setDate(e.target.value);}})}),
             companionPlan.items.length
               ?h(DailyAgendaList,{plan:companionPlan,renderItem:(item:DailyAgendaItem)=>agendaRow(item)})
-              :h(DailyEmptyState,{title:companionEmptyText,description:!hasCompanionSchedule?`导入或录入 ${companionDisplayName(companion)} 的安排后，这里会显示每天的课程与会议。`:selectedIsToday?'今天没有已录入的课程。':'这一天没有课程安排，可以切换日期查看。',illustration:'assets/gen/empty-companion-day.png',actions:!hasCompanionSchedule?b('前往课表管理',()=>setTab('courses'),'secondary'):null})))):null,
+              :h(DailyEmptyState,{title:companionEmptyText,description:!hasCompanionSchedule?(companionAcademic?`导入或录入 ${companionDisplayName(companion)} 的安排后，这里会显示每天的课程与会议。`:`${companionDisplayName(companion)} 的会议与活动会显示在这里。`):selectedIsToday?'今天没有已录入的课程。':'这一天没有课程安排，可以切换日期查看。',illustration:'assets/gen/empty-companion-day.png',actions:!hasCompanionSchedule&&companionAcademic?b('前往课表管理',()=>setTab('courses'),'secondary'):null})))):null,
       kind==='tasks'?h(ManagementOverview,{tasks:[...s.tasks].sort((a,b)=>Number(a.done)-Number(b.done)||(a.due?epoch(a.due):Infinity)-(b.due?epoch(b.due):Infinity)),events:s.events,now,query,setQuery:search,taskCard,editEvent:(event:Event)=>open('events',event),deleteEvent:(event:Event)=>setDeletion({entity:'events',id:event.id}),createTask:()=>open('tasks'),createEvent:()=>open('events')}):null,
       kind==='courses'?h(React.Fragment,null,
         // 浏览是默认状态；课程增改只在显式进入编辑状态后出现。
@@ -424,18 +437,18 @@ function App(){
         h('div',{className:'course-toolbar'},
           h('div',{className:'course-toolbar-main'},
             h('select',{'aria-label':'课表所属人',value:activePerson,onChange:(e:any)=>setPerson(e.target.value)},...personOptions(s).map(o=>h('option',{key:o.value,value:o.value},o.label)))),
-          h('div',{className:'course-toolbar-copy'},h('strong',null,`${profile.startDate} 起 · ${profile.weeks} 周`),h('small',null,`课表更新于 ${fmt(profile.updatedAt,true)}`)),
+          h('div',{className:'course-toolbar-copy'},profileCalendar?h('strong',null,`${profileCalendar.startDate} 起 · ${profileCalendar.weeks} 周`):h('strong',null,'还没有学期与节次'),h('small',null,`${profileCalendar?'课表':'档案'}更新于 ${fmt(profile.updatedAt,true)}`)),
           h('div',{className:'course-toolbar-actions'},
-            scheduleMode==='edit'?b('添加课程',()=>open('courses'),'primary'):null,
+            scheduleMode==='edit'&&profileCalendar?b('添加课程',()=>open('courses'),'primary'):null,
             // 三个操作同属一个 action group，视觉权重一致（都是 secondary），
             // 没有主 CTA：这里没有"必须按"的动作，只有并列的维护入口。
-            b(scheduleMode==='edit'?'完成':'编辑课表',()=>setScheduleMode(scheduleMode==='edit'?'overview':'edit'),'secondary'),
-            h('button',{type:'button',className:'secondary icon-action',onClick:()=>open('profiles',profile)},uiIcon(Clock3),'节次时间'),
+            profileCalendar?b(scheduleMode==='edit'?'完成':'编辑课表',()=>setScheduleMode(scheduleMode==='edit'?'overview':'edit'),'secondary'):null,
+            h('button',{type:'button',className:'secondary icon-action',onClick:()=>open('profiles',profile)},uiIcon(Clock3),profileCalendar?'节次时间':'学期与节次'),
             b(importing?'正在读取…':'导入课表',chooseSchedule,'secondary',importing||pending))),
-        h(ScheduleGrid,{state:s,profile,courses:active,now,mode:scheduleMode,edit:(course:Course)=>open('courses',course),create:(value:Partial<Course>)=>open('courses',{...newValue('courses',activePerson,selfId),...value})}),
-        h('section',{className:'panel exceptions-panel'},
+        profileCalendar?h(ScheduleGrid,{state:s,profile,calendar:profileCalendar,courses:active,now,mode:scheduleMode,edit:(course:Course)=>open('courses',course),create:(value:Partial<Course>)=>open('courses',{...newValue('courses',activePerson,selfId),...value})}):h('section',{className:'panel','data-academic-absent':'true'},h(EmptyState,{title:'按教学周排课（可选）',description:'学生与教师在这里按教学周与节次排课；会议、待办与当前状态不需要它。',actions:b('设置学期与节次',()=>open('profiles',profile),'secondary')})),
+        profileCalendar?h('section',{className:'panel exceptions-panel'},
           h('div',{className:'section-head'},h('div',null,h('h2',null,'单次调课与停课'),h('small',{className:'section-subtitle'},exceptionList.length?`${exceptionList.length} 条记录`:'暂无记录'))),
-          exceptionList.length?h('div',{className:'exception-list'},...exceptionList.map(exceptionCard)):h(EmptyState,{title:'还没有单次调课或停课',description:'临时调课或停课记录会显示在这里。',actions:b('查看可修改课程',focusSchedule,'secondary')}))):null,
+          exceptionList.length?h('div',{className:'exception-list'},...exceptionList.map(exceptionCard)):h(EmptyState,{title:'还没有单次调课或停课',description:'临时调课或停课记录会显示在这里。',actions:b('查看可修改课程',focusSchedule,'secondary')})):null):null,
       kind==='inbox'?h(InboxHub,{state:s,saved:set,selected:selectedNotice,select:setSelectedNotice,open}):null,
       kind==='reminders'?h(ReminderWorkbench,{items:pendingReminders,now,render:(r:Reminder)=>h('article',{className:'entry reminder-item',key:r.id},h('div',{className:'reminder-item-copy'},h('h3',null,r.title),h('p',{className:'muted'},`${fmt(r.due,true)} 到提醒时间 · 未处理`)),h('div',{className:'actions'},b('已处理',()=>change({type:'ack',id:r.id}),'primary',pending),...([10,30,60] as const).map(minutes=>b(minutes===60?'1 小时后':`${minutes} 分钟后`,()=>change({type:'snooze',id:r.id,minutes}),'secondary',pending)),b('打开事项',()=>{const [entity,i]=r.target.split(':');const item=(s[entity as Entity] as any[]).find(v=>v.id===i);if(item)open(entity as Entity,item);},'ghost')))}):null,
       kind==='settings'?h('div',{className:'settings-layout'},
@@ -445,7 +458,7 @@ function App(){
           // 桌宠设置回答"桌面上显示什么"。两者不重复表达同一件事。
           settingsSection==='companionship'?h('div',{className:'settings-stack'},h(ProfileLifecycleSettings,{state:s}),h(PetSettings,{live,settings:s.settings,state:s,section:'companionship'})):null,
           settingsSection==='rhythm'?h(PetSettings,{live,settings:s.settings,state:s,section:'rhythm'}):null,
-          settingsSection==='school'?h('section',{className:'entry settings-section'},h('h2',null,'课表与学校'),h('p',{className:'muted'},'分别维护每个档案的学期范围与节次时间，不会自动生成或覆盖课程。'),h('div',{className:'actions'},...activePeople.map(p=>b(`${p.name}的学期与节次`,()=>open('profiles',p),'secondary')))):null,
+          settingsSection==='school'?h('section',{className:'entry settings-section'},h('h2',null,'课表与学校'),h('p',{className:'muted'},'学期与节次是可选能力：学生与教师按教学周排课；不设置也不影响会议、待办与当前状态。保存时不会自动生成或覆盖课程。'),h('div',{className:'actions'},...activePeople.map(p=>b(`${p.name}的学期与节次`,()=>open('profiles',p),'secondary')))):null,
           settingsSection==='runtime'?h('div',{className:'settings-stack'},h(PetSettings,{live,settings:s.settings,state:s,section:'runtime'}),h('section',{className:'entry settings-section'},h('h2',null,'系统通知'),h('p',{className:'muted'},'退出应用、关机或休眠时暂停提醒，恢复后汇总遗漏事项。系统通知是否可见受 Windows 通知设置影响。'),b('发送测试通知',async()=>{try{say(await api.testNotification());}catch(e){err(msg(e));}},'secondary'))):null,
           settingsSection==='data'?h('section',{className:'entry settings-section'},h('h2',null,'数据与备份'),h('p',{className:'muted'},`备份包含${s.profiles.length>1?'所有档案的':'当前'}课表、日程、待办、原始通知图片和提醒状态。请妥善保存备份文件。`),h('div',{className:'actions'},b('导出完整备份',async()=>{try{const file=await api.backup();if(file)say('备份已导出：'+file);}catch(e){err(msg(e));}},'primary'),b('从备份恢复',async()=>{try{const result=await api.restore();if(result){set(result);say('备份已恢复。恢复前的数据已自动备份在应用数据目录。');}}catch(e){err(msg(e));}},'secondary'))):null,
           settingsSection==='about'?h(AboutPanel,null):null)):null

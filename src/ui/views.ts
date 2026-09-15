@@ -3,12 +3,12 @@ import { courseTone, emptyScheduleText, openTasks, scheduleDays } from '../selec
 import type { State } from '../types.ts';
 import React,{useEffect,useState} from 'react';
 import {addDays,dateOf,epoch} from '../core.ts';
-import type {Course,Event,Profile,Task} from '../types.ts';
+import type {AcademicCalendar,Course,Event,Profile,Task} from '../types.ts';
 
 const h=React.createElement;
 const shortDate=(date:string)=>`${Number(date.slice(5,7))}/${Number(date.slice(8,10))}`;
 const longDate=(date:string)=>`${Number(date.slice(5,7))} 月 ${Number(date.slice(8,10))} 日`;
-const weekNow=(profile:Profile,now:number)=>Math.max(1,Math.min(profile.weeks,Math.floor((epoch(dateOf(now))-epoch(profile.startDate))/604800000)+1));
+const weekNow=(calendar:AcademicCalendar,now:number)=>Math.max(1,Math.min(calendar.weeks,Math.floor((epoch(dateOf(now))-epoch(calendar.startDate))/604800000)+1));
 
 interface EmptyStateProps {
   title:string;
@@ -32,28 +32,28 @@ export function EmptyState({title,description,actions,compact=false,illustration
 }
 
 interface ScheduleGridProps {
-  state:State; profile:Profile; courses:Course[]; now:number;
+  state:State; profile:Profile; /** 学业配置（Phase 5B3：只有学生 / 教师有；缺失时调用方不渲染网格） */ calendar:AcademicCalendar; courses:Course[]; now:number;
   edit:(course:Course)=>void; create:(value:Partial<Course>)=>void;
   mode:'overview'|'edit';
 }
-export function ScheduleGrid({state,profile,courses,now,edit,create,mode}:ScheduleGridProps){
-  const [week,setWeek]=useState(()=>weekNow(profile,now));
-  useEffect(()=>setWeek(weekNow(profile,now)),[profile.id,profile.startDate,profile.weeks]);
-  const monday=addDays(profile.startDate,(week-1)*7),active=scheduleDays(state,monday,profile.id);
+export function ScheduleGrid({state,profile,calendar,courses,now,edit,create,mode}:ScheduleGridProps){
+  const [week,setWeek]=useState(()=>weekNow(calendar,now));
+  useEffect(()=>setWeek(weekNow(calendar,now)),[profile.id,calendar.startDate,calendar.weeks]);
+  const monday=addDays(calendar.startDate,(week-1)*7),active=scheduleDays(state,monday,profile.id);
   return h(React.Fragment,null,
     h('div',{className:'schedule-toolbar'},
       h('div',null,h('strong',null,`第 ${week} 教学周`),h('small',null,`${longDate(monday)} – ${longDate(addDays(monday,6))}`)),
-      h('div',{className:'week-switch'},h('button',{disabled:week<=1,onClick:()=>setWeek(w=>w-1),'aria-label':'上一教学周'},'‹'),h('select',{'aria-label':'查看教学周',value:week,onChange:(e:React.ChangeEvent<HTMLSelectElement>)=>setWeek(Number(e.target.value))},...Array.from({length:profile.weeks},(_,i)=>h('option',{value:i+1,key:i+1},`第 ${i+1} 周`))),h('button',{disabled:week>=profile.weeks,onClick:()=>setWeek(w=>w+1),'aria-label':'下一教学周'},'›'))),
-    h('div',{className:`schedule-scroll schedule-${mode}`,'data-schedule-mode':mode},h('div',{className:`schedule-grid schedule-grid-${mode}`,style:{'--period-count':profile.periods.length} as React.CSSProperties},
+      h('div',{className:'week-switch'},h('button',{disabled:week<=1,onClick:()=>setWeek(w=>w-1),'aria-label':'上一教学周'},'‹'),h('select',{'aria-label':'查看教学周',value:week,onChange:(e:React.ChangeEvent<HTMLSelectElement>)=>setWeek(Number(e.target.value))},...Array.from({length:calendar.weeks},(_,i)=>h('option',{value:i+1,key:i+1},`第 ${i+1} 周`))),h('button',{disabled:week>=calendar.weeks,onClick:()=>setWeek(w=>w+1),'aria-label':'下一教学周'},'›'))),
+    h('div',{className:`schedule-scroll schedule-${mode}`,'data-schedule-mode':mode},h('div',{className:`schedule-grid schedule-grid-${mode}`,style:{'--period-count':calendar.periods.length} as React.CSSProperties},
       h('div',{className:'schedule-corner'},'节次'),
       ...Array.from({length:7},(_,d)=>h('div',{className:'schedule-day',key:'d'+d},h('strong',null,'周'+'一二三四五六日'[d]),h('small',null,shortDate(addDays(monday,d))))),
-      ...profile.periods.map((p,i)=>h('div',{className:'period-label',key:'p'+i,style:{gridColumn:1,gridRow:i+2}},h('strong',null,i+1),h('small',null,`${p.start}–${p.end}`))),
-      ...Array.from({length:profile.periods.length*7},(_,i)=>{const period=Math.floor(i/7)+1,day=i%7+1;return mode==='edit'
+      ...calendar.periods.map((p,i)=>h('div',{className:'period-label',key:'p'+i,style:{gridColumn:1,gridRow:i+2}},h('strong',null,i+1),h('small',null,`${p.start}–${p.end}`))),
+      ...Array.from({length:calendar.periods.length*7},(_,i)=>{const period=Math.floor(i/7)+1,day=i%7+1;return mode==='edit'
         ?h('button',{className:'schedule-cell',key:`${period}-${day}`,style:{gridColumn:day+1,gridRow:period+1},title:`周${'一二三四五六日'[day-1]}第 ${period} 节添加课程`,onClick:()=>create({weekday:day,first:period,last:period,weeks:[week]})},'＋')
         :h('span',{className:'schedule-cell schedule-cell-readonly','aria-hidden':true,key:`${period}-${day}`,style:{gridColumn:day+1,gridRow:period+1}});}),
       ...active.map(o=>{const c=courses.find(c=>c.id===o.courseId)!;
         const day=o.day,start=o.startClock,end=o.endClock;
-        const index=profile.periods.findIndex(p=>p.end>start),first=index<0?profile.periods.length-1:index,last=profile.periods.findLastIndex(p=>p.start<end);
+        const index=calendar.periods.findIndex(p=>p.end>start),first=index<0?calendar.periods.length-1:index,last=calendar.periods.findLastIndex(p=>p.start<end);
         // 与日常列表同一条规则：可选信息缺失就不占位（没有地点就不显示"地点未填"）。
         const slotText=mode==='overview'?o.place:`${start}—${end}${o.place?` · ${o.place}`:''}`;
         const content=h(React.Fragment,null,h('strong',null,o.title),slotText?h('small',null,slotText):null,state.exceptions.some(e=>e.courseId===o.courseId&&e.date===o.date)?h('em',null,'本次已调课'):null);

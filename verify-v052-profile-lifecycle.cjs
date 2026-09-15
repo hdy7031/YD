@@ -162,8 +162,11 @@ async function seedPersonData(driver) {
   const companion = companionOf(state);
   const now = state.lastTick;
   const routine = { source: 'user', updatedAt: now, rules: [{ id: 'sam-lunch', kind: 'meal', label: '午饭', start: '12:00', end: '13:00', days: [1, 2, 3, 4, 5], enabled: true, priority: 20 }] };
+  // Phase 5B3：课程是学业语义的载体，而新 companion 是一个普通 Person（没有学期与节次）。
+  // 因此这里先显式配置 Sam 的学期与节次 —— 真实用户会在「课表与学校」里做同一件事。
+  const academic = { startDate: '2027-05-10', weeks: 16, periods: [{ start: '08:00', end: '08:45' }, { start: '08:55', end: '09:40' }] };
   await driver.run(`window.dayhub.change({type:'avatarSet',personId:${JSON.stringify(companion.id)},packId:'yd-pixel'})`);
-  await driver.run(`window.dayhub.change({type:'save',entity:'profiles',value:${JSON.stringify({ ...companion, routine })}})`);
+  await driver.run(`window.dayhub.change({type:'save',entity:'profiles',value:${JSON.stringify({ ...companion, ...academic, routine })}})`);
   await driver.run(`window.dayhub.change({type:'save',entity:'courses',value:${JSON.stringify({
     id: 'sam-course', person: companion.id, title: '同伴的课', place: 'B-201', notes: '', activity: 'teaching',
     weekday: 1, first: 1, last: 2, weeks: [1, 2, 3], reminders: [], checklist: [], updatedAt: now,
@@ -200,6 +203,11 @@ async function phaseTogether(driver, dataDir) {
     JSON.stringify(done.shell.navItems));
   const companionId = companionOf(done.state).id;
   check('完成 Together onboarding：本人身份没有被重建', selfOf(done.state).id === selfId);
+  // Phase 5B3：新同伴是普通 Person —— 不继承、也不发明任何学业配置。
+  check('完成 Together onboarding：本人与同伴都没有假学期（Academic 可选）',
+    done.state.profiles.every((profile) => profile.startDate === undefined && profile.weeks === undefined && profile.periods === undefined)
+    && !JSON.stringify(done.state.profiles).includes('"periods"'),
+    JSON.stringify(done.state.profiles.map((profile) => ({ startDate: profile.startDate, weeks: profile.weeks }))));
   check('派生短代号：称呼前缀「小」不算身份信息，小宇的桌面代号是「宇」',
     done.live.people.find((person) => person.person === selfId)?.alias === '宇'
     && done.dock.letters.includes('宇'),
@@ -505,6 +513,9 @@ async function phaseCreatePetOff(driver, dataDir) {
     (companion.routine?.rules || []).length === 0 && created.state.courses.length === 0
     && companion.avatar.packId === 'yd-default' && companion.avatar.source === 'default',
     JSON.stringify({ routine: companion.routine, avatar: companion.avatar }));
+  check('第一次 Together：新 companion 不生成假学期（Phase 5B3）',
+    companion.startDate === undefined && companion.weeks === undefined && companion.periods === undefined,
+    JSON.stringify({ startDate: companion.startDate, weeks: companion.weeks }));
   check('第一次 Together：模式落盘、导航出现 TA 的安排、桌宠仍然关闭',
     created.state.settings.usageMode === 'together' && created.shell.navItems.includes('阿丁的安排')
     && created.state.settings.petEnabled === false,

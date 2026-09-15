@@ -7,7 +7,8 @@
 //     （domainVersion = 3、档案没有 routine），构建产物也固定在这个形态。
 // 用自定义 id（而不是 'me'）是刻意的：它证明界面与桌宠都不再依赖历史字面量。
 import { apply, createFreshState, epoch, validateState } from '../../src/core.ts';
-import type { Course, Event, State, Task } from '../../src/types.ts';
+import { STANDARD_PERIOD_PRESET } from '../../src/academic.ts';
+import type { Course, Event, Profile, State, Task } from '../../src/types.ts';
 
 export const soloPersonId = 'alex';
 export const soloNow = epoch('2027-03-01T00:00');   // 周一，与档案 startDate 对齐
@@ -34,7 +35,13 @@ export function v3SoloSynthetic(now = soloNow): State {
   const state = createFreshState(now);
   // 只保留一个本人档案，并换成自定义 id / 名称：Solo 工作区没有任何同行者。
   const self = state.profiles[0];
-  const profile = { ...self, id: soloPersonId, role: 'self' as const, name: 'Alex', shortAlias: 'A', startDate: '2027-03-01', weeks: 16, updatedAt: now };
+  // 学业配置（学期 + 节次）必须显式写下：Phase 5B3 之后生产 fresh state 不再生成它，
+  // 而这个 fixture 表达的是"有课表的学生 Solo 工作区"，课程必须有节次可展开。
+  // 字段顺序与提交的 fixture 保持一致（它记录的是旧数据库的字节形态）。
+  const profile: Profile = {
+    id: soloPersonId, role: 'self', name: 'Alex',
+    startDate: '2027-03-01', weeks: 16, periods: structuredClone(STANDARD_PERIOD_PRESET), updatedAt: now, shortAlias: 'A',
+  };
   // v4 之前档案没有 routine：删掉 fresh state 种下的字段，让这份 fixture 真的是"迁移前"。
   delete profile.routine;
   delete profile.avatar;

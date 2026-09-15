@@ -1,4 +1,5 @@
 import { addDays, dateOf, epoch, weekday } from './core.ts';
+import { academicOf } from './academic.ts';
 import { blankDraft } from './inbox-types.ts';
 import type { ParserAdapter, ParseContext, ParsedDraft } from './inbox-types.ts';
 const number=(s:string):number=>/^\d+$/.test(s)?Number(s):s==='半'?30:s.includes('十')?(s.split('十')[0]?number(s.split('十')[0]):1)*10+(s.split('十')[1]?number(s.split('十')[1]):0):'零一二三四五六七八九'.indexOf(s.replace('两','二'));
@@ -54,11 +55,11 @@ export class LocalRuleParser implements ParserAdapter {
       d.operation=/停课|课程取消/.test(text)?'CANCEL':/调课|补课|调到|调至/.test(text)?'RESCHEDULE':'LOCATION_CHANGE';
       const nd=parseDate(dest,input.createdAt);d.newDate=nd.date;d.warnings.push(...nd.warnings);
       if(nd.date||times.start)d.operation='RESCHEDULE';
-      const candidates=context.courses.filter(c=>{const p=context.profiles.find(p=>p.id===c.person);const week=p&&d.date?Math.floor((epoch(d.date)-epoch(p.startDate))/86400000/7)+1:0;return text.includes(c.title)&&(!d.date||weekday(d.date)===c.weekday&&c.weeks.includes(week));});
+      const candidates=context.courses.filter(c=>{const calendar=academicOf(context.profiles.find(p=>p.id===c.person));const week=calendar&&d.date?Math.floor((epoch(d.date)-epoch(calendar.startDate))/86400000/7)+1:0;return text.includes(c.title)&&(!d.date||!!calendar&&weekday(d.date)===c.weekday&&c.weeks.includes(week));});
       if(candidates.length===1){d.courseId=candidates[0].id;d.title=candidates[0].title;}
       else d.warnings.push(candidates.length?'存在多个候选课程，请选择具体的一次课程。':'未找到唯一课程，请选择已有课程。');
       const periods=dest.match(/(\d{1,2})\s*[-—至到]\s*(\d{1,2})\s*节/);
-      if(periods){d.first=+periods[1];d.last=+periods[2];const c=context.courses.find(c=>c.id===d.courseId),p=context.profiles.find(p=>p.id===c?.person);d.startTime=p?.periods[d.first-1]?.start||'';d.endTime=p?.periods[d.last-1]?.end||'';}
+      if(periods){d.first=+periods[1];d.last=+periods[2];const c=context.courses.find(c=>c.id===d.courseId),calendar=academicOf(context.profiles.find(p=>p.id===c?.person));d.startTime=calendar?.periods[d.first-1]?.start||'';d.endTime=calendar?.periods[d.last-1]?.end||'';}
       if(d.operation==='LOCATION_CHANGE')d.location=dest.replace(/[。！]$/,'').trim()||text.match(/(?:换教室|换地点)[为到至]?\s*(.+)/)?.[1]||'';
       if(d.operation==='RESCHEDULE')d.location=dest.match(/(?:在|地点[为：:]?|教室[为：:]?)\s*([^，。]+)/)?.[1]||'';
     }

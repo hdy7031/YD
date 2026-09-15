@@ -1,7 +1,7 @@
 # YD 发布验收门禁（跨版本）
 
 基线：分支 `v0.3-productization`，Phase 5A + Phase 5B1（P0 桌面交互 + 可选桌宠）+
-Phase 5B2（Profile 生命周期），`DOMAIN_VERSION = 7`。
+Phase 5B2（Profile 生命周期）+ Phase 5B3（Academic Decoupling），`DOMAIN_VERSION = 7`。
 （本文档原为 `docs/verification-v030.md`，从 Phase 5 起升级为跨版本的发布验收文档。）
 
 本文档只回答两个问题：**哪些验证必须全绿**、**哪些脚本只是历史考古**。
@@ -22,7 +22,7 @@ Phase 5B2（Profile 生命周期），`DOMAIN_VERSION = 7`。
 | ManualOverride | 空 → `CurrentState = idle` |
 | Routine | 空规则（`{source:'user',rules:[]}`）；「使用默认作息」是用户主动选择的 preset |
 | Avatar | 官方默认 Pack（`yd-default` / `default`） |
-| 校历 | 中性占位（本周周一 + 20 周 + 八节等长节次）+ `settings.setup=false`；真实校历留给 Phase 5B3 的 Academic 领域表达 |
+| 校历 | **没有学业配置**（Phase 5B3 起 absence 合法）：不生成学期 / 教学周 / 节次占位；`settings.setup=false` 表示首次使用未完成 |
 | 第二次启动 | 复用同一个 PersonId，不重复建档案 |
 
 由 `verify-v050-generalization.cjs` 锁定：它用全新临时 userData 启动两次（源码级两个
@@ -103,6 +103,29 @@ create-pet-off / pet-off-restart），用户动作全部走真实 DOM 点击与�
 `--packaged` 时用 `release/win-unpacked/YD.exe` + CDP 跑同样的清房生命周期。
 
 ## 1. 当前维护的 release gate（必须全绿）
+
+## 0.4 Academic Decoupling Contract（Phase 5B3）
+
+YD Core **不默认用户是学生**：日程的通用形态是"绝对日期 + 时间 + 标题 + 地点 + 归属人"
+（Event / Task），「学期 / 教学周 / 节次」是**可选能力**，只有学生与教师需要。
+
+| 维度 | 契约 |
+| --- | --- |
+| 学业配置 | Profile 上的 `startDate` / `weeks` / `periods` 是扁平**可选**字段（持久化结构未变）；三者要么都有、要么都没有 |
+| 解析层 | 只有 `src/academic.ts` 的 `academicOf` / `academicPresence` / `hasAcademic` 判定"有没有学业配置"，业务代码不得各自拼 `profile.startDate && profile.weeks` |
+| absence | Fresh install、新 companion 都不带学业字段；`validateState` 接受 absence，不生成任何占位学期（没有 20 周 / 中性校历 / 第 0 周） |
+| presence | 一旦存在就必须满足原有内部约束（第一教学周的周一、1—60 周、1—24 节有序不重叠）；只填一部分是坏数据，明确拒绝（optional ≠ unvalidated） |
+| 通用日程 | Event / Task 完全不依赖学业配置：occurrence、CurrentState（Schedule 80 层）、提醒、Dock、宠物姿态照常工作 |
+| 课程 | Course 是学业语义的载体（按教学周 + 节次展开），因此要求所属人**先有**学期与节次；没有时给出明确指引，不偷偷造一个学期 |
+| 状态文案 | 没有学业配置的人不会看到「尚未录入课表 / 学期尚未开始 / 本学期已结束 / 今天无课」；空闲时是「空闲 / 即将有安排」 |
+| 现有学生数据 | v1—v7 的旧库、备份与 fixture 逐字段保留学业配置；课程展开、学期阶段码、CurrentState 行为不变 |
+| schema | `DOMAIN_VERSION = 7`，无新 migration：字段改为可选是**放宽**校验，旧数据天然兼容 |
+| preset | `STANDARD_PERIOD_PRESET` / `SUGGESTED_TERM_WEEKS` / `suggestedTermStart` 只作为用户显式打开「学期与节次」时的表单初值，永不自动落盘 |
+
+由 `tests/academic-decoupling.test.ts`（Case A—F：fresh 无学业 / 通用 Solo / 通用 Together /
+旧学生数据 / Solo↔Together 生命周期 / 无假占位）与 `verify-v050-generalization.cjs`
+（fresh install 断言 absence + 课表管理页给出配置入口而不是空网格）、
+`verify-v052-profile-lifecycle.cjs`（新 companion 不生成假学期）共同锁定。
 
 | 命令 | 覆盖 |
 | --- | --- |

@@ -62,6 +62,13 @@ function assertFreshContract(view, notes) {
   check('fresh：作息为空（不替新用户决定生活作息）',
     Array.isArray(self?.routine?.rules) && self.routine.rules.length === 0, JSON.stringify(self?.routine));
   check('fresh：Avatar 用官方默认 Pack', self?.avatar?.packId === 'yd-default' && self.avatar.source === 'default', JSON.stringify(self?.avatar));
+  // Phase 5B3：学业语义（学期 / 教学周 / 节次）是可选能力 —— fresh install 不带假学期，
+  // 普通用户不需要为了"让 Profile 合法"而背一个 20 周的占位校历。
+  check('fresh：没有伪造的学期与节次（Academic 可选）',
+    self?.startDate === undefined && self?.weeks === undefined && self?.periods === undefined
+    && !JSON.stringify(state.profiles).includes('startDate')
+    && !JSON.stringify(state.profiles).includes('periods'),
+    JSON.stringify({ startDate: self?.startDate, weeks: self?.weeks, periods: self?.periods }));
   // Phase 5B1：fresh install 不静默创建桌面悬浮物 —— 桌宠要在首次设置里显式选择。
   check('fresh：桌面桌宠默认关闭（petEnabled=false）', state.settings.petEnabled === false, String(state.settings.petEnabled));
   // 源码级能直接读 BrowserWindow.isVisible()（真实窗口状态）；打包版只有 CDP，
@@ -86,6 +93,12 @@ function assertFreshContract(view, notes) {
   check('fresh：Solo 导航没有同行者页', !dom.navItems.some((label) => label.includes('的安排') && !label.includes('我的安排')), JSON.stringify(dom.navItems));
   check('fresh：状态 Dock 单行、无分隔线', dom.dockPeople === 1 && dom.dockDividers === 0, JSON.stringify(dom.dock));
   check('fresh：设置页角色区只有 1 个 Picker', dom.pickers === 1, String(dom.pickers));
+  // Phase 5B3：没有学业配置时，课表管理页给配置入口，而不是空网格或占位文案。
+  check('fresh：课表管理页没有空网格 / 学业占位，只有配置入口',
+    dom.courses?.academicAbsent === true && dom.courses.grid === false && dom.courses.weekSwitch === false
+    && /设置学期与节次/.test(dom.courses.text ?? '')
+    && !/第 0 周|未设置学期|尚未录入课表/.test(dom.courses.text ?? ''),
+    JSON.stringify(dom.courses));
   check('fresh：界面没有 undefined', !dom.hasUndefined);
   if (notes) {
     check('fresh：界面与状态里没有私人 / 合成哨兵',
@@ -156,7 +169,8 @@ async function runSourcePhase(kind, dataDir) {
 // ---------------------------------------------------------------------------
 /**
  * 读取 fresh install 的真实状态：先看首页（标题 / 状态行 / 导航），再把桌宠切到状态 Dock
- * 看单人形态，最后打开设置页看 Picker 数量。顺序固定，避免"在设置页上断言首页标题"。
+ * 看单人形态，然后打开设置页看 Picker 数量，最后看课表管理页在"没有学业配置"时的形态。
+ * 顺序固定，避免"在设置页上断言首页标题"。
  */
 async function readFresh(run, pet) {
   const home = await run(`(()=>{const text=document.body.innerText;return {
@@ -170,6 +184,16 @@ async function readFresh(run, pet) {
   await run("window.dayhub.window('settings')");
   await wait(700);
   const settings = await run("(()=>({pickers:document.querySelectorAll('.avatar-person-picker').length,text:document.body.innerText,hasUndefined:/undefined/.test(document.body.innerText)}))()");
+  // Phase 5B3：fresh install 没有学期与节次 —— 课表管理页必须给出配置入口，
+  // 而不是渲染空网格或「第 0 周 / 未设置学期」这类占位。
+  await run("(()=>{const tab=[...document.querySelectorAll('.nav-item')].find(b=>b.getAttribute('data-kind')==='courses');if(tab)tab.click();})()");
+  await wait(500);
+  const courses = await run(`(()=>{const text=document.querySelector('.page-courses')?.innerText??'';return {
+    academicAbsent:!!document.querySelector('[data-academic-absent]'),
+    grid:!!document.querySelector('.schedule-grid'),
+    weekSwitch:!!document.querySelector('[aria-label="查看教学周"]'),
+    text,
+  };})()`);
   const state = await run('window.dayhub.get()');
   const live = await run('window.dayhub.live()');
   return {
@@ -179,7 +203,8 @@ async function readFresh(run, pet) {
       ...home,
       pickers: settings.pickers,
       hasUndefined: home.hasUndefined || settings.hasUndefined,
-      text: `${home.text}\n${settings.text}`,
+      text: `${home.text}\n${settings.text}\n${courses.text}`,
+      courses,
       dock,
       dockPeople: dock.people,
       dockDividers: dock.dividers,
