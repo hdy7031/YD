@@ -194,9 +194,8 @@ app.whenReady().then(async()=>{
 
     /* ---------- F. 版本 ---------- */
     const version=require('./package.json').version;
-    // 只校验"版本已经离开 0.2.19 基线且三处元数据一致"，不要在验收脚本里钉死具体补丁号，
-    // 否则每次发版都要回来改断言。
-    check('版本号已离开 0.2.19 基线',/^0\.2\.\d+$/.test(version)&&version!=='0.2.19',version);
+    // 只校验当前维护的 v0.3 release 线，不钉死具体补丁号，避免每次发版都改断言。
+    check('版本号属于当前 v0.3 release 线',/^0\.3\.\d+$/.test(version),version);
     check('锁文件版本同步',require('./package-lock.json').version===version&&require('./package-lock.json').packages[''].version===version,require('./package-lock.json').version);
     check('构建产物里的桌宠素材同步',fs.existsSync(path.join(__dirname,'dist','assets','companion','custom','manifest.json')));
     const log=fs.readFileSync(path.join(output,'dayhub.log'),'utf8');

@@ -79,7 +79,7 @@ class Session {
   if (!fs.existsSync(exe)) throw new Error('未找到打包版可执行文件：' + exe);
   const version = require(path.join(root, 'package.json')).version;
   // 只校验"打包版来自当前 package.json 的发行线"，不钉死具体补丁号。
-  check('打包版按当前 0.2.x 发行线构建', /^0\.2\.\d+$/.test(version) && version !== '0.2.19', version);
+  check('打包版按当前 v0.3 release 线构建', /^0\.3\.\d+$/.test(version), version);
   const logFile = path.join(output, 'dayhub.log');
   let child = spawn(exe, [`--remote-debugging-port=${port}`], {
     env: { ...process.env, DAYHUB_TEST_DATA: output },
