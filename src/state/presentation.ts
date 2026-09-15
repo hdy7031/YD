@@ -67,7 +67,7 @@ export interface PersonStatusPresentationInput {
  * 分层是这里唯一要守住的东西：一行只说一件事，不写口语连接词。
  *   primaryLabel   = 此刻在做什么（永远来自 CurrentState，空闲就是「空闲」）
  *   statusNote     = 这件事自身的补充（12:30 结束 / 按作息 · 13:10 结束 / 今天无课）
- *   nextLine       = 下一件事的短写法（明天 08:00 · 研究生英语），已经隐含"接下来"，
+ *   nextLine       = 下一件事的短写法（明天 08:00 · 课程名），已经隐含"接下来"，
  *                    因此不再写「下一项」；没有下一项就是空字符串。
  *   secondaryLabel = 单行上下文（Dock hover / 详情卡用）：状态注优先，其次下一件事。
  *
@@ -78,7 +78,7 @@ export interface PersonStatusPresentation {
   primaryLabel: string;
   /** 状态自身的短注（结束时间 / 来源 / 日程阶段），可为空。 */
   statusNote: string;
-  /** 下一件事：`明天 08:00 · 研究生英语`，无下一项时为空。 */
+  /** 下一件事：`明天 08:00 · 课程名`，无下一项时为空。 */
   nextLine: string;
   secondaryLabel: string;
   tone: CompanionTone;
