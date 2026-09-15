@@ -25,6 +25,8 @@ import { PANEL_ICON_FILE, TRAY_ICON_FILES, PRODUCT_VERSION } from './brand-asset
 import { configureLogging, installStreamGuards, logError, logLine } from './logging.ts';
 import { DOMAIN_VERSION, domainVersion, migrationSteps, runMigrations } from './migration.ts';
 import type { Command, PersonId, SchedulePackage } from './types.ts';
+import { commitImport, commitScheduleCandidate, icsCandidateValidator, ICS_IMPORTER_ID, MAX_ICS_COMMIT_BYTES, MAX_ICS_FILE_BYTES, validateImportSession } from './import/index.ts';
+import type { ICSFileSelection, ICSImportSession } from './import/ics.ts';
 
 const APP_ID='cn.dayhub.desktop';
 // 先接管 stdout/stderr：管道断开（EPIPE）时不能变成主进程未捕获异常与错误弹窗。
@@ -463,6 +465,44 @@ function setupHandlers(){
     if(value?.format!=='dayhub-schedule'||value.version!==1||!Array.isArray(value.profiles)||!Array.isArray(value.courses))throw new Error('这不是受支持的 YD 课表文件');
     apply(store.snapshot(),{type:'importSchedule',value});
     return value;
+  });
+  handler('chooseICS',async():Promise<ICSFileSelection|null>=>{
+    const r=await dialog.showOpenDialog(panel,{title:'选择 ICS 日历文件',properties:['openFile'],filters:[{name:'iCalendar 日历',extensions:['ics']}]});
+    if(r.canceled)return null;
+    const file=r.filePaths[0];
+    if(!file||!/\.ics$/i.test(file))throw new Error('请选择 .ics 日历文件');
+    let bytes:Buffer;
+    try{
+      const stat=fs.statSync(file);
+      if(!stat.isFile())throw new Error('选择的路径不是文件');
+      if(stat.size>MAX_ICS_FILE_BYTES)throw new Error('ICS 文件超过 10 MB');
+      bytes=fs.readFileSync(file);
+    }catch(error){
+      if(error instanceof Error&&error.message==='ICS 文件超过 10 MB')throw error;
+      throw new Error('无法读取 ICS 文件，请确认文件仍可访问。',{cause:error});
+    }
+    if(bytes.length>MAX_ICS_FILE_BYTES)throw new Error('ICS 文件超过 10 MB');
+    return {originalName:path.basename(file),size:bytes.length,createdAt:Date.now(),fingerprint:createHash('sha256').update(bytes).digest('hex'),text:bytes.toString('utf8')};
+  });
+  handler('commitICSImport',async(session:ICSImportSession)=>{
+    if(!session||typeof session!=='object'||session.importer!==ICS_IMPORTER_ID||session.target!=='schedule'||session.source?.kind!=='file')throw new Error('ICS 导入会话无效');
+    let serialized:string;
+    try{serialized=JSON.stringify(session);}catch{throw new Error('ICS 导入会话无效');}
+    if(Buffer.byteLength(serialized,'utf8')>MAX_ICS_COMMIT_BYTES)throw new Error('ICS 导入会话过大，请重新选择文件');
+    let committed:ReturnType<typeof commitImport<import('./import/ics.ts').ICSInput>>|undefined;
+    const now=Date.now();
+    const next=await store.update(current=>{
+      const checked=validateImportSession(session,icsCandidateValidator<import('./import/ics.ts').ICSInput>(),current);
+      if(checked.status!=='ready'){
+        const problem=checked.candidates.flatMap(candidate=>candidate.issues).find(item=>item.severity==='error');
+        throw new Error(problem?.message??'导入内容在核对后发生变化，请重新选择或重新核对。');
+      }
+      committed=commitImport(current,checked,now,commitScheduleCandidate);
+      return committed.state;
+    });
+    if(!committed)throw new Error('导入没有完成');
+    changed();
+    return {state:next,committedCandidateIds:committed.committedCandidateIds};
   });
   handler('pasteImage',async()=>{
     const items=await clipboard.read();

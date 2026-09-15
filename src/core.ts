@@ -109,6 +109,7 @@ function importProvenance(v: unknown): asserts v is ImportProvenance {
   assert(p&&text(p.sessionId,100)&&/^[\w-]+$/.test(p.sessionId),'导入会话编号无效');
   importSource(p.source);
   assert(text(p.importer,100)&&/^[\w-]+$/.test(p.importer),'导入器编号无效');
+  assert(p.sourceRecordId===undefined || text(p.sourceRecordId,500) && p.sourceRecordId.trim().length>0,'来源记录编号无效');
   assert(Number.isFinite(p.importedAt),'导入时间无效');
   assert(typeof p.userEdited==='boolean','导入修改标记无效');
   assert(Object.prototype.hasOwnProperty.call(p,'originalValue')&&jsonValue(p.originalValue),'原始导入值无效');

@@ -21,10 +21,14 @@ function changed(original: unknown, reviewed: unknown): boolean {
 export function provenanceFor<TInput>(session: ImportSession<ScheduleCandidateValue, TInput>, candidate: ImportSession<ScheduleCandidateValue, TInput>['candidates'][number]): ImportProvenance {
   const originalValue = clone(candidate.originalParsedValue);
   const reviewedValue = clone(candidate.reviewedValue);
+  const sourceRecordId = typeof originalValue.sourceRecordId === 'string' && originalValue.sourceRecordId.trim()
+    ? originalValue.sourceRecordId
+    : undefined;
   return {
     sessionId: session.id,
     source: sourceReference(session.source),
     importer: session.importer,
+    ...(sourceRecordId ? { sourceRecordId } : {}),
     importedAt: session.createdAt,
     originalValue,
     reviewedValue,

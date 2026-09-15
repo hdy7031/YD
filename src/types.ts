@@ -24,6 +24,8 @@ export interface ImportProvenance {
   sessionId: string;
   source: ImportSourceRef;
   importer: string;
+  /** Stable identifier supplied by the source format (for example an ICS UID). */
+  sourceRecordId?: string;
   importedAt: number;
   originalValue: unknown;
   reviewedValue: unknown;
@@ -122,6 +124,8 @@ export interface DesktopAPI {
   parseNotice(id:string,text?:string,fromOcr?:boolean):Promise<State>; clipboardText():Promise<string>;
   get(): Promise<State>; change(command: Command): Promise<State>;
   chooseSchedule(): Promise<SchedulePackage | null>;
+  chooseICS(): Promise<import('./import/ics.ts').ICSFileSelection | null>;
+  commitICSImport(session: import('./import/ics.ts').ICSImportSession): Promise<{ state: State; committedCandidateIds: string[] }>;
   importImage(): Promise<{ image: string } | null>; importImageBytes(bytes: Uint8Array): Promise<{ image: string }>; pasteImage(): Promise<{ image: string } | null>;
   image(id: string): Promise<string>; ocr(id: string): Promise<string>;
   backup(): Promise<string | null>; restore(): Promise<State | null>; testNotification(): Promise<string>;

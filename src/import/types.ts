@@ -31,6 +31,8 @@ export interface ValidationIssue {
 export interface ScheduleCandidateValue {
   entity: ImportableEntity;
   value: unknown;
+  /** Optional stable identifier supplied by the source format (for example an ICS UID). */
+  sourceRecordId?: string;
 }
 
 export interface ImportCandidateDraft<TValue = unknown> {

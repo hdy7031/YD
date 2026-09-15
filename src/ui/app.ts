@@ -7,6 +7,7 @@ import { pendingReminders as selectPendingReminders, attentionSummary, courseTon
 import { useLive, Titlebar, DesktopPet, Bubble, Mini, PresenceTip, PetMenu, StatusRows, PetSettings } from './companion.ts';
 import { BrandMark } from './brand.ts';
 import { ScheduleGrid, ManagementOverview, EmptyState } from './views.ts';
+import { ICSImportDialog } from './ics-import.ts';
 import { DailySummary, DailyAgendaList, DailyEmptyState } from './daily-summary.ts';
 import { dailyItemState, dailyPlanFrom, type DailyAgendaItem } from './daily-plan.ts';
 import { activeCompanionProfile, activeProfiles, requireSelfProfile, resolvePetSubject } from '../people.ts';
@@ -19,7 +20,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BellRing, CalendarClock, CalendarDays, Clock3, Inbox, ListTodo, Settings, Table2 } from 'lucide-react';
 import { id, occurrences, conflicts, epoch, dateOf, addDays, weekday, DAY } from '../core.ts';
+import { stripICSRawInput } from '../import/ics.ts';
 import type { DesktopAPI, State, Entity, Command, Course, Exception, Task, Event, Notice, Occurrence, Reminder, ChecklistItem, PersonId, SchedulePackage } from '../types.ts';
+import type { ICSFileSelection, ICSImportSession } from '../import/ics.ts';
 declare global { interface Window { dayhub: DesktopAPI } }
 const api=window.dayhub;
 const h=(type:any,props:any,...children:any[]):React.ReactElement=>React.createElement(type,props,...children);
@@ -247,7 +250,7 @@ function Editor({entity,value,state,close,saved,convert,duplicate,remove,sourceO
 }
 function App(){
   const clock=useLive();
- const {state,set,error,err}=useData(),now=clock?.now??Date.now(),[tab,setTab]=useState('today'),[editor,edit]=useState<any>(null),[message,say]=useState(''),[query,search]=useState(''),[filter,setFilter]=useState('all'),[selectedDate,setDate]=useState(dateOf(Date.now())),[person,setPerson]=useState<PersonId|null>(null),[scheduleMode,setScheduleMode]=useState<'overview'|'edit'>('overview'),[settingsSection,setSettingsSection]=useState<'companionship'|'rhythm'|'school'|'runtime'|'data'|'about'>('companionship'),[selectedNotice,setSelectedNotice]=useState<string|null>(null),[pending,setPending]=useState(false),[importing,setImporting]=useState(false),[schedule,setSchedule]=useState<SchedulePackage|null>(null),[deletion,setDeletion]=useState<{entity:Entity;id:string}|null>(null);
+ const {state,set,error,err}=useData(),now=clock?.now??Date.now(),[tab,setTab]=useState('today'),[editor,edit]=useState<any>(null),[message,say]=useState(''),[query,search]=useState(''),[filter,setFilter]=useState('all'),[selectedDate,setDate]=useState(dateOf(Date.now())),[person,setPerson]=useState<PersonId|null>(null),[scheduleMode,setScheduleMode]=useState<'overview'|'edit'>('overview'),[settingsSection,setSettingsSection]=useState<'companionship'|'rhythm'|'school'|'runtime'|'data'|'about'>('companionship'),[selectedNotice,setSelectedNotice]=useState<string|null>(null),[pending,setPending]=useState(false),[importing,setImporting]=useState(false),[schedule,setSchedule]=useState<SchedulePackage|null>(null),[icsImport,setICSImport]=useState<{file:ICSFileSelection;targetPersonId:PersonId}|null>(null),[deletion,setDeletion]=useState<{entity:Entity;id:string}|null>(null);
   // Phase 3C：临时手动状态的对话框（首页状态行与桌宠菜单都能打开它）。
   const [manualOpen,setManualOpen]=useState(false);
   useEffect(()=>{document.body.classList.add('main-body');return()=>document.body.classList.remove('main-body');},[]);
@@ -305,6 +308,8 @@ function App(){
   function open(entity:Entity,value?:any,convert?:string){if(entity==='notices'){setTab('inbox');setSelectedNotice(value?.id||null);return;}edit({entity,value:value||newValue(entity,activePerson,selfId),convert});err('');}
   async function importImage(paste=false){setImporting(true);err('');try{const result=await(paste?api.pasteImage():api.importImage());if(result){const noticeId=id();set(await api.change({type:'inbound',id:noticeId,payload:{image:result.image,sourceType:paste?'SCREENSHOT':'IMAGE_IMPORT'}}));setTab('inbox');setSelectedNotice(noticeId);try{const text=await api.ocr(result.image);if(text.trim())set(await api.parseNotice(noticeId,text,true));}catch(e){err(msg(e));}}else if(paste)say('剪贴板中没有图片，可使用粘贴文字。');}catch(e){err(msg(e));}finally{setImporting(false);}}
   async function chooseSchedule(){setImporting(true);err('');try{const value=await api.chooseSchedule();if(value)setSchedule(value);}catch(e){err(msg(e));}finally{setImporting(false);}}
+  async function chooseICS(targetPersonId:PersonId){setImporting(true);err('');try{const file=await api.chooseICS();if(file)setICSImport({file,targetPersonId});}catch(e){err(msg(e));}finally{setImporting(false);}}
+  async function commitICSImport(session:ICSImportSession){setPending(true);err('');try{return await api.commitICSImport(stripICSRawInput(session));}finally{setPending(false);}}
   if(!state)return h('main',{className:'loading'},h('h1',null,'YD'),h('p',null,error||'正在打开本地记录…'));
   const s=state,live=snapshot(s,now),all=occurrences(s,epoch(selectedDate),epoch(addDays(selectedDate,1))),conflictIds=conflicts(all);
   const pendingReminders=selectPendingReminders(s);
@@ -444,7 +449,8 @@ function App(){
             // 没有主 CTA：这里没有"必须按"的动作，只有并列的维护入口。
             profileCalendar?b(scheduleMode==='edit'?'完成':'编辑课表',()=>setScheduleMode(scheduleMode==='edit'?'overview':'edit'),'secondary'):null,
             h('button',{type:'button',className:'secondary icon-action',onClick:()=>open('profiles',profile)},uiIcon(Clock3),profileCalendar?'节次时间':'学期与节次'),
-            b(importing?'正在读取…':'导入课表',chooseSchedule,'secondary',importing||pending))),
+            b(importing?'正在读取…':'导入课表',chooseSchedule,'secondary',importing||pending),
+            b(importing?'正在读取…':'导入 .ics',()=>chooseICS(activePerson),'secondary',importing||pending))),
         profileCalendar?h(ScheduleGrid,{state:s,profile,calendar:profileCalendar,courses:active,now,mode:scheduleMode,edit:(course:Course)=>open('courses',course),create:(value:Partial<Course>)=>open('courses',{...newValue('courses',activePerson,selfId),...value})}):h('section',{className:'panel','data-academic-absent':'true'},h(EmptyState,{title:'按教学周排课（可选）',description:'学生与教师在这里按教学周与节次排课；会议、待办与当前状态不需要它。',actions:b('设置学期与节次',()=>open('profiles',profile),'secondary')})),
         profileCalendar?h('section',{className:'panel exceptions-panel'},
           h('div',{className:'section-head'},h('div',null,h('h2',null,'单次调课与停课'),h('small',{className:'section-subtitle'},exceptionList.length?`${exceptionList.length} 条记录`:'暂无记录'))),
@@ -469,6 +475,7 @@ function App(){
     !s.settings.setup?h(OnboardingPanel,{state:s,pending,submit:finishSetup}):null,
     editor?h(Editor,{key:editor.entity+editor.value.id,entity:editor.entity,value:editor.value,convert:editor.convert,state:s,close:()=>edit(null),sourceOpen:(id:string)=>{edit(null);setTab('inbox');setSelectedNotice(id);},saved:(next:State)=>{set(next);say('已保存到本机。');},remove:(entity:Entity,id:string)=>{edit(null);setDeletion({entity,id});},duplicate:(course:Course)=>edit({entity:'courses',value:{...course,id:id(),title:course.title+'（副本）',checklist:course.checklist.map(x=>({...x,id:id(),done:false}))}})}):null,
     manualOpen?h(ManualStatusDialog,{live,state:s,close:()=>setManualOpen(false),change,pending}):null,
+    icsImport?h(ICSImportDialog,{key:`${icsImport.targetPersonId}:${icsImport.file.fingerprint}`,state:s,file:icsImport.file,targetPersonId:icsImport.targetPersonId,pending,onClose:()=>setICSImport(null),onCommit:commitICSImport,onDone:(result: {state:State;committedCandidateIds:string[]})=>{set(result.state);setICSImport(null);say(`已导入 ${result.committedCandidateIds.length} 项。`);}}):null,
     schedule?h('div',{className:'modal-backdrop'},h('section',{className:'modal small',role:'dialog','aria-modal':true,'aria-label':'核对课表导入'},h('div',{className:'import-kicker'},'课表文件已读取'),h('h2',null,schedule.termName),h('p',{className:'muted'},`共 ${schedule.courses.length} 门课程。载入后会替换下列人员当前已有的课程与临时调课，待办、会议和通知不受影响。`),h('div',{className:'import-summary'},...schedule.profiles.map(p=>h('div',{key:p.id},h('strong',null,p.name),h('span',null,`${p.startDate} 起 · ${p.weeks} 周`),h('small',null,`${schedule.courses.filter(c=>c.person===p.id).length} 门课程 · ${p.periods.length} 节作息`)))),h('div',{className:'modal-foot'},b('取消',()=>setSchedule(null),'ghost',pending),b(pending?'正在载入…':'确认载入课表',async()=>{if(await change({type:'importSchedule',value:schedule})){setSchedule(null);say(`${schedule.termName}课表已载入。`);}},'primary',pending)))):null,
     deletion?h('div',{className:'modal-backdrop'},h('section',{className:'modal small',role:'dialog','aria-modal':true,'aria-label':'确认删除'},h('h2',null,deletion.entity==='exceptions'?'恢复原课程？':deletion.entity==='courses'?'删除整门课程？':deletion.entity==='tasks'?'删除待办？':'删除会议或活动？'),h('p',null,deletion.entity==='courses'?'删除后，这门课程的单次调课、停课记录和未触发提醒也会一并移除。':deletion.entity==='exceptions'?'恢复后，本次课程会重新使用课表模板中的原时间和地点，提醒也会重新计算。':deletion.entity==='tasks'?'删除后，这条待办及其未触发提醒会被移除；此操作无法撤销。':'删除后，这场会议或活动及其未触发提醒会被移除；此操作无法撤销。'),h('div',{className:'actions'},b('取消',()=>setDeletion(null),'ghost'),b(deletion.entity==='exceptions'?'恢复原课':'确认删除',async()=>{if(await change({type:'delete',...deletion}))setDeletion(null);},'danger',pending)))):null
   );
