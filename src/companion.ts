@@ -8,6 +8,7 @@ import { DEFAULT_AVATAR_PACK_ID, resolveAvatarPack } from './avatar.ts';
 import type { AvatarVisualReady } from './avatar-runtime.ts';
 import { resolvePetInstance } from './pet-instance.ts';
 import { activeProfiles } from './people.ts';
+import { loadLocalPage } from './renderer-load.ts';
 import { logError } from './logging.ts';
 import type { Store } from './store.ts';
 import type { PersonId } from './types.ts';
@@ -80,7 +81,9 @@ export class Companion {
   private sameAvatar(a:{requestedPackId:string;resolvedPackId:string;version:string},b:{requestedPackId:string;resolvedPackId:string;version:string}){
     return a.requestedPackId===b.requestedPackId&&a.resolvedPackId===b.resolvedPackId&&a.version===b.version;
   }
-  async load(){await Promise.all([this.bubble.loadFile(this.file,{hash:'bubble'}),this.mini.loadFile(this.file,{hash:'mini'}),this.tip.loadFile(this.file,{hash:'tip'}),this.sheet.loadFile(this.file,{hash:'menu'})]);this.resize();await this.pulse(true);this.pulseTimer=setInterval(()=>void this.pulse(),1000);}
+  // 四个辅助窗口与主界面 / Dock 共用同一个本地页面：统一走 loadLocalPage
+  // （有界重试 + 超时 + 日志），避免"某一个窗口偶发加载失败 → 整个 YD 无法启动"。
+  async load(){await Promise.all([loadLocalPage(this.bubble,this.file,'bubble'),loadLocalPage(this.mini,this.file,'mini'),loadLocalPage(this.tip,this.file,'tip'),loadLocalPage(this.sheet,this.file,'menu')]);this.resize();await this.pulse(true);this.pulseTimer=setInterval(()=>void this.pulse(),1000);}
   stop(){this.closing=true;if(this.pulseTimer)clearInterval(this.pulseTimer);}
   get():LiveSnapshot{
     // Keep the projection self-consistent: the display state must never lag the

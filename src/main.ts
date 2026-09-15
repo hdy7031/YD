@@ -12,6 +12,7 @@ import { Companion } from './companion.ts';
 import { resolveCompanionAssets } from './companion-assets.ts';
 import { resolvePetInstance } from './pet-instance.ts';
 import { activeProfiles } from './people.ts';
+import { loadLocalPage } from './renderer-load.ts';
 import { companionGeometry } from './companion-layout.ts';
 import { companionToggleShortcut } from './companion-menu.ts';
 import { migrateLive, petDefaults, snapshot, statusLabel } from './live.ts';
@@ -584,7 +585,11 @@ else{
     // 首帧绘制完成 = 窗口真正出现在桌面上：这时再断言一次置顶，
     // 避免"创建时设置过、显示之后被原生样式改动打回普通层"的启动竞态。
     orb.on('ready-to-show',()=>assertDockTopmost());
-    await Promise.all([orb.loadFile(path.join(__dirname,'index.html'),{hash:'orb'}),panel.loadFile(path.join(__dirname,'index.html'))]);
+    // 六个窗口都加载同一个本地页面：统一走 loadLocalPage（有界重试 + 超时 + 日志）。
+    await Promise.all([
+      loadLocalPage(orb,path.join(__dirname,'index.html'),'orb'),
+      loadLocalPage(panel,path.join(__dirname,'index.html')),
+    ]);
     // 渲染层加载 index.html 时会把窗口标题改写成文档标题（与主窗口同名）。
     // Dock 是"被浏览器压到下层"这类线上问题的第一个排查对象，必须能按标题认出来，
     // 因此在加载完成后重新设置一次，和主窗口区分开。
