@@ -6,6 +6,29 @@ export type PersonId = string;
 export type ProfileRole = 'self' | 'companion';
 export type AvatarSelectionSource = 'default' | 'user';
 export interface AvatarSelection { packId: import('./avatar.ts').AvatarPackId; source: AvatarSelectionSource }
+// Unified Import Foundation：来源引用是正式记录 provenance 的最小、可持久形态。
+// 原始文件绝对路径不属于长期事实；文件 importer 应使用 originalName + fingerprint。
+export type ImportSourceKind = 'file' | 'text' | 'image' | 'structured-file';
+export type ImportMetadataValue = string | number | boolean | null;
+export type ImportMetadata = Record<string, ImportMetadataValue>;
+export interface ImportSourceRef {
+  id: string;
+  kind: ImportSourceKind;
+  originalName?: string;
+  label?: string;
+  createdAt: number;
+  fingerprint?: string;
+  metadata?: ImportMetadata;
+}
+export interface ImportProvenance {
+  sessionId: string;
+  source: ImportSourceRef;
+  importer: string;
+  importedAt: number;
+  originalValue: unknown;
+  reviewedValue: unknown;
+  userEdited: boolean;
+}
 export interface ChecklistItem { id: string; text: string; done: boolean }
 /** 一节课的起止时间（HH:mm，北京时间）。 */
 export interface ClassPeriod { start: string; end: string }
@@ -27,12 +50,12 @@ export interface AcademicCalendar { startDate: string; weeks: number; periods: C
 // （普通用户）。字段保持扁平持久化结构（startDate / weeks / periods），
 // 因此旧库不需要 migration，absence 也天然向后兼容。
 export interface Profile { shortAlias?: string; tentative?: boolean; role?: ProfileRole; routine?: import('./routine.ts').RoutineProfile; avatar?: AvatarSelection; id: PersonId; name: string; startDate?: string; weeks?: number; periods?: ClassPeriod[]; updatedAt: number }
-export interface Course { createdAt?: number; activity?: 'teaching'|'research'; id: string; person: PersonId; title: string; place: string; notes: string; weekday: number; first: number; last: number; weeks: number[]; reminders: number[]; checklist: ChecklistItem[]; sourceId?: string; updatedAt: number }
-export interface Exception { createdAt?: number; sourceInboxItemId?: string; id: string; courseId: string; date: string; cancelled: boolean; start?: string; end?: string; place?: string; updatedAt: number }
+export interface Course { createdAt?: number; activity?: 'teaching'|'research'; id: string; person: PersonId; title: string; place: string; notes: string; weekday: number; first: number; last: number; weeks: number[]; reminders: number[]; checklist: ChecklistItem[]; sourceId?: string; provenance?: ImportProvenance; updatedAt: number }
+export interface Exception { createdAt?: number; sourceInboxItemId?: string; id: string; courseId: string; date: string; cancelled: boolean; start?: string; end?: string; place?: string; provenance?: ImportProvenance; updatedAt: number }
 // v3 起会议/活动必须归属某个档案（迁移会为旧数据补上工作区本人）；
 // v2 及更早的数据库没有该字段，读入时由 core.eventPerson() 回退到本人。
-export interface Event { createdAt?: number; sourceInboxItemId?: string; person?: PersonId; id: string; title: string; start: string; end: string|null; place: string; notes: string; reminders: number[]; checklist: ChecklistItem[]; sourceId?: string; updatedAt: number }
-export interface Task { createdAt?: number; sourceInboxItemId?: string; id: string; title: string; due: string; notes: string; done: boolean; checklist: ChecklistItem[]; reminders: number[]; sourceId?: string; updatedAt: number }
+export interface Event { createdAt?: number; sourceInboxItemId?: string; person?: PersonId; id: string; title: string; start: string; end: string|null; place: string; notes: string; reminders: number[]; checklist: ChecklistItem[]; sourceId?: string; provenance?: ImportProvenance; updatedAt: number }
+export interface Task { createdAt?: number; sourceInboxItemId?: string; id: string; title: string; due: string; notes: string; done: boolean; checklist: ChecklistItem[]; reminders: number[]; sourceId?: string; provenance?: ImportProvenance; updatedAt: number }
 export interface Notice extends SourceMetadata { ocrText?:string; createdAt?: number; parseStatus?: ParseStatus; detectedType?: DraftType; parsedData?: ParsedDraft; confidence?: number; targetEntityType?: "tasks"|"events"|"exceptions"|"notice"; targetEntityId?: string; processedAt?: number; parseError?: string; id: string; title: string; text: string; originalText?: string; image?: string; state: 'inbox' | 'later' | 'archived'; updatedAt: number }
 export type ReminderStatus = 'scheduled'|'due'|'acknowledged'|'snoozed'|'cancelled';
 export interface Reminder { createdAt?: number; updatedAt?: number; id: string; target: string; occurrence?: string; title: string; due: number; status: ReminderStatus; firedAt?: number; handledAt?: number; snoozedFrom?: string; snoozeMinutes?: number; cancelReason?: 'time_changed'|'completed' }
@@ -58,7 +81,7 @@ export interface SchedulePackage {
 export interface Occurrence {
   id: string; target: string; title: string; start: number; end: number; place: string; notes: string;
   person: PersonId; kind: 'course' | 'event'; courseId?: string; date?: string; checklist: ChecklistItem[];
-  sourceId?: string; sourceInboxItemId?: string; createdAt?: number; updatedAt?: number; endUnknown?: boolean;
+  sourceId?: string; sourceInboxItemId?: string; provenance?: ImportProvenance; createdAt?: number; updatedAt?: number; endUnknown?: boolean;
   // Course occurrence presentation metadata. Cancelled instances are omitted from
   // status calculations unless a caller explicitly requests them for a list.
   cancelled?: boolean;

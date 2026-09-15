@@ -9,7 +9,7 @@ import { DEFAULT_AVATAR_PACK_ID } from './avatar.ts';
 import { completeSetup } from './setup.ts';
 import { switchUsageMode, updateProfileIdentity } from './profile-lifecycle.ts';
 import { academicOf, academicPresence } from './academic.ts';
-import type { State, Profile, PersonId, ProfileRole, Course, Task, Event, Notice, Exception, Occurrence, Reminder, Command, Entity, SchedulePackage } from './types.ts';
+import type { State, Profile, PersonId, ProfileRole, Course, Task, Event, Notice, Exception, Occurrence, Reminder, Command, Entity, SchedulePackage, ImportProvenance, ImportSourceKind } from './types.ts';
 import type { RoutineProfile } from './routine.ts';
 export const DAY = 86400000;
 export function showPanelOnLaunch(openedAtLogin:boolean, setupComplete:boolean){return !openedAtLogin||!setupComplete;}
@@ -84,11 +84,42 @@ function date(v: unknown): v is string { return typeof v === 'string' && /^\d{4}
 function time(v: unknown): v is string { return typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v); }
 function stamp(v: unknown): v is string { return typeof v === 'string' && date(v.slice(0,10)) && v[10]==='T' && time(v.slice(11)); }
 function base(v: any) { assert(v && text(v.id, 100) && /^[\w-]+$/.test(v.id), '记录编号无效'); }
+const importSourceKinds: ImportSourceKind[]=['file','text','image','structured-file'];
+function jsonValue(v: unknown, max = 500000): boolean { try { const serialized=JSON.stringify(v); return typeof serialized==='string'&&serialized.length<=max; } catch { return false; } }
+function importMetadata(v: unknown): boolean {
+  if(v===undefined)return true;
+  if(!v||typeof v!=='object'||Array.isArray(v))return false;
+  const entries=Object.entries(v as Record<string,unknown>);
+  return entries.length<=50&&entries.every(([key,value])=>text(key,100)&&!/[\\/]path|path[\\/]|filepath|file-path/i.test(key)&&(
+    value===null||(typeof value==='string'&&text(value,2000)&&!(/^[A-Za-z]:[\\/]/.test(value)||value.startsWith('\\\\')))||
+    (typeof value==='number'&&Number.isFinite(value))||typeof value==='boolean'));
+}
+function importSource(v: any): asserts v is { id:string; kind:ImportSourceKind; label?:string; originalName?:string; createdAt:number; fingerprint?:string; metadata?:Record<string,string|number|boolean|null> } {
+  assert(v&&text(v.id,100)&&/^[\w-]+$/.test(v.id),'导入来源编号无效');
+  assert(importSourceKinds.includes(v.kind),'导入来源类型无效');
+  assert(Number.isFinite(v.createdAt),'导入来源时间无效');
+  assert(v.label===undefined||text(v.label,200),'导入来源标签无效');
+  assert(v.originalName===undefined||text(v.originalName,260),'导入来源名称无效');
+  assert(v.fingerprint===undefined||text(v.fingerprint,200)&&!/[\\/]/.test(v.fingerprint),'导入来源指纹无效');
+  assert(importMetadata(v.metadata),'导入来源元数据无效');
+}
+function importProvenance(v: unknown): asserts v is ImportProvenance {
+  if(v===undefined)return;
+  const p=v as any;
+  assert(p&&text(p.sessionId,100)&&/^[\w-]+$/.test(p.sessionId),'导入会话编号无效');
+  importSource(p.source);
+  assert(text(p.importer,100)&&/^[\w-]+$/.test(p.importer),'导入器编号无效');
+  assert(Number.isFinite(p.importedAt),'导入时间无效');
+  assert(typeof p.userEdited==='boolean','导入修改标记无效');
+  assert(Object.prototype.hasOwnProperty.call(p,'originalValue')&&jsonValue(p.originalValue),'原始导入值无效');
+  assert(Object.prototype.hasOwnProperty.call(p,'reviewedValue')&&jsonValue(p.reviewedValue),'确认导入值无效');
+}
 function common(v: any) {
   assert(text(v.title,200) && v.title.trim(), '请填写标题（最多 200 字）'); assert(text(v.notes), '备注无效');
   assert(Array.isArray(v.reminders) && v.reminders.length <= 10 && v.reminders.every((n: unknown)=>Number.isInteger(n) && Number(n)>=0 && Number(n)<=525600), '提醒提前量应为 0—525600 分钟');
   assert(Array.isArray(v.checklist) && v.checklist.length<=100 && v.checklist.every((c:any)=>c && text(c.id,100) && text(c.text,1000) && typeof c.done==='boolean'), '准备清单无效');
   assert(v.sourceId===undefined || (text(v.sourceId,100) && /^[\w-]+$/.test(v.sourceId)), '来源无效');
+  if(v.provenance!==undefined) importProvenance(v.provenance);
 }
 export function validate(entity: Entity, v: any, state: State) {
   base(v);
@@ -137,6 +168,7 @@ export function validate(entity: Entity, v: any, state: State) {
     assert(typeof v.cancelled==='boolean', '停课状态无效');
     assert(v.cancelled || (stamp(v.start)&&stamp(v.end)&&epoch(v.end)>epoch(v.start)), '调课起止时间无效');
     assert(v.place===undefined || text(v.place,300), '地点无效');
+    if(v.provenance!==undefined) importProvenance(v.provenance);
   } else throw new Error('未知记录类型');
 }
 export function occurrences(state: State, from: number, to: number, person?: string, options: {includeCancelled?:boolean} = {}): Occurrence[] {
@@ -153,14 +185,14 @@ export function occurrences(state: State, from: number, to: number, person?: str
       const d=addDays(calendar.startDate,(w-1)*7+c.weekday-1), ex=state.exceptions.find(e=>e.courseId===c.id&&e.date===d);
       if(ex?.cancelled && !options.includeCancelled) continue;
       const start=epoch(ex?.start || `${d}T${calendar.periods[c.first-1].start}`), end=epoch(ex?.end || `${d}T${calendar.periods[c.last-1].end}`);
-      if(start<to && end>from) result.push({id:`c:${c.id}:${d}`,target:`courses:${c.id}`,title:c.title,start,end,place:ex?.place??c.place,notes:c.notes,person:c.person,kind:'course',courseId:c.id,date:d,checklist:c.checklist,sourceId:ex?.sourceInboxItemId||c.sourceId,sourceInboxItemId:ex?.sourceInboxItemId,createdAt:c.createdAt??c.updatedAt,updatedAt:ex?.updatedAt??c.updatedAt,cancelled:!!ex?.cancelled,rescheduled:!!ex&&!ex.cancelled&&(ex.start!==undefined||ex.end!==undefined||ex.place!==undefined)});
+      if(start<to && end>from) result.push({id:`c:${c.id}:${d}`,target:`courses:${c.id}`,title:c.title,start,end,place:ex?.place??c.place,notes:c.notes,person:c.person,kind:'course',courseId:c.id,date:d,checklist:c.checklist,sourceId:ex?.sourceInboxItemId||c.sourceId,sourceInboxItemId:ex?.sourceInboxItemId,provenance:ex?.provenance??c.provenance,createdAt:c.createdAt??c.updatedAt,updatedAt:ex?.updatedAt??c.updatedAt,cancelled:!!ex?.cancelled,rescheduled:!!ex&&!ex.cancelled&&(ex.start!==undefined||ex.end!==undefined||ex.place!==undefined)});
     }
   }
   for(const e of state.events) {
     const owner=eventPerson(state,e);
     if(person&&owner!==person)continue;
     const start=epoch(e.start),end=e.end?epoch(e.end):start;
-    if(start<to&&(e.end?end>from:start>=from)) result.push({id:`e:${e.id}`,target:`events:${e.id}`,title:e.title,start,end,place:e.place,notes:e.notes,person:owner,kind:'event',checklist:e.checklist,sourceId:e.sourceId,sourceInboxItemId:e.sourceInboxItemId,createdAt:e.createdAt??e.updatedAt,updatedAt:e.updatedAt,endUnknown:!e.end});
+    if(start<to&&(e.end?end>from:start>=from)) result.push({id:`e:${e.id}`,target:`events:${e.id}`,title:e.title,start,end,place:e.place,notes:e.notes,person:owner,kind:'event',checklist:e.checklist,sourceId:e.sourceId,sourceInboxItemId:e.sourceInboxItemId,provenance:e.provenance,createdAt:e.createdAt??e.updatedAt,updatedAt:e.updatedAt,endUnknown:!e.end});
   }
   return result.sort((a,b)=>a.start-b.start || a.id.localeCompare(b.id));
 }
