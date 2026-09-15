@@ -1,9 +1,31 @@
-# YD v0.3 验收门禁
+# YD 发布验收门禁（跨版本）
 
-基线：分支 `v0.3-productization`，Phase 4 accepted，`DOMAIN_VERSION = 6`。
+基线：分支 `v0.3-productization`，Phase 5A，`DOMAIN_VERSION = 6`。
+（本文档原为 `docs/verification-v030.md`，从 Phase 5 起升级为跨版本的发布验收文档。）
 
 本文档只回答两个问题：**哪些验证必须全绿**、**哪些脚本只是历史考古**。
-它不是 Phase 4 报告，也不替代各 Phase 的设计记录。
+它不是阶段报告，也不替代各 Phase 的设计记录。
+
+## 0. Fresh Install Contract（Phase 5A）
+
+一台从来没有 YD 数据的电脑，第一次启动必须得到：
+
+| 维度 | 契约 |
+| --- | --- |
+| Mode | Solo（绝不默认 Together） |
+| Profiles | 恰好 1 个 `role = self`；没有 companion |
+| PersonId | 正式生成器（UUID），不是 legacy `me` / `partner` |
+| 身份 | 中性临时名「我」，不写死任何私人姓名或 Y / D |
+| Schedule / DailyException | 空 |
+| Todo / Event / Notice / Reminder | 空 |
+| ManualOverride | 空 → `CurrentState = idle` |
+| Routine | 空规则（`{source:'user',rules:[]}`）；「使用默认作息」是用户主动选择的 preset |
+| Avatar | 官方默认 Pack（`yd-default` / `default`） |
+| 校历 | 中性占位（本周周一 + 20 周 + 八节等长节次）+ `settings.setup=false`；真实校历留给 Phase 5B onboarding |
+| 第二次启动 | 复用同一个 PersonId，不重复建档案 |
+
+由 `verify-v050-generalization.cjs` 锁定：它用全新临时 userData 启动两次（源码级两个
+Electron 子进程；`--packaged` 时用 `release/win-unpacked/YD.exe` + CDP），并做私有哨兵扫描。
 
 ## 1. 当前维护的 release gate（必须全绿）
 
@@ -27,10 +49,17 @@
 | `npx electron verify-v030-avatar-runtime.cjs` | 热切换、版本化缓存、竞态、last-known-good |
 | `npx electron verify-v030-avatar-picker.cjs` | Picker / Preview / avatarSet / avatarReset / 重启持久化 |
 | `npx electron verify-v030-dock.cjs` | Dual Status Dock：结构 / label / hover / click / drag / 快速拖动 / 位置落盘与重启恢复（Solo 见 `runtime-audit-solo.cjs`） |
-| `node verify-v0220-packaged.cjs` | 打包版（`release/win-unpacked/YD.exe`）真实启动、Picker 热切换、冷启动持久化 |
+| `node verify-v050-generalization.cjs` | **Fresh Install Contract**：空 userData → 第一次启动（Solo / 单 self / 全空 / idle / UI 无 undefined）/ 第二次启动同一 PersonId；含私人哨兵扫描 |
+| `node verify-v0220-packaged.cjs` | 打包版（`release/win-unpacked/YD.exe`）真实启动、Picker 热切换、冷启动持久化（数据由 `tests/fixtures/v3-together-synthetic.sqlite` 显式种下） |
+| `node verify-v050-generalization.cjs --packaged` | 打包版清房验证（本轮手动跑一次即可，见 Phase 5A 报告） |
 
-`verify-v0220-packaged.cjs` 需要先 `npm run dist -- --config.electronDist=node_modules/electron/dist`
-生成打包产物；产物缺失时该步骤失败，不做静默跳过。
+两个 node 步骤都需要先 `npm run dist -- --config.electronDist=node_modules/electron/dist`
+生成打包产物；产物缺失时打包步骤失败，不做静默跳过。
+
+**数据种子的边界（Phase 5A）**：生产 fresh install 只有一个人，因此需要 Together 的门禁
+（runtime-audit、verify-v0220、verify-v030-*、Dock、VS2 Together、packaged 等）都在启动前
+把 `tests/fixtures/v3-together-synthetic.sqlite` 复制进各自的隔离 userData；
+Solo 门禁用 `v3-solo-synthetic.sqlite`。生产代码永远不会读取这些 fixture。
 
 ## 2. 辅助维护验证
 

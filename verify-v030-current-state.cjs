@@ -12,6 +12,8 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
 const output = path.join(__dirname, 'test-data', `v030-current-state-${Date.now()}`);
 fs.mkdirSync(output, { recursive: true });
 process.env.DAYHUB_TEST_DATA = output;
+// Phase 5A：双人语义由合成 fixture 显式种下，不再依赖生产 fresh default。
+require('./scripts/electron-test-profile.cjs').seedWorkspace(output, 'together');
 
 // 受控虚拟时钟：2027-03-01（周一）11:00，继续正常走动（与其它隔离验收同一套做法）。
 const realNow = Date.now.bind(Date);
@@ -162,7 +164,8 @@ app.whenReady().then(async () => {
     check('桌宠播放提醒姿态', pending?.display.state === 'reminder', JSON.stringify(pending?.display));
     check('提醒下的真实姿态仍是上课', pending?.display.base === 'busy_class', JSON.stringify(pending?.display));
     const reminderRows = await run("[...document.querySelectorAll('.dual-status .person-status')].map(e=>[e.querySelector('.person-status-label')?.textContent,e.querySelector('strong')?.textContent])");
-    check('提醒不改变首页状态文案', reminderRows.some(([who, text]) => who === 'Ta' && text === '上课中'), JSON.stringify(reminderRows));
+    // 首页状态行的称呼来自档案显示名（不是写死的「Ta」）。
+    check('提醒不改变首页状态文案', reminderRows.some(([who, text]) => who === classLive.people.find(p => p.person === 'partner').name && text === '上课中'), JSON.stringify(reminderRows));
     check('提醒不改变桌宠状态条', (await pet("[...document.querySelectorAll('.rail-chip')].map(e=>e.title)")).some(title => title === `${classAlias} · 上课`));
     await orb.webContents.executeJavaScript("window.dayhub.presence('enter','partner')");
     await wait(120);

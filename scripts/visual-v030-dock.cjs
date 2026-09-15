@@ -12,7 +12,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { configureIsolatedUserData } = require('./electron-test-profile.cjs');
+const { configureIsolatedUserData, seedWorkspace } = require('./electron-test-profile.cjs');
 
 const root = path.join(__dirname, '..');
 const output = path.join(root, 'test-data', 'v030-visual');
@@ -57,6 +57,7 @@ const check = (name, value, detail = '') => report.push({ name, ok: !!value, det
 
 async function boot(dataDir) {
   configureIsolatedUserData('v030-visual', dataDir);
+  if (!solo && !fs.existsSync(path.join(dataDir, 'dayhub.sqlite'))) seedWorkspace(dataDir, 'together');
   app.setAppPath(root);
   require(path.join(root, 'dist', 'main.cjs'));
   let panel, dock;

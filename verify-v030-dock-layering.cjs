@@ -15,7 +15,7 @@ const { execFileSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { configureIsolatedUserData } = require('./scripts/electron-test-profile.cjs');
+const { configureIsolatedUserData, seedWorkspace } = require('./scripts/electron-test-profile.cjs');
 
 const root = __dirname;
 const output = path.join(root, 'test-data', 'v030-dock-layering');
@@ -214,6 +214,8 @@ async function boot(dataDir) {
     };
   }
   configureIsolatedUserData('dock-layering', dataDir);
+  // Phase 5A：双人语义由合成 fixture 显式种下，不再依赖生产 fresh default。
+  if (!fs.existsSync(path.join(dataDir, 'dayhub.sqlite'))) seedWorkspace(dataDir, 'together');
   app.setAppPath(root);
   require('./dist/main.cjs');
   let panel, dock;

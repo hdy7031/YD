@@ -15,6 +15,8 @@ const shotsDir = path.join(outRoot, 'shots');
 const appData = path.join(root, 'test-data', 'ui-shots-' + Date.now());
 for (const dir of [outRoot, shotsDir, appData]) fs.mkdirSync(dir, { recursive: true });
 process.env.DAYHUB_TEST_DATA = appData;
+// Phase 5A：截图回路要的是双人合成工作区（生产 fresh install 现在是 Solo）。
+require('./scripts/electron-test-profile.cjs').seedWorkspace(appData, 'together');
 
 const scheduleFile = path.join(root, 'tests', 'fixtures', 'synthetic-schedule.json');
 const sourceImage = path.join(root, 'test-data', 'v0213-ocr.png');

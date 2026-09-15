@@ -8,6 +8,8 @@ const { buildSync } = require('esbuild');
 const output = path.join(__dirname, 'test-data', `v030-avatar-person-${Date.now()}`);
 fs.mkdirSync(output, { recursive: true });
 process.env.DAYHUB_TEST_DATA = output;
+// Phase 5A：双人语义由合成 fixture 显式种下，不再依赖生产 fresh default。
+require('./scripts/electron-test-profile.cjs').seedWorkspace(output, 'together');
 const bridge = path.join(output, 'avatar-person.cjs');
 buildSync({
   absWorkingDir: __dirname, bundle: true, platform: 'node', format: 'cjs', target: 'node22', outfile: bridge,

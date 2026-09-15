@@ -8,13 +8,15 @@ const { buildSync } = require('esbuild');
 const output = path.join(__dirname, 'test-data', `v030-avatar-runtime-${Date.now()}`);
 fs.mkdirSync(output, { recursive: true });
 process.env.DAYHUB_TEST_DATA = output;
+// Phase 5A：双人语义由合成 fixture 显式种下，不再依赖生产 fresh default。
+require('./scripts/electron-test-profile.cjs').seedWorkspace(output, 'together');
 const bridge = path.join(output, 'avatar-runtime.cjs');
 buildSync({
   absWorkingDir: __dirname, bundle: true, platform: 'node', format: 'cjs', target: 'node22', outfile: bridge,
   stdin: { resolveDir: __dirname, sourcefile: 'avatar-runtime-acceptance.ts', loader: 'ts', contents: `
     export { AvatarRuntime } from './src/avatar-runtime.ts';
     export { companionGeometry } from './src/companion-layout.ts';
-    export { initial, epoch } from './src/core.ts';
+    export { createFreshState, createCompanionProfile, epoch } from './src/core.ts';
     export { snapshot } from './src/live.ts';
     export { resolvePetState } from './src/companion-display.ts';
     export { stateLabel } from './src/state/presentation.ts';
@@ -103,8 +105,10 @@ app.whenReady().then(async () => {
     await failed.request('test-pack-a');
     check('decode failure 保留 last-known-good', (await failed.request('test-pack-b')).kind === 'failed' && failed.activeVisual.requestedPackId === 'test-pack-a');
 
-    const now = domain.epoch('2027-03-01T10:00'), synthetic = domain.initial(now);
-    const self = synthetic.profiles.find(profile => profile.role === 'self'), companion = synthetic.profiles.find(profile => profile.role === 'companion');
+    // fresh state 是 Solo；这里的双人场景由领域工厂显式加上同行者（用户主动添加的同一路径）。
+    const now = domain.epoch('2027-03-01T10:00'), synthetic = domain.createFreshState(now);
+    const self = synthetic.profiles.find(profile => profile.role === 'self'), companion = domain.createCompanionProfile(now, self);
+    synthetic.profiles = [self, companion];
     self.avatar = { packId: 'test-pack-a', source: 'user' }; companion.avatar = { packId: 'test-pack-b', source: 'user' };
     check('Together 最终 Pack 来自 companion', domain.snapshot(synthetic, now).petInstance.avatarPackId === 'test-pack-b');
     self.avatar = { packId: 'test-pack-c', source: 'user' };

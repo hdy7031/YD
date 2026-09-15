@@ -26,7 +26,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { configureIsolatedUserData } = require('./electron-test-profile.cjs');
+const { configureIsolatedUserData, seedWorkspace } = require('./electron-test-profile.cjs');
 
 const root = path.join(__dirname, '..');
 const output = path.join(root, 'test-data', 'vs2-visual');
@@ -395,10 +395,20 @@ async function dockDetailState(dock) {
 }
 
 async function clickDock(dock) {
+  // 单击有 220ms 去抖，且展开要走一次 IPC；这里轮询到状态真的变化再继续，
+  // 避免机器繁忙时把"慢"误判成"没打开"。
+  const view = () => dock.webContents.executeJavaScript("document.querySelector('.pet-dock')?.dataset.dockView ?? ''");
+  const before = await view();
   await dock.webContents.executeJavaScript(
     `document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('click', { bubbles: true }))`
   );
-  await wait(420);
+  for (let i = 0; i < 25; i++) {
+    await wait(100);
+    const now = await view();
+    if (now !== before) { await wait(180); return now; }
+  }
+  await wait(200);
+  return before;
 }
 
 // 悬浮区域必须用"当前工作区真实存在的 PersonId"：Solo fixture 的本人 id 不是 'me'，
@@ -589,7 +599,9 @@ async function checkSoloDock(dock, mini) {
 // 模式入口
 // ---------------------------------------------------------------------------
 async function runTogether(dataDir) {
-  configureIsolatedUserData('vs2-together', dataDir);
+  const togetherData = configureIsolatedUserData('vs2-together', dataDir);
+  // Phase 5A：生产 fresh install 是 Solo；双人视觉验收显式种下合成 fixture。
+  if (!fs.existsSync(path.join(togetherData, 'dayhub.sqlite'))) seedWorkspace(togetherData, 'together');
   useVirtualTermClock();
   app.setAppPath(root);
   require('../dist/main.cjs');

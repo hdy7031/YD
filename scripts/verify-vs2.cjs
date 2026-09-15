@@ -14,7 +14,7 @@
 //   node scripts/verify-vs2.cjs --skip-dock   # 只跑视觉与运行时（调试用）
 //
 // 已删除的历史脚本：scripts/visual-v022.cjs（旧悬浮球视觉）、scripts/ui-audit.cjs（刷新前
-// 的按钮走查）。两者已被本编排覆盖，见 docs/verification-v030.md。
+// 的按钮走查）。两者已被本编排覆盖，见 docs/verification-release.md。
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 

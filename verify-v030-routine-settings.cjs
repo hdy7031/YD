@@ -15,6 +15,8 @@ const output = path.join(__dirname, 'test-data', `v030-routine-settings-${Date.n
 fs.mkdirSync(output, { recursive: true });
 // 空目录：默认双人工作区（同行者 = 桌宠主体，初始为 legacy 默认作息）。
 process.env.DAYHUB_TEST_DATA = output;
+// Phase 5A：双人语义由合成 fixture 显式种下，不再依赖生产 fresh default。
+require('./scripts/electron-test-profile.cjs').seedWorkspace(output, 'together');
 
 // 受控虚拟时钟：2027-03-01（周一）13:15 —— 默认作息下桌宠正在午睡。
 const realNow = Date.now.bind(Date);

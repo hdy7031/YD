@@ -8,6 +8,8 @@ const output = path.join(root, 'test-data', 'v0217-visual-' + Date.now());
 fs.mkdirSync(output, { recursive: true });
 app.setAppPath(root);
 process.env.DAYHUB_TEST_DATA = output;
+// Phase 5A：这份视觉回归沿用双人合成工作区。
+require('./scripts/electron-test-profile.cjs').seedWorkspace(output, 'together');
 require('../dist/main.cjs');
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

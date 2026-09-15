@@ -22,7 +22,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { configureIsolatedUserData } = require('./scripts/electron-test-profile.cjs');
+const { configureIsolatedUserData, seedWorkspace } = require('./scripts/electron-test-profile.cjs');
 
 /**
  * 真实鼠标移动：SetCursorPos 只挪光标、不产生输入消息，而点击穿透窗口的
@@ -95,6 +95,8 @@ const DETAIL = { width: 468, height: 310 };
 
 async function boot(dataDir) {
   configureIsolatedUserData('dock', dataDir);
+  // Phase 5A：Dock 的双人语义来自显式种下的合成 fixture；重启子进程复用同一份数据。
+  if (!fs.existsSync(path.join(dataDir, 'dayhub.sqlite'))) seedWorkspace(dataDir, 'together');
   app.setAppPath(root);
   require('./dist/main.cjs');
   let panel, dock;

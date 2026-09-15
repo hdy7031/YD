@@ -8,13 +8,15 @@ const { buildSync } = require('esbuild');
 const output = path.join(__dirname, 'test-data', `v030-avatar-picker-${Date.now()}`);
 fs.mkdirSync(output, { recursive: true });
 process.env.DAYHUB_TEST_DATA = output;
+// Phase 5A：self / companion 两个 Picker 需要双人工作区，因此显式种 fixture。
+require('./scripts/electron-test-profile.cjs').seedWorkspace(output, 'together');
 const bridge = path.join(output, 'avatar-picker-domain.cjs');
 buildSync({
   absWorkingDir: __dirname, bundle: true, platform: 'node', format: 'cjs', target: 'node22', outfile: bridge,
   stdin: { resolveDir: __dirname, sourcefile: 'avatar-picker-domain.ts', loader: 'ts', contents: `
     export { listAvatarPacks, getAvatarPack, resolveAvatarFrame } from './src/avatar.ts';
     export { DOMAIN_VERSION } from './src/domain.ts';
-    export { initial } from './src/core.ts';
+    export { createFreshState } from './src/core.ts';
     export { snapshot } from './src/live.ts';
   ` },
 });
@@ -103,7 +105,7 @@ app.whenReady().then(async () => {
     panel.webContents.reload();
     await wait(1200);
     check('renderer 重载后持久选择仍在', (await run('window.dayhub.get()')).profiles.find(profile => profile.id === self.id).avatar.packId === 'yd-pixel');
-    const solo = domain.initial(Date.now());
+    const solo = domain.createFreshState(Date.now());
     const soloSelf = solo.profiles.find(profile => profile.role === 'self');
     solo.profiles = [soloSelf]; soloSelf.avatar = { packId: 'yd-pixel', source: 'user' };
     check('Solo runtime 主体与选择来自 self', domain.snapshot(solo, Date.now()).petInstance.subjectId === soloSelf.id && domain.snapshot(solo, Date.now()).petInstance.avatarPackId === 'yd-pixel');

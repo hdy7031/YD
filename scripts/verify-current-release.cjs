@@ -4,7 +4,7 @@
 // exit code is rewritten, and a green run never comes from a skipped assertion.
 // Any step that exits non-zero fails the whole run.
 //
-// See docs/verification-v030.md for what each gate covers and for the list of
+// See docs/verification-release.md for what each gate covers and for the list of
 // historical verifiers that are deliberately NOT part of this run.
 //
 // VS2 视觉 / 运行时门禁（scripts/visual-vs2.cjs + 两个 runtime audit + Dock）
@@ -63,7 +63,10 @@ const auxiliary = [
   electronStep(path.join('scripts', 'visual-mist.cjs')),
 ];
 
-const packaged = { name: 'verify-v0220-packaged.cjs', command: process.execPath, args: [path.join(root, 'verify-v0220-packaged.cjs')] };
+const nodeStep = (script) => ({ name: script, command: process.execPath, args: [path.join(root, script)] });
+// Phase 5A：全新安装契约（空 userData → 两次启动）。它自己管理子进程，因此用 node 运行。
+const freshInstall = nodeStep('verify-v050-generalization.cjs');
+const packaged = nodeStep('verify-v0220-packaged.cjs');
 
 if (!skipPackaged && !fs.existsSync(packagedExe)) {
   console.error('缺少打包产物 release/win-unpacked/YD.exe。');
@@ -71,7 +74,8 @@ if (!skipPackaged && !fs.existsSync(packagedExe)) {
   process.exit(1);
 }
 
-const steps = [...gates, ...(withAux ? auxiliary : []), ...(skipPackaged ? [] : [packaged])];
+// fresh install 契约是源码级的，即使 --skip-packaged 也照跑；打包版清房验证跟随打包产物。
+const steps = [...gates, ...(withAux ? auxiliary : []), freshInstall, ...(skipPackaged ? [] : [packaged])];
 const results = [];
 
 console.log(`YD v0.3 release gates · ${steps.length} 个步骤${withAux ? '（含辅助验证）' : ''}${skipPackaged ? '（跳过打包版验证）' : ''}`);

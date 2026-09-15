@@ -5,6 +5,8 @@ const {app,BrowserWindow}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const output=path.join(__dirname,'test-data',`v0220-pet-${Date.now()}`);fs.mkdirSync(output,{recursive:true});
 process.env.DAYHUB_TEST_DATA=output;
+// Phase 5A：生产 fresh install 只有一个人；这个门禁要的是"双人工作区"，因此显式种 fixture。
+require('./scripts/electron-test-profile.cjs').seedWorkspace(output,'together');
 const passed=[],errors=[];
 const check=(name,value,detail='')=>{assert.ok(value,`${name}${detail?': '+detail:''}`);passed.push(name);};
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));

@@ -14,6 +14,8 @@ const rawDir=path.join(outRoot,'shots-transparent');
 const appData=path.join(root,'test-data','ui-catalog-'+Date.now());
 for(const dir of [outRoot,shotsDir,rawDir,appData])fs.mkdirSync(dir,{recursive:true});
 process.env.DAYHUB_TEST_DATA=appData;
+// Phase 5A：目录截图回路同样显式种下双人合成工作区。
+require('./scripts/electron-test-profile.cjs').seedWorkspace(appData,'together');
 
 const scheduleFile=path.join(root,'tests','fixtures','synthetic-schedule.json');
 const sourceImage=path.join(root,'test-data','v0213-ocr.png');

@@ -13,6 +13,8 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
 const output = path.join(__dirname, 'test-data', `v030-manual-status-${Date.now()}`);
 fs.mkdirSync(output, { recursive: true });
 process.env.DAYHUB_TEST_DATA = output;
+// Phase 5A：双人语义由合成 fixture 显式种下，不再依赖生产 fresh default。
+require('./scripts/electron-test-profile.cjs').seedWorkspace(output, 'together');
 
 // 受控虚拟时钟：2027-03-01（周一）11:20，学期内（默认双人工作区）。
 const realNow = Date.now.bind(Date);

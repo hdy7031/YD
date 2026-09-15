@@ -16,6 +16,9 @@ const exe = path.join(root, 'release', 'win-unpacked', 'YD.exe');
 const output = path.join(root, 'test-data', 'v0220-packaged-' + Date.now());
 const port = 9336;
 fs.mkdirSync(output, { recursive: true });
+// Phase 5A：打包版验收要的是"已有双人数据 + Avatar 选择"的既有用户，因此显式种 fixture；
+// 真正"全新安装"的清房验证由 verify-v050-generalization.cjs --packaged 负责。
+require('./scripts/electron-test-profile.cjs').seedWorkspace(output, 'together');
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const waitFor = async (session, expression, expected, tries = 60) => {

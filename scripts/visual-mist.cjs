@@ -7,8 +7,10 @@ const root = path.join(__dirname, '..');
 const output = path.join(root, 'test-data', 'visual-mist-' + Date.now());
 fs.mkdirSync(output, { recursive: true });
 app.setAppPath(root);
-const { configureIsolatedUserData } = require('./electron-test-profile.cjs');
+const { configureIsolatedUserData, seedWorkspace } = require('./electron-test-profile.cjs');
 const userData = configureIsolatedUserData('visual-mist');
+// Phase 5A：主窗口视觉回归用双人合成工作区（不再依赖生产 fresh default）。
+if (!fs.existsSync(path.join(userData, 'dayhub.sqlite'))) seedWorkspace(userData, 'together');
 require('../dist/main.cjs');
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 

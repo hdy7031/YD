@@ -1,9 +1,11 @@
 // Isolated integration test: never connects to the user's app data.
-const {app,BrowserWindow,Menu}=require('electron');
+const {app,BrowserWindow,Menu,screen}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const output=path.join(__dirname,'test-data','v02-runtime-'+Date.now());fs.mkdirSync(output,{recursive:true});
-const {configureIsolatedUserData}=require('./scripts/electron-test-profile.cjs');
+const {configureIsolatedUserData,seedWorkspace}=require('./scripts/electron-test-profile.cjs');
 const userData=configureIsolatedUserData('runtime-together');
+// Phase 5A：生产 fresh install 是 Solo；这份 Together 审计显式种下合成 fixture。
+seedWorkspace(userData,'together');
 require('./dist/main.cjs');
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const report=[];
@@ -100,6 +102,9 @@ app.whenReady().then(async()=>{
   // 画布 = 牌面（宽度由内容决定，见上）+ 8px 阴影画布；中档牌面高 56 → 窗口高 64。
   check('状态浮标窗口为随内容定宽的圆角状态牌',Math.abs(beforeDrag.height-64)<=2&&beforeDrag.width>=dockBox.width+8-3&&beforeDrag.width>beforeDrag.height,JSON.stringify({width:beforeDrag.width,height:beforeDrag.height,plateWidth:dockBox.width}));
   const pointer={x:beforeDrag.x+Math.round(beforeDrag.width/2),y:beforeDrag.y+Math.round(beforeDrag.height/2)};
+  // 真实鼠标如果在拖动期间被移动（人工操作或系统抖动），产品会按设计改用系统光标增量，
+  // 窗口就可能朝任意方向走。这里记录光标是否移动过：没动时必须朝拖动的方向（向左）。
+  const cursorBefore=screen.getCursorScreenPoint();
   await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(30);
   await orb.webContents.executeJavaScript(`window.dayhub.beginDrag(${pointer.x},${pointer.y})`);
   await wait(30);check('CASE 3 开始拖动立即隐藏tooltip',!tip.isVisible());
@@ -110,7 +115,10 @@ app.whenReady().then(async()=>{
   await wait(30);check('CASE 5/6 松开后不继承旧tooltip',!tip.isVisible());
   // 0.2.16：拖动路径改成 setPosition + 系统光标锚点，Windows 仍会把窗口对齐到
   // 物理像素（150% 下偶发 ±1px），因此尺寸允许 2px 误差，位置必须真的移动。
-  const afterDrag=orb.getBounds();console.log('drag bounds',{beforeDrag,afterDrag});check('拖动只改变位置且不拉伸窗口',Math.abs(afterDrag.width-beforeDrag.width)<=2&&Math.abs(afterDrag.height-beforeDrag.height)<=2&&afterDrag.x<beforeDrag.x);
+  const afterDrag=orb.getBounds(),cursorAfter=screen.getCursorScreenPoint();
+  const cursorMoved=Math.abs(cursorAfter.x-cursorBefore.x)+Math.abs(cursorAfter.y-cursorBefore.y)>=4;
+  console.log('drag bounds',{beforeDrag,afterDrag,cursorMoved});
+  check('拖动只改变位置且不拉伸窗口',Math.abs(afterDrag.width-beforeDrag.width)<=2&&Math.abs(afterDrag.height-beforeDrag.height)<=2&&(cursorMoved?afterDrag.x!==beforeDrag.x:afterDrag.x<beforeDrag.x));
   await orb.webContents.executeJavaScript("window.dayhub.presence('enter','partner')");await wait(30);check('拖动结束后的新 hover 可正常内部展开',!tip.isVisible()&&await orb.webContents.executeJavaScript("document.querySelector('.person.is-hovered')?.dataset.person==='partner'"));await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");
   for(let i=0;i<3;i++){await orb.webContents.executeJavaScript(`window.dayhub.beginDrag(${afterDrag.x+51},${afterDrag.y+51})`);await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await orb.webContents.executeJavaScript("window.dayhub.endDrag()");}
   await wait(30);check('CASE 7/9 快速连续拖动无幽灵tooltip',!tip.isVisible());

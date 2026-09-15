@@ -13,6 +13,8 @@ const output = path.join(__dirname, 'test-data', `v030-routine-pet-${Date.now()}
 fs.mkdirSync(output, { recursive: true });
 // 空目录：应用按默认双人工作区启动（同行者 = 桌宠主体，初始为 legacy 默认作息）。
 process.env.DAYHUB_TEST_DATA = output;
+// Phase 5A：同行者与其默认作息由合成 fixture 显式种下，不再依赖生产 fresh default。
+require('./scripts/electron-test-profile.cjs').seedWorkspace(output, 'together');
 
 // 受控虚拟时钟：平移 2027-03-01（周一）02:00 并继续走动。
 const realNow = Date.now.bind(Date);
