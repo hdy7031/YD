@@ -137,6 +137,14 @@ Do not add full-repository searches, architecture reviews, unrelated verifiers, 
 
 Save tokens through precise reading, less repetition, and less unrelated verification, not by skipping necessary code understanding.
 
+### Communication and Monitorable Progress
+
+- Communicate in Chinese by default when the user is writing in Chinese. Keep file paths, commands, identifiers, commit messages, and raw logs unchanged.
+- For non-trivial work, provide a concise monitorable progress trail: current goal, key evidence or inspection result, decision rationale summary, next action, verification result, and blockers when present.
+- Prefer short rationale summaries and concrete evidence over hidden reasoning or verbose narration. Do not dump raw internal chain-of-thought.
+- Use commentary updates while work is in progress for long tasks; do not wait until the final answer.
+- Keep the final report in Chinese unless the user requests another language, and keep it aligned with the report format above.
+
 ## Architecture and Domain Rules
 
 Keep business rules deterministic, pure, and testable; do not mix UI rendering, IPC, storage, time calculation, and state selection in one module. Extend the existing domain model rather than creating a parallel state system.
