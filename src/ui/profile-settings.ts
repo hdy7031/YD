@@ -127,7 +127,8 @@ function ProfileIdentityDialog({profile,isSelf,busy,error,close,submit}:{profile
     h('label',{className:'field'},h('span',null,'称呼'),
       h('input',{type:'text',maxLength:40,'aria-label':'称呼','data-profile-name-input':'true',value:name,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>setName(e.target.value)})),
     h('label',{className:'field'},h('span',null,'桌面短代号'),
-      h('input',{type:'text',maxLength:8,'aria-label':'桌面短代号','data-profile-alias-input':'true',value:alias,placeholder:'留空则用称呼的第一个字',onChange:(e:React.ChangeEvent<HTMLInputElement>)=>setAlias(e.target.value)})),
+      // 留空 = 用派生规则（小宇 → 宇），不写死一个新值；填了就用用户自己的（1—8 字）。
+      h('input',{type:'text',maxLength:8,'aria-label':'桌面短代号','data-profile-alias-input':'true',value:alias,placeholder:'留空则按称呼派生',onChange:(e:React.ChangeEvent<HTMLInputElement>)=>setAlias(e.target.value)})),
     error?h('p',{className:'error','data-profile-error':'true',role:'alert'},error):null,
     h('div',{className:'modal-foot'},
       h('button',{type:'button',className:'ghost','data-profile-cancel':'true',disabled:busy,onClick:close},'取消'),
