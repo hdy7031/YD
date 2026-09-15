@@ -14,7 +14,7 @@ import {iconForCurrent,iconForNext,iconSrc} from './state-icons.ts';
 import {petRoutineSummary,type CompanionDisplay} from '../companion-display.ts';
 import {createDefaultRoutine,routineKindPriority,type RoutineRule} from '../routine.ts';
 import {EmptyState} from './views.ts';
-import {getCompanionProfile,getProfileById,petSubjectRoleOf,resolvePetSubject} from '../people.ts';
+import {activeCompanionProfile,activeProfiles,getProfileById,isTogether,petSubjectRoleOf,resolvePetSubject} from '../people.ts';
 import {id} from '../core.ts';
 import {
   routineDaysText,routineDefaultLabelFor,routineDraft,routineDraftError,routineForRules,routineIsEmpty,
@@ -490,11 +490,12 @@ const errorText=(e:unknown)=>e instanceof Error?e.message.replace(/^Error invoki
 // 日常节奏（每个档案自己的 Routine）。所有写入都走 Command → core apply → validate → Store：
 // 这里只准备"下一份规则数组"，绝不直接改 State。
 function RoutineSettings({state,busy,onError}:{state:State;busy:boolean;onError:(message:string)=>void}){
-  const options=routinePersonOptions(state.profiles);
+  // 日常节奏只编辑**当前活跃人物**：Solo（即使保留着 companion）只有本人这一条。
+  const options=routinePersonOptions(activeProfiles(state));
   const subject=resolvePetSubject(state);
   const [selected,setSelected]=useState<PersonId|undefined>(undefined);
   const person=options.some(option=>option.id===selected)?selected!:subject.id;
-  const profile:Profile|undefined=getProfileById(state,person)??state.profiles[0];
+  const profile:Profile|undefined=getProfileById(state,person)??activeProfiles(state)[0];
   const routine=profile?.routine;
   const rules=routine?.rules??[];
   const [draft,setDraft]=useState<RoutineRuleDraft|null>(null);
@@ -632,7 +633,8 @@ function AvatarPersonPicker({profile,busy,run}:{profile:Profile;busy:boolean;run
 }
 
 function AvatarSettings({state,busy,run}:{state:State;busy:boolean;run:(fn:()=>Promise<unknown>)=>Promise<unknown>}){
-  return h('div',{className:'avatar-settings'},...state.profiles.map(profile=>h(AvatarPersonPicker,{key:profile.id,profile,busy,run})));
+  // 形象永远属于某个人；只列出当前活跃人物（Solo 没有第二个形象区，5A 契约不变）。
+  return h('div',{className:'avatar-settings'},...activeProfiles(state).map(profile=>h(AvatarPersonPicker,{key:profile.id,profile,busy,run})));
 }
 
 export type PetSettingsSection='companionship'|'rhythm'|'runtime';
@@ -653,9 +655,9 @@ export function PetSettings({live,settings,state,section='companionship'}:{live:
   // 三档尺寸也是"设置值选择"：与「桌宠表示」用同一套独立 Chip 语言，不再用黏连 segmented。
   const sizeChoices=h('div',{className:'choice-chips','data-pet-size':'true',role:'radiogroup','aria-label':p.mode==='custom'?'角色大小':'Dock 大小'},
     ...(['small','medium','large'] as const).map((value,index)=>h('button',{key:value,type:'button',role:'radio','aria-checked':p.size===value,'data-pet-size-option':value,className:p.size===value?'choice-chip choice-chip-compact active':'choice-chip choice-chip-compact',disabled:busy,onClick:()=>save({size:value})},['小','中','大'][index])));
-  const together=(state?.profiles.length??1)>1;
+  const together=state?isTogether(state):false;
   // Phase 5B1：桌宠主体是长期偏好（不是身份）。Solo 没有歧义，因此不给选择器。
-  const companionProfile=state?getCompanionProfile(state):undefined;
+  const companionProfile=state?activeCompanionProfile(state):undefined;
   const subjectRole=state?petSubjectRoleOf(state):'self';
   const petEnabled=state?state.settings.petEnabled!==false:true;
   // 两个独立的轻量选择 Chip（不是黏在一起的 segmented control）：这是"二选一"，不是按钮组。

@@ -1,12 +1,13 @@
 import { migrateInbox, receive, confirmDraft } from './inbox.ts';
 import { validDraft } from './inbox-types.ts';
 import { DOMAIN_VERSION, stateDomainVersion } from './domain.ts';
-import { getCompanionProfile, isPetSubjectRole, isProfileRole, isSelfId, requireSelfProfile, roleCounts } from './people.ts';
+import { getCompanionProfile, isPetSubjectRole, isProfileRole, isSelfId, isUsageMode, requireSelfProfile, roleCounts, usageModeOf } from './people.ts';
 import { assertRoutineProfile, emptyRoutine } from './routine.ts';
 import { MANUAL_LABEL_LIMIT, MANUAL_OVERRIDE_LIMIT, assertManualOverride, isManualStateKind, pruneManualOverrides } from './state/manual.ts';
 import { assertAvatarSelection, resetAvatarPack, setAvatarPack } from './avatar-selection.ts';
 import { DEFAULT_AVATAR_PACK_ID } from './avatar.ts';
 import { completeSetup } from './setup.ts';
+import { switchUsageMode, updateProfileIdentity } from './profile-lifecycle.ts';
 import type { State, Profile, PersonId, ProfileRole, Course, Task, Event, Notice, Exception, Occurrence, Reminder, Command, Entity, SchedulePackage } from './types.ts';
 import type { RoutineProfile } from './routine.ts';
 export const DAY = 86400000;
@@ -65,15 +66,17 @@ export function createFreshState(now = Date.now()): State {
     courses: [], exceptions: [], events: [], tasks: [], notices: [], reminders: [], manualOverrides: [],
     // Phase 5B1：fresh install 不静默创建桌面悬浮物 —— 桌宠要用户显式选择才出现；
     // petSubjectRole 只是合法默认值（Solo 没有歧义，恒为本人）。
+    // Phase 5B2 的使用方式同理：没有 companion 的工作区天生就是 Solo，
+    // 只有用户真的做过 Together→Solo 切换时才需要写 settings.usageMode。
     settings: { domainVersion: DOMAIN_VERSION, launch: false, setup: false, petEnabled: false, petSubjectRole: 'self' },
     lastTick: now,
   };
 }
 /**
- * 用户主动添加同行者时的表单初值（界面「添加陪伴对象」用）。
+ * 用户第一次打开双人模式时（Phase 5B2 的「我和另一位」）由领域层调用的工厂。
  *
- * 它只是模板：真实写入仍然走 `{type:'save',entity:'profiles'}`，不绕过 Registry / validate。
- * 名称与代号都是中性占位，用户在同一个表单里改成自己的。
+ * 它只是模板：真实写入仍然走 `usageMode` 命令 → validateState；
+ * 名称由用户在同一个流程里填写，代号继续由显示规则派生。
  */
 export function createCompanionProfile(now: number, self: Profile): Profile {
   return {
@@ -313,6 +316,12 @@ export function apply(state: State, cmd: Command, now=Date.now()): State {
     // Phase 5B1：首次使用的唯一写入路径。draft 只活在 UI 内存里，
     // 完成时一次性提交（含 companion 创建与 Avatar），失败则整份克隆被丢弃。
     completeSetup(s,cmd.value,now);
+  }else if(cmd.type==='usageMode'){
+    // Phase 5B2：Together ↔ Solo 是可逆的运行方式切换，绝不删除 companion 数据。
+    switchUsageMode(s,cmd,now);
+  }else if(cmd.type==='profileIdentity'){
+    // Phase 5B2：档案身份（name / shortAlias）的唯一编辑路径；PersonId 与 role 不可改。
+    updateProfileIdentity(s,cmd,now);
   }else throw new Error('不支持的操作');
   return migrateInbox(s);
 }
@@ -326,6 +335,11 @@ export function validateState(value: unknown): State {
   const roles=roleCounts(s.profiles);
   assert(roles.self===1,'工作区必须且只能有一个本人档案');
   assert(roles.companion<=1,'同行者最多只能有一个');
+  // Phase 5B2：使用方式与档案清单解耦。Solo 允许保留一个 inactive companion
+  // （它不是"第二个当前使用的人"，只是被停用的资料），Together 才要求它存在。
+  const storedUsageMode=(s.settings as {usageMode?:unknown}|undefined)?.usageMode;
+  if(storedUsageMode!==undefined)assert(isUsageMode(storedUsageMode),'使用方式设置无效');
+  if(usageModeOf(s)==='together')assert(roles.companion===1,'双人模式需要且只能有一个陪伴对象');
   // v2 数据必须显式带 role；v1 旧备份仍按 角色→历史 id→数组位置 兼容解析。
   if(stateDomainVersion(s)>=2)for(const p of s.profiles)assert(isProfileRole(p.role),'个人档案缺少角色，请重新迁移或从备份恢复');
   // v3 起会议必须归属某个档案；更早的数据由 eventPerson() 回退到本人。

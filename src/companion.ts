@@ -7,6 +7,7 @@ import { companionDock, companionGeometry, detailGeometry, dockDetail, dockDetai
 import { DEFAULT_AVATAR_PACK_ID, resolveAvatarPack } from './avatar.ts';
 import type { AvatarVisualReady } from './avatar-runtime.ts';
 import { resolvePetInstance } from './pet-instance.ts';
+import { activeProfiles } from './people.ts';
 import { logError } from './logging.ts';
 import type { Store } from './store.ts';
 import type { PersonId } from './types.ts';
@@ -37,7 +38,7 @@ export class Companion {
     // 就会叠成明显的黑框（详情面板与提醒气泡都属于这一层）。这里统一关掉原生阴影，
     // 阴影只由 renderer 的 CSS 在窗口内绘制。
     this.bubble=new BrowserWindow({...options,width:330,height:180,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false,hasShadow:false,roundedCorners:false});
-    const soloMini=this.store.state.profiles.length<=1;
+    const soloMini=activeProfiles(this.store.state).length<=1;
     // 详情浮层是 Dock 的 owner window（parent: orb）：它永远跟着 Dock 的 z-order，
     // 不会变成第二个无主透明窗口去和桌面上的浏览器抢层级。
     const detail=detailGeometry(soloMini?1:2);
@@ -111,7 +112,8 @@ export class Companion {
     // companion-layout 的契约；桌宠仍是固定画布。
     const mode=p.mode==='orb'?'orb':'custom';
     const pack=resolveAvatarPack(this.activeAvatar.resolvedPackId);
-    const people=this.store.state.profiles.length;
+    // Dock / 详情的人数取**当前活跃人物**：Solo 下保留的 companion 不参与几何。
+    const people=activeProfiles(this.store.state).length;
     // Hover/pointer state must never participate in outer-window geometry.
     const {width,height}=companionGeometry(mode,p.size,pack.canvas.width/pack.canvas.height,people,false,this.dockMeasure);
     return {width,height};
@@ -149,7 +151,7 @@ export class Companion {
   private detailOpen(){return this.dockMode()?this.dockDetail:!this.mini.isDestroyed()&&this.mini.isVisible();}
   private dockPlate(){
     const preferences={...petDefaults,...this.store.state.settings.pet};
-    const people=Math.max(1,this.store.state.profiles.length);
+    const people=Math.max(1,activeProfiles(this.store.state).length);
     const surface=dockSurfaceMetrics(preferences.size,people,this.dockMeasure);
     return {surface,people,preferences};
   }
@@ -210,7 +212,7 @@ export class Companion {
   private resizeMini(){
     // 详情浮层是轻量 popover：窗口 = 卡片 + 8px 阴影画布。
     //   Together 316×152 / Solo 276×136（Solo 是独立配比，不是砍掉半边）
-    const solo=this.store.state.profiles.length<=1;
+    const solo=activeProfiles(this.store.state).length<=1;
     const {width,height}=detailGeometry(solo?1:2);
     if(this.mini.getSize()[0]!==width||this.mini.getSize()[1]!==height){
       this.mini.setResizable(true);

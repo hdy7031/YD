@@ -42,7 +42,7 @@ test('Solo：完成首次使用只改身份，不重新创建本人 PersonId', (
   assert.equal(self.id, before.id, '本人身份就是 5A 启动时生成的稳定 PersonId');
   assert.equal(self.name, '小宇', '名称前后空白被 trim');
   assert.equal(self.shortAlias, undefined, 'shortAlias 继续由显示规则派生，onboarding 不强迫用户填写');
-  assert.equal(profileAlias(self, 0), '小');
+  assert.equal(profileAlias(self, 0), '宇', '「小」只是称呼前缀，短代号取后面的字素');
   assert.deepEqual(self.avatar, { packId: DEFAULT_AVATAR_PACK_ID, source: 'default' }, '没动过的默认卡片不算用户选择');
   assert.deepEqual([next.courses, next.tasks, next.events, next.notices, next.reminders], [[], [], [], [], []], '完成 onboarding 不 seed 任何业务数据');
   assert.equal(self.routine?.rules.length, 0, '不 seed 作息');
@@ -222,7 +222,7 @@ test('显示代号：跟随新名字重新派生，用户自己设置过的代�
   auto.profiles[0].shortAlias = '我';
   const renamed = complete(auto, input({ selfName: '小宇', mode: 'solo' }));
   assert.equal(getSelfProfile(renamed)!.shortAlias, undefined);
-  assert.equal(profileAlias(getSelfProfile(renamed)!, 0), '小');
+  assert.equal(profileAlias(getSelfProfile(renamed)!, 0), '宇');
   // 用户显式设置的代号（历史 Y / D）属于用户数据：改名也不动它。
   const explicit = fresh();
   explicit.profiles[0].shortAlias = 'D';

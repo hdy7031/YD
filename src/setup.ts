@@ -145,6 +145,9 @@ export function completeSetup(state: State, input: unknown, now: number): void {
   // 它只影响"桌宠消费谁的 CurrentState + Avatar"，不修改任何 Person。
   state.settings.petEnabled = petEnabled;
   state.settings.petSubjectRole = draft.mode === 'solo' ? 'self' : draft.petSubjectRole ?? 'companion';
+  // Phase 5B2：首次使用不需要显式写 settings.usageMode —— Together 刚创建了 companion、
+  // Solo 分支在上面拒绝了"带着既有 companion 选 Solo"，因此档案事实与使用方式天然一致
+  // （people.ts 的推导规则给出的就是这里选择的模式）。
   state.settings.setup = true;
 }
 

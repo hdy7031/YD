@@ -1,7 +1,7 @@
 import { pendingReminders } from './selectors.ts';
 import { occurrences, epoch, dateOf, DAY } from './core.ts';
 import { companionDisplay, type CompanionDisplay } from './companion-display.ts';
-import { defaultAliasFor, effectiveRole, personAlias, profileAlias } from './people.ts';
+import { activeProfiles, defaultAliasFor, effectiveRole, personAlias, profileAlias } from './people.ts';
 import { resolvePetInstance, type PetInstance } from './pet-instance.ts';
 import { getCurrentState, getRoutineState, STATE_SOURCE_PRIORITY } from './state/engine.ts';
 import { buildPersonStatusPresentation, stateLabel, stateTone, type PersonStatusPresentation } from './state/presentation.ts';
@@ -111,6 +111,15 @@ export interface DockDetailPlacement {
   below:boolean;
 }
 export interface LiveSnapshot { now:number; source:string; people:PersonStatus[]; pending:number; preferences:PetPreferences; display:CompanionDisplay; petInstance:PetInstance; /** Compatibility projection of petInstance.subjectId. */ subject:PersonId; /** 详情浮层当前是否打开：Dock 用它决定 collapsed / detail 状态（Dock 模式下详情与状态牌是同一个窗口）。 */ detail:boolean; /** 详情打开时状态牌 / 卡片的画布内偏移；Dock 模式才出现。 */ detailFrame?:DockDetailPlacement; bubble?:{id:string;text:string;below?:boolean}; hoverTip?:{person:PersonId;text:string;state:PresenceState}; }
+/**
+ * `live.people` 的语义：**当前活跃人物**，不是"数据库里的全部档案"。
+ *
+ *   Solo（含保留了 inactive companion 的情况）→ 只有本人
+ *   Together                                  → 本人 + 同行者
+ *
+ * 活跃边界由 people.ts 的 activeProfiles 判定（唯一的 mode 判断点），首页 / Dock /
+ * Mini / Tip / Tray 都不需要自己看 mode，也不会因为"保留了一个 companion"就误判成双人。
+ */
 export const clockText=(n:number)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(n);
 export function activity(s:State,o:Occurrence){return o.kind==='event'?'会议/活动':s.courses.find(c=>c.id===o.courseId)?.activity==='research'?'教研':'上课';}
 export function personStatus(s:State,now:number,person:PersonId):PersonStatus {
@@ -148,9 +157,9 @@ export function personPresentation(status:PersonStatus):PersonStatusPresentation
   });
 }
 export function snapshot(s:State,now:number,display?:{reminderSince?:number;nudgeId?:number}):LiveSnapshot{
-  // 按工作区实际档案投影：1 人 1 条、2 人 2 条；顺序取 profiles 的显示顺序，
-  // 身份语义来自 role，而不是固定的 me / partner。
-  const people=s.profiles.map(profile=>personStatus(s,now,profile.id)),pending=pendingReminders(s).length;
+  // 按当前**活跃人物**投影：Solo 1 条、Together 2 条；顺序取 profiles 的显示顺序，
+  // 身份语义来自 role 而不是固定的 me / partner，是否活跃来自 mode 而不是档案数量。
+  const people=activeProfiles(s).map(profile=>personStatus(s,now,profile.id)),pending=pendingReminders(s).length;
   const preferences={...petDefaults,...s.settings.pet};
   const petInstance=resolvePetInstance(s);
   // 桌宠姿态完全由统一状态引擎 + 显示层叠加得出：这里不再有独立的时间表、

@@ -11,6 +11,7 @@ import initSqlJs from 'sql.js';
 import { Companion } from './companion.ts';
 import { resolveCompanionAssets } from './companion-assets.ts';
 import { resolvePetInstance } from './pet-instance.ts';
+import { activeProfiles } from './people.ts';
 import { companionGeometry } from './companion-layout.ts';
 import { companionToggleShortcut } from './companion-menu.ts';
 import { migrateLive, petDefaults, snapshot, statusLabel } from './live.ts';
@@ -549,7 +550,8 @@ else{
     const companionAssets=resolveCompanionAssets(__dirname,initialPet.avatarPackId);
     runtimeLog('info',`桌宠素材 ${companionAssets.reason}`);
     Menu.setApplicationMenu(null);
-    const initial=companionGeometry(store.state.settings.pet?.mode??'custom','medium',companionAssets.aspect,store.state.profiles.length,false);
+    // 首帧画布按**当前活跃人物**算：Solo 下保留的 companion 不影响 Dock / 桌宠尺寸。
+    const initial=companionGeometry(store.state.settings.pet?.mode??'custom','medium',companionAssets.aspect,activeProfiles(store.state).length,false);
     // 首次启动（没有保存位置）落在右下角：用当前模式的真实画布尺寸留 24px 边距，
     // 这样 Dock（很扁）与桌宠（较高）都不会把窗口放在工作区之外。
     // 位置还原：新数据带窗口尺寸 → 按牌面右下角锚点换算成当前尺寸下的左上角，

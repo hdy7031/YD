@@ -105,12 +105,17 @@ test('课表导入按工作区现有档案校验人员：自定义 id 可导入�
   assert.equal(Object.keys(workspace.profiles).some(key => !/^\d+$/.test(key)), false);
 });
 
-test('显示代号派生：显式 shortAlias 优先，否则取名称首字素，无名称时按角色兜底', () => {
+test('显示代号派生：显式 shortAlias 优先，否则取名称首字素（称呼前缀除外），无名称时按角色兜底', () => {
   // 合成档案的 name 默认等于 id。
   assert.equal(profileAlias(profile('alex', 'self')), 'a');
   assert.equal(profileAlias(profile('Sam', 'companion')), 'S');
   // 中文 / emoji / 代理对 / ZWJ 序列都取"第一个字素"，不会像 name[0] 那样被切开。
-  assert.equal(profileAlias(profile('p', 'self', '阿丽')), '阿');
+  // 「小 / 老 / 阿」这类称呼前缀不携带身份信息，因此跳过它（Phase 5B2 细化的显示规则）。
+  assert.equal(profileAlias(profile('p', 'self', '阿丽')), '丽');
+  assert.equal(profileAlias(profile('p', 'self', '小宇')), '宇');
+  assert.equal(profileAlias(profile('p', 'self', '老王')), '王');
+  assert.equal(profileAlias(profile('p', 'self', '小')), '小', '只有前缀本身时仍然是它自己');
+  assert.equal(profileAlias(profile('p', 'self', '小🌟')), '🌟');
   assert.equal(profileAlias(profile('p', 'self', '🌟星')), '🌟');
   assert.equal(profileAlias(profile('p', 'self', '👨‍👩‍👧 一家')), '👨‍👩‍👧');
   // 显式 shortAlias 永远优先：既有用户已经持久化的 Y / D 一字不改。

@@ -1,10 +1,13 @@
 // 界面外壳的人员视图模型。
 //
-// 导航、「所属课表」选项、课程所属文案都从实际 profiles 派生：
-// Solo 只有本人页，Together 才有同行者页；不存在"点进去是空白"的固定 Ta 页。
-// 这里只做纯派生，方便在 Solo / Together 两种数据下单独测试。
-import { effectiveRole, getCompanionProfile } from '../people.ts';
+// 导航、「所属课表」选项、课程所属文案都从**当前活跃人物**派生：
+// Solo 只有本人页（即使数据库里保留着一个 inactive companion），Together 才有同行者页；
+// 不存在"点进去是空白"的固定 Ta 页。活跃边界来自 people.ts 的 activeProfiles，
+// 这里只做纯派生，方便在 Solo / Together / retained companion 三种数据下单独测试。
+import { activeCompanionProfile, activeProfiles, effectiveRole } from '../people.ts';
 import type { PersonId, Profile, State } from '../types.ts';
+
+type PeopleState = Pick<State, 'profiles'> & { settings?: State['settings'] };
 
 export type TabKind = 'today' | 'person' | 'courses' | 'tasks' | 'inbox' | 'reminders' | 'settings';
 export interface ShellTab { key: string; kind: TabKind; label: string; personId?: PersonId }
@@ -39,14 +42,16 @@ export function profileLabelFor(state: Pick<State, 'profiles'>, personId?: Perso
   return index < 0 ? personId : courseTableLabel(state.profiles[index], index);
 }
 
-export function personOptions(state: Pick<State, 'profiles'>): { value: PersonId; label: string }[] {
-  return state.profiles.map((profile, index) => ({ value: profile.id, label: courseTableLabel(profile, index) }));
+/** 「所属课表」等人员选项也只列当前活跃人物：Solo 下不会出现被停用的 companion。 */
+export function personOptions(state: PeopleState): { value: PersonId; label: string }[] {
+  const active = activeProfiles(state);
+  return active.map((profile, index) => ({ value: profile.id, label: courseTableLabel(profile, index) }));
 }
 
-/** 导航：本人页永远存在，同行者页只在同行者存在时出现。 */
-export function shellTabs(state: Pick<State, 'profiles'>): ShellTab[] {
+/** 导航：本人页永远存在，同行者页只在**当前使用方式为双人**且同行者存在时出现。 */
+export function shellTabs(state: PeopleState): ShellTab[] {
   const tabs: ShellTab[] = [{ key: 'today', kind: 'today', label: '我的安排' }];
-  const companion = getCompanionProfile(state);
+  const companion = activeCompanionProfile(state);
   if (companion) tabs.push({ key: companion.id, kind: 'person', label: `${companionDisplayName(companion)}的安排`, personId: companion.id });
   tabs.push(
     { key: 'courses', kind: 'courses', label: '课表管理' },

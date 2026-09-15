@@ -59,24 +59,73 @@ export type PetSubjectRole = 'self' | 'companion';
 export const isPetSubjectRole = (value: unknown): value is PetSubjectRole => value === PROFILE_SELF || value === PROFILE_COMPANION;
 
 /**
+ * 工作区使用方式（Phase 5B2）。
+ *
+ *   solo     —— 当前只使用本人作为活跃人物界面；
+ *   together —— 本人 + 同行者当前都参与产品体验。
+ *
+ * **模式切换不是删除人物**：`solo` 允许数据库里继续保存一个 inactive companion
+ * （档案 / PersonId / 课表 / 作息 / Avatar / 其它 person-scoped 数据全部保留），
+ * 所以这个字段是"运行方式偏好"，不是档案清单。
+ *
+ * 它随其它呈现偏好一起存放在 `settings.usageMode`；没有该字段的安装（旧库、
+ * 构造出来的测试状态、v1 备份）不需要迁移，直接按档案事实推导：
+ * 有 companion → Together，只有本人 → Solo。
+ */
+export type UsageMode = 'solo' | 'together';
+
+export const isUsageMode = (value: unknown): value is UsageMode => value === 'solo' || value === 'together';
+
+/** 使用方式的**唯一**解析层：显式持久化优先，旧数据按档案事实推导。 */
+export function usageModeOf(state: Pick<State, 'profiles'> & { settings?: State['settings'] }): UsageMode {
+  const raw = (state.settings as { usageMode?: unknown } | undefined)?.usageMode;
+  if (isUsageMode(raw)) return raw;
+  return getCompanionProfile(state) ? 'together' : 'solo';
+}
+
+export const isTogether = (state: Pick<State, 'profiles'> & { settings?: State['settings'] }): boolean => usageModeOf(state) === 'together';
+
+/**
+ * 当前**活跃人物**（导航 / 首页 / Dock / 桌宠 / 人员选项共用的唯一投影）：
+ *
+ *   Solo     → 只有本人（即使数据库里保留着一个 inactive companion）
+ *   Together → 全部档案（保持 profiles 的显示顺序）
+ *
+ * UI 不许自己写 `if (mode === 'solo')`：活跃边界只在这里判定。
+ */
+export function activeProfiles(state: Pick<State, 'profiles'> & { settings?: State['settings'] }): Profile[] {
+  if (usageModeOf(state) === 'together') return state.profiles;
+  const self = getSelfProfile(state);
+  return self ? [self] : [];
+}
+
+/** 当前活跃的同行者：Solo 下保留的 companion **不算**活跃人物。 */
+export function activeCompanionProfile(state: Pick<State, 'profiles'> & { settings?: State['settings'] }): Profile | undefined {
+  return isTogether(state) ? getCompanionProfile(state) : undefined;
+}
+
+/**
  * 读取桌宠主体偏好。没有该字段的安装（未迁移的旧库、构造出来的测试状态）
  * 沿用 0.2.x 的视觉行为：有同行者 → 同行者，Solo → 本人。
+ *
+ * 注意这是**存储的偏好**，不是"此刻生效的主体"：切到 Solo 时它原样保留
+ * （代表用户在 Together 下的选择），运行时由 resolvePetSubject 判定。
  */
 export function petSubjectRoleOf(state: Pick<State, 'profiles'> & { settings?: State['settings'] }): PetSubjectRole {
   const raw = (state.settings as { petSubjectRole?: unknown } | undefined)?.petSubjectRole;
   if (isPetSubjectRole(raw)) return raw;
-  return getCompanionProfile(state) ? PROFILE_COMPANION : PROFILE_SELF;
+  return isTogether(state) && getCompanionProfile(state) ? PROFILE_COMPANION : PROFILE_SELF;
 }
 
 /**
  * 桌宠代表谁 —— 当前桌宠主体的**唯一**解析层（其它模块不得各自推导）。
  *
- *   Solo              → 一定是本人（Solo 没有第二个 Person，也没有歧义）
+ *   Solo              → 一定是本人（即使数据库里保留了 companion：Solo 下桌宠没有第二个主体）
  *   Together          → settings.petSubjectRole 对应的 Person
  *   目标 Person 不存在 → 安全回落到本人（legacy / 损坏数据也不崩）
  */
 export function resolvePetSubject(state: Pick<State, 'profiles'> & { settings?: State['settings'] }): Profile {
-  if (petSubjectRoleOf(state) === PROFILE_COMPANION) {
+  if (isTogether(state) && petSubjectRoleOf(state) === PROFILE_COMPANION) {
     const companion = getCompanionProfile(state);
     if (companion) return companion;
   }
@@ -87,26 +136,49 @@ export function resolvePetSubject(state: Pick<State, 'profiles'> & { settings?: 
  * 显示代号派生（Phase 5A 泛化）：
  *
  *   1. 用户显式设置过 shortAlias → 用它（既有用户已持久化的 Y / D 一字不改）；
- *   2. 否则取显示名称的第一个字素（中文 / 英文 / emoji / 代理对都不会被切坏）；
+ *   2. 否则取显示名称的第一个"有身份信息"的字素（见 aliasSeedFromName）；
  *   3. 名称为空 → 本人「我」、同行者「TA」。
  *
  * Y / D 不再是系统身份机制；它只是"用户自己存过这两个字母"时的合法取值。
  */
-export function firstVisibleGrapheme(value?: string): string {
+// 常见称呼前缀：它们只表示亲近或年龄（小宇 / 老王 / 阿丁），不是身份信息，
+// 因此不能占用桌面短代号 —— 否则 Dock 与状态行上会出现一个毫无区分度的小字。
+const ADDRESS_PREFIXES = new Set(['小', '老', '阿']);
+
+/** 按 Unicode 字素切分：中文 / 英文 / emoji / 代理对 / ZWJ 序列都不会被切坏。 */
+export function graphemes(value?: string): string[] {
   const text = (value ?? '').trim();
-  if (!text) return '';
+  if (!text) return [];
   const constructor = (Intl as unknown as { Segmenter?: new (locale?: string, options?: { granularity: string }) => { segment(input: string): Iterable<{ segment: string }> } }).Segmenter;
   if (constructor) {
     const segmenter = new constructor('zh-CN', { granularity: 'grapheme' });
-    for (const part of segmenter.segment(text)) return part.segment;
-    return '';
+    return [...segmenter.segment(text)].map(part => part.segment);
   }
   // 兜底：按码位取第一个字素，绝不用 name[0]（会切开代理对 / emoji）。
-  return Array.from(text)[0] ?? '';
+  return Array.from(text);
+}
+
+export function firstVisibleGrapheme(value?: string): string {
+  return graphemes(value)[0] ?? '';
+}
+
+/**
+ * 派生短代号的种子字素（Phase 5B2 细化的显示规则）：
+ *
+ *   '小宇' → '宇'      '老张' → '张'      '阿丁' → '丁'
+ *   '丹丹' → '丹'      '小'   → '小'      'Alex' → 'A'      '👨‍👩‍👧 家' → '👨‍👩‍👧'
+ *
+ * 只有"前缀 + 至少一个字素"时才跳过前缀：单个「小」仍然是它自己。
+ * 这条规则只影响**派生显示代号**，不改写用户显式保存过的 shortAlias。
+ */
+export function aliasSeedFromName(value?: string): string {
+  const parts = graphemes(value);
+  if (parts.length >= 2 && ADDRESS_PREFIXES.has(parts[0])) return parts[1];
+  return parts[0] ?? '';
 }
 
 export function defaultAliasFor(profile: Pick<Profile, 'id' | 'role'> & { name?: string }, index = 0): string {
-  const derived = firstVisibleGrapheme(profile.name);
+  const derived = aliasSeedFromName(profile.name);
   if (derived) return derived;
   return effectiveRole(profile, index) === PROFILE_COMPANION ? 'TA' : '我';
 }
