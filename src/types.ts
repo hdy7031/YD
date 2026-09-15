@@ -126,6 +126,8 @@ export interface DesktopAPI {
   chooseSchedule(): Promise<SchedulePackage | null>;
   chooseICS(): Promise<import('./import/ics.ts').ICSFileSelection | null>;
   commitICSImport(session: import('./import/ics.ts').ICSImportSession): Promise<{ state: State; committedCandidateIds: string[] }>;
+  chooseTabular(): Promise<import('./import/tabular.ts').TabularFileSelection | null>;
+  commitTabularImport(session: import('./import/tabular.ts').TabularImportSession): Promise<{ state: State; committedCandidateIds: string[] }>;
   importImage(): Promise<{ image: string } | null>; importImageBytes(bytes: Uint8Array): Promise<{ image: string }>; pasteImage(): Promise<{ image: string } | null>;
   image(id: string): Promise<string>; ocr(id: string): Promise<string>;
   backup(): Promise<string | null>; restore(): Promise<State | null>; testNotification(): Promise<string>;

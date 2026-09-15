@@ -23,6 +23,7 @@
     "dist": "npm run build && npm run assets:check && electron-builder --win nsis --x64"
   },
   "dependencies": {
+    "exceljs": "4.4.0",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

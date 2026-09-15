@@ -2905,6 +2905,64 @@ body.main-body .settings-nav button.active::before { top:auto; right:0; bottom:-
   .ics-candidate-list { max-height:calc(100vh - 390px); }
 }
 
+/* Phase 6B2 · structured tabular import. Reuses the ICS review surfaces and
+   keeps setup/mapping controls compact; this is not a new navigation surface. */
+.tabular-import-modal { width:min(980px,calc(100vw - 36px)); }
+.tabular-import-meta { margin-bottom:12px; }
+.tabular-step { display:grid; gap:14px; min-height:180px; }
+.tabular-section-head { display:grid; gap:3px; }
+.tabular-section-head h3 { margin:0; color:var(--yd-ink); font-size:13px; font-weight:620; }
+.tabular-section-head p { margin:0; }
+.tabular-choice-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.tabular-choice { display:grid; gap:4px; padding:13px 14px; text-align:left; border:1px solid var(--yd-line); border-radius:10px; color:var(--yd-ink-2); background:var(--yd-surface-2); cursor:pointer; }
+.tabular-choice:hover,.tabular-choice.active { border-color:rgba(79,119,115,.42); background:rgba(237,246,243,.8); }
+.tabular-choice strong { color:var(--yd-ink); font-size:13px; }
+.tabular-choice span { color:var(--yd-faint); font-size:11.5px; }
+.tabular-target-select { width:min(360px,100%); }
+.tabular-academic-note { margin:0; }
+.tabular-step-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:auto; padding-top:8px; }
+.tabular-sheet-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; max-height:360px; overflow:auto; }
+.tabular-sheet-card { display:grid; gap:4px; min-width:0; padding:12px 13px; text-align:left; border:1px solid var(--yd-line); border-radius:10px; color:var(--yd-ink-2); background:var(--yd-surface-2); cursor:pointer; }
+.tabular-sheet-card:hover,.tabular-sheet-card.active { border-color:rgba(79,119,115,.42); background:rgba(237,246,243,.8); }
+.tabular-sheet-card strong { overflow:hidden; color:var(--yd-ink); font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
+.tabular-sheet-card span,.tabular-sheet-card small { color:var(--yd-faint); font-size:11px; }
+.tabular-mapping-step { min-height:0; }
+.tabular-mapping-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.tabular-mapping-toolbar label { display:flex; align-items:center; gap:8px; color:var(--yd-ink-2); font-size:12px; }
+.tabular-preview-wrap { max-height:230px; overflow:auto; border:1px solid var(--yd-line); border-radius:9px; background:var(--yd-surface-2); }
+.tabular-preview { width:100%; min-width:620px; border-collapse:collapse; font-size:11px; }
+.tabular-preview th,.tabular-preview td { max-width:190px; padding:7px 9px; overflow:hidden; border-bottom:1px solid rgba(120,132,127,.12); text-align:left; text-overflow:ellipsis; white-space:nowrap; }
+.tabular-preview th { position:sticky; top:0; z-index:1; color:var(--yd-faint); font-size:10.5px; font-weight:600; background:var(--yd-surface-2); }
+.tabular-preview tbody th { position:static; color:var(--yd-faint); font-variant-numeric:tabular-nums; }
+.tabular-preview-wrap > p { margin:7px 10px 9px; }
+.tabular-mapping-head { margin-top:1px; }
+.tabular-mapping-list { display:grid; gap:6px; max-height:280px; overflow:auto; padding:1px 2px; }
+.tabular-mapping-row { display:grid; grid-template-columns:minmax(0,1fr) 190px; align-items:center; gap:12px; padding:8px 9px; border:1px solid rgba(120,132,127,.14); border-radius:8px; background:var(--yd-surface-2); }
+.tabular-mapping-source { display:grid; min-width:0; gap:2px; }
+.tabular-mapping-source strong { overflow:hidden; color:var(--yd-ink-2); font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
+.tabular-mapping-source small { overflow:hidden; color:var(--yd-faint); font-size:10.5px; text-overflow:ellipsis; white-space:nowrap; }
+.tabular-candidate-list { max-height:calc(100vh - 440px); }
+.tabular-candidate { display:grid; grid-template-columns:24px minmax(0,1fr); gap:10px; padding:12px 13px; border:1px solid var(--yd-line); border-radius:10px; background:var(--yd-surface-2); }
+.tabular-candidate.is-selected { border-color:rgba(79,119,115,.34); }
+.tabular-candidate.has-error { border-color:rgba(177,99,88,.35); background:rgba(252,246,243,.72); }
+.tabular-warning-tag { display:inline-flex; align-items:center; padding:2px 6px; border-radius:999px; color:#97733d; background:rgba(248,239,218,.85); font-size:10px; }
+.tabular-row-ref { margin:5px 0 0; color:var(--yd-faint); font-size:10.5px; }
+.tabular-edit-button { margin-top:5px; }
+.tabular-edit-panel { display:grid; gap:10px; padding:12px 13px; border:1px solid rgba(79,119,115,.28); border-radius:10px; background:rgba(237,246,243,.55); }
+.tabular-edit-head { display:flex; justify-content:space-between; gap:12px; }
+.tabular-edit-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px 12px; }
+.tabular-edit-field { display:grid; gap:4px; color:var(--yd-faint); font-size:10.5px; }
+.tabular-edit-field input,.tabular-edit-field select,.tabular-edit-field textarea { width:100%; box-sizing:border-box; }
+.tabular-edit-field:last-child { grid-column:1 / -1; }
+
+@media (max-width:720px) {
+  .tabular-choice-grid,.tabular-sheet-list { grid-template-columns:1fr; }
+  .tabular-mapping-toolbar { align-items:flex-start; flex-direction:column; }
+  .tabular-mapping-row { grid-template-columns:1fr; gap:7px; }
+  .tabular-edit-grid { grid-template-columns:1fr; }
+  .tabular-candidate-list { max-height:calc(100vh - 500px); }
+}
+
 /* 窗口不高时把桌宠卡片再收矮一档：双人选择也能一眼看到「开始使用 YD」。 */
 @media (max-height:760px) {
   .setup-panel { padding:22px 26px 20px; gap:14px; }
