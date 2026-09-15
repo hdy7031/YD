@@ -591,7 +591,6 @@ async function runSourcePhase(kind, dataDir) {
       const run = (code) => panel.webContents.executeJavaScript(code);
       const pet = (code) => dock.webContents.executeJavaScript(code);
       const driver = domHelpers(run, pet);
-      driver.orbVisible = () => dock.isVisible();
       await runPhase(kind, driver, dataDir);
     } catch (error) {
       failures.push(`${kind} 阶段异常：${error && error.message ? error.message : error}`);
