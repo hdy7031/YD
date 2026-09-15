@@ -28,9 +28,15 @@ test('DailyPlan: 一天的事项按时间排序，数量与时间范围只来自
   assert.deepEqual(plan.items.map(item => item.start), [...plan.items.map(item => item.start)].sort((a, b) => a - b));
   assert.equal(plan.firstStart, Math.min(...plan.items.map(item => item.start)));
   assert.equal(plan.lastEnd, Math.max(...plan.items.map(item => item.end)));
-  assert.equal(plan.rangeText, `${new Date(plan.firstStart! + 8 * 3600000).toISOString().slice(11, 16)} — ${new Date(plan.lastEnd! + 8 * 3600000).toISOString().slice(11, 16)}`);
+  // 摘要只报范围本身（en dash，无前后空格）：09:50–17:30。
+  assert.equal(plan.rangeText, `${new Date(plan.firstStart! + 8 * 3600000).toISOString().slice(11, 16)}–${new Date(plan.lastEnd! + 8 * 3600000).toISOString().slice(11, 16)}`);
   assert.equal(plan.date, '2027-02-23');
   assert.equal(plan.dayStart, dayStart);
+  // 课程行必须带上 courseId：列表行靠它回查课程实体（否则会退化成"会议 / 活动"）。
+  const course = plan.items.find(item => item.kind === 'course');
+  assert.ok(course?.courseId, '课程事项带 courseId');
+  assert.ok(state.courses.some(entry => entry.id === course!.courseId), 'courseId 指向真实课程');
+  assert.notEqual(course!.id, course!.courseId, 'occurrence id 与 course id 不是同一个东西');
 });
 
 test('DailyPlan: Self 与 Companion 共用同一契约，同一时间带定位', () => {

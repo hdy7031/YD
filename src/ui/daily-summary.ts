@@ -53,7 +53,8 @@ export function DailySummary({ plan, heading, unit, countPrefix = '今天', rang
     h(DailyTimeline, { plan }),
     h('div', { className: 'daily-summary-foot' },
       plan.rangeText
-        ? h('span', { className: 'daily-summary-range' }, `${rangeLabel} ${plan.rangeText}`)
+        // 有标签才带标签；不传标签时只显示范围本身（09:50–17:30）。
+        ? h('span', { className: 'daily-summary-range' }, rangeLabel ? `${rangeLabel} ${plan.rangeText}` : plan.rangeText)
         : h('span', { className: 'daily-summary-range' }, emptyRangeText),
       h('span', { className: 'daily-summary-next' }, dailyNextText(plan))));
 }

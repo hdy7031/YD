@@ -313,7 +313,16 @@ function App(){
   function cardSource(sourceId?:string){return sourceId?b('查看来源',()=>{const n=s.notices.find(n=>n.id===sourceId);if(n)open('notices',n);},'text-button'):null;}
   function checklist(entity:Entity,item:any){return item.checklist?.length?h('div',{className:'checklist'},...item.checklist.map((c:ChecklistItem)=>h('div',{key:c.id,className:'check-row'},h('label',null,h('input',{type:'checkbox',checked:c.done,disabled:pending,onChange:()=>change({type:'save',entity,value:{...item,checklist:item.checklist.map((x:ChecklistItem)=>x.id===c.id?{...x,done:!x.done}:x)}})}),h('span',{className:c.done?'done':''},c.text)),b('单独提醒',()=>open('tasks',{...newValue('tasks',activePerson,selfId),title:c.text,notes:`准备事项，来自：${item.title}`,sourceId:item.sourceId}),'text-button')))):null;}
   // 一天安排的查找辅助：Self / Companion 共用，只读取已存在的实体。
-  const courseFor=(item:DailyAgendaItem)=>item.kind==='course'?s.courses.find(c=>c.id===item.id):undefined;
+  // occurrence.id 是 `c:<courseId>:<date>`，不是 course.id：课程必须用投影出来的 courseId
+  // 回查（旧数据没有前缀时退回 item.id）。以前直接拿 item.id 比较，真实课程在列表里会
+  // 退化成事件——显示"会议 / 活动"、没有编辑课程入口。这里只修呈现层解析，不动数据。
+  const courseIdOf=(item:DailyAgendaItem):string|undefined=>{
+    if(item.courseId)return item.courseId;
+    if(item.kind!=='course')return undefined;
+    const match=/^c:(.+):\d{4}-\d{2}-\d{2}$/.exec(item.id);
+    return match?match[1]:item.id;
+  };
+  const courseFor=(item:DailyAgendaItem)=>{const courseId=courseIdOf(item);return courseId?s.courses.find(c=>c.id===courseId):undefined;};
   const eventFor=(item:DailyAgendaItem)=>item.kind==='event'?s.events.find(e=>item.id===`events:${e.id}`):undefined;
   // 统一安排行：Self 与 Companion 用同一套结构（左侧时间 + 标题 + 地点/类型 + 状态 + ⋯）。
   // 状态文案来自 dailyItemState（只描述事项时间关系），人物状态仍只来自 CurrentState。
@@ -329,7 +338,14 @@ function App(){
     return h('article',{key:item.id,className:`daily-agenda-row tone-${item.tone}${isCurrent?' current':''}${isPast?' past':''}${item.cancelled?' cancelled':''}`},
       h('div',{className:'daily-agenda-time'},h('strong',null,fmt(item.start)),h('span',{className:'daily-agenda-bar','aria-hidden':true}),h('small',null,item.endUnknown?'—':fmt(item.end))),
       h('div',{className:'daily-agenda-main'},h('h3',null,item.title),
-        h('div',{className:'daily-agenda-meta'},h('span',{className:'daily-agenda-place'},item.place||'地点未填写'),course?h('span',{className:'daily-agenda-kind'},course.activity==='research'?'教研':'授课'):h('span',{className:'daily-agenda-kind'},'会议 / 活动'),conflictIds.has(item.id)?h('span',{className:'warning'},'时间冲突'):null,item.notes?h('span',{className:'daily-agenda-note'},item.notes):null),
+        // 日常列表行只保留"时间 + 名称 + 可选地点 + 状态"：
+        //   * 没有地点就不占位（不再显示"地点未填写"）；
+        //   * 课程不再显示"授课"这类无信息量的类型标签（只有"教研"是真的区分）；
+        //   * provenance（依据哪张课表图片录入 / 暂按 20 教学周…）属于详情层，不上列表。
+        h('div',{className:'daily-agenda-meta'},
+          item.place?h('span',{className:'daily-agenda-place'},item.place):null,
+          course?(course.activity==='research'?h('span',{className:'daily-agenda-kind'},'教研'):null):h('span',{className:'daily-agenda-kind'},'会议 / 活动'),
+          conflictIds.has(item.id)?h('span',{className:'warning'},'时间冲突'):null),
         options.checklistOwner?checklist(entity,options.checklistOwner):null),
       h('div',{className:'daily-agenda-actions'},state?h('span',{className:'daily-agenda-state'},state):null,
         menu?h('details',{className:'action-menu'},h('summary',{'aria-label':`${item.title}的更多操作`},'⋯'),h('div',{className:'action-menu-pop'},menu,cardSource(course?.sourceId||event?.sourceId))):null));
@@ -344,7 +360,7 @@ function App(){
   const selfPlan=dailyPlanFrom({dayStart,occurrences:all.filter(o=>o.person===selfId),courses:s.courses,now});
   const companionPlan=companion?dailyPlanFrom({dayStart,occurrences:companionRows,courses:s.courses,now}):null;
   // 首页/TA 页面共用同一行渲染：本人行的清单仍可勾选，同行者行只读。
-  const selfItemOwner=(item:DailyAgendaItem)=>item.kind==='course'?s.courses.find(c=>c.id===item.id):s.events.find(e=>item.id===`events:${e.id}`);
+  const selfItemOwner=(item:DailyAgendaItem)=>{const courseId=courseIdOf(item);return courseId?s.courses.find(c=>c.id===courseId):s.events.find(e=>item.id===`events:${e.id}`);};
   const activeIds=new Set(active.map(c=>c.id));
   const exceptionList=s.exceptions.filter(e=>activeIds.has(e.courseId)).sort((a,b)=>b.date.localeCompare(a.date)||b.updatedAt-a.updatedAt);
   const focusSchedule=()=>{const el=document.querySelector('.schedule-scroll');if(!el)return;el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.add('schedule-highlight');window.setTimeout(()=>el.classList.remove('schedule-highlight'),1600);};
@@ -379,9 +395,10 @@ function App(){
         attention.total?h('section',{className:'attention-panel'},h('div',{className:'attention-title'},h('div',null,h('div',{className:'eyebrow'},'需要处理'),h('h2',null,`需要处理 ${attention.total}`))),h('div',{className:'attention-items'},attention.notices?b(`${attention.notices} 条通知待核对`,()=>setTab('inbox'),'attention-link'):null,attention.reminders?b(`${attention.reminders} 个提醒已到时间`,()=>setTab('reminders'),'attention-link'):null,attention.overdue?b(`${attention.overdue} 个待办已逾期`,()=>setTab('tasks'),'attention-link'):null)):null,
         h('div',{className:'home-grid'},
           h('div',{className:'home-primary'},
-            h('section',{className:'focus-strip'},h('div',{className:'focus-copy'},h('div',{className:'eyebrow icon-eyebrow'},uiIcon(Clock3),'接下来'),h('h2',null,next?.title||'今天没有后续安排'),h('p',null,next?`${fmt(next.start,true)} · ${next.place||'地点未填写'}`:'今天没有课程或会议')),h('div',{className:'focus-detail'},next?h('span',null,until(now,next.start)):h('span',null,'今天无更多安排'),current&&current.kind!=='idle'?h('small',null,`正在进行：${current.label}${current.endAt?` · ${fmt(current.endAt)} 结束`:''}`):null)),
+            h('section',{className:'focus-strip'},h('div',{className:'focus-copy'},h('div',{className:'eyebrow icon-eyebrow'},uiIcon(Clock3),'接下来'),h('h2',null,next?.title||'今天没有后续安排'),h('p',null,next?`${fmt(next.start,true)}${next.place?` · ${next.place}`:''}`:'今天没有课程或会议')),h('div',{className:'focus-detail'},next?h('span',null,until(now,next.start)):h('span',null,'今天无更多安排'),current&&current.kind!=='idle'?h('small',null,`正在进行：${current.label}${current.endAt?` · ${fmt(current.endAt)} 结束`:''}`):null)),
             h('section',{className:'panel daily-panel'},
-              h(DailySummary,{plan:selfPlan,heading:selectedIsToday?'今日日程':'当日日程',unit:'项安排',countPrefix:selectedIsToday?'今天':'这天',rangeLabel:'时间范围',emptyRangeText:'当天没有需要占用的时间段',icon:uiIcon(CalendarDays,'section-icon'),
+              // 摘要里"时间范围"这四个字是标签噪音：范围本身就是范围（09:50–17:30）。
+              h(DailySummary,{plan:selfPlan,heading:selectedIsToday?'今日日程':'当日日程',unit:'项安排',countPrefix:selectedIsToday?'今天':'这天',rangeLabel:'',emptyRangeText:'当天没有需要占用的时间段',icon:uiIcon(CalendarDays,'section-icon'),
                 actions:h('input',{'aria-label':'查看日期',type:'date',value:selectedDate,onChange:(e:any)=>{if(e.target.value)setDate(e.target.value);}})}),
               selfPlan.items.length
                 ?h(DailyAgendaList,{plan:selfPlan,renderItem:(item:DailyAgendaItem)=>agendaRow(item,{checklistOwner:selfItemOwner(item)})})
@@ -390,7 +407,7 @@ function App(){
         h('div',{className:'daily-plan'},
           h(PartnerStatusCard,{status:companionStatus,updatedAt:companion.updatedAt,now}),
           h('section',{className:'panel daily-panel'},
-            h(DailySummary,{plan:companionPlan,heading:'今日安排',unit:'节课',countPrefix:selectedIsToday?'今天':'这天',rangeLabel:'第一项 · 最后一项',emptyRangeText:hasCompanionSchedule?'今天没有课程占用时间段':'还没有录入课表',icon:uiIcon(CalendarClock,'section-icon'),
+            h(DailySummary,{plan:companionPlan,heading:'今日安排',unit:'节课',countPrefix:selectedIsToday?'今天':'这天',rangeLabel:'',emptyRangeText:hasCompanionSchedule?'今天没有课程占用时间段':'还没有录入课表',icon:uiIcon(CalendarClock,'section-icon'),
               actions:h('input',{'aria-label':`查看 ${companionDisplayName(companion)} 的日期`,type:'date',value:selectedDate,onChange:(e:any)=>{if(e.target.value)setDate(e.target.value);}})}),
             companionPlan.items.length
               ?h(DailyAgendaList,{plan:companionPlan,renderItem:(item:DailyAgendaItem)=>agendaRow(item)})

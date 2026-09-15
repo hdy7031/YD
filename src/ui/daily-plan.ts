@@ -31,6 +31,13 @@ export interface DailyPlan {
 export interface DailyAgendaItem {
   id: string;
   kind: 'course' | 'event';
+  /**
+   * kind === 'course' 时的课程 id。
+   *
+   * `id` 是 occurrence 的稳定标识（课程是 `c:<courseId>:<date>`），**不等于** course.id；
+   * 列表行必须用这个字段回查课程实体，否则语义（授课 / 教研 / 编辑入口）会退化成事件。
+   */
+  courseId?: string;
   title: string;
   place: string;
   notes: string;
@@ -80,6 +87,7 @@ export function dailyPlanFrom({ dayStart, occurrences, courses, now }: DailyPlan
       return {
         id: occurrence.id,
         kind: occurrence.kind,
+        ...(occurrence.courseId === undefined ? {} : { courseId: occurrence.courseId }),
         title: occurrence.title,
         place: occurrence.place,
         notes: occurrence.notes,
@@ -104,7 +112,8 @@ export function dailyPlanFrom({ dayStart, occurrences, courses, now }: DailyPlan
     items,
     ...(firstStart === undefined ? {} : { firstStart }),
     ...(lastEnd === undefined ? {} : { lastEnd }),
-    ...(firstStart === undefined || lastEnd === undefined ? {} : { rangeText: `${clockText(firstStart)} — ${clockText(lastEnd)}` }),
+    // 摘要只报时间范围本身：`09:50–17:30`（en dash，无前后空格）。
+    ...(firstStart === undefined || lastEnd === undefined ? {} : { rangeText: `${clockText(firstStart)}–${clockText(lastEnd)}` }),
     ...(next === undefined ? {} : { next }),
   };
 }
