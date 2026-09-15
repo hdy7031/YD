@@ -153,8 +153,19 @@ class Session {
     // 「专属角色桌宠 / 玻璃悬浮球」；先在默认的「角色与陪伴」分区检查。
     const settingsText = await panel.eval("document.querySelector('.pet-settings').textContent");
     check('打包版设置页不再提供小猫桌宠', !settingsText.includes('小猫') && settingsText.includes('角色陪伴') && settingsText.includes('状态 Dock'), settingsText.slice(0, 160));
-    // 素材说明是用户语言（缺帧时说明用待机动作代替），不允许工程说法。
-    check('打包版设置页说明仍是用户语言', /(会根据当前状态自动切换动作|动作素材缺失，暂用待机动作代替)/.test(await panel.eval("document.querySelector('.pet-settings').textContent")) && !/已接入|第一版|开发中|fixture/.test(await panel.eval("document.querySelector('.page-settings').textContent")));
+    // 素材说明只在真的需要用户知道时出现（素材正常就不挂永久说明），
+    // 但一旦出现就必须是用户语言 —— 不允许「接入 / 第一版 / fixture」这类工程说法。
+    // （这句断言原先要求永久说明一定存在，与「正常时不输出永久说明」的当前契约冲突，故改为
+    //   把渲染出来的说明与 companionAssets 的真实结果对齐。）
+    const pageSettingsText = await panel.eval("document.querySelector('.page-settings').textContent");
+    const petSettingsText = await panel.eval("document.querySelector('.pet-settings').textContent");
+    const assetState = await panel.eval('window.dayhub.companionAssets().then(a=>({notice:a.notice,reason:a.reason}))');
+    check('打包版设置页说明仍是用户语言',
+      !/已接入|第一版|开发中|fixture/.test(pageSettingsText)
+      && (assetState.notice === null || petSettingsText.includes(assetState.notice))
+      && /(专属角色|默认角色|待机)/.test(assetState.reason)
+      && !/已接入|第一版|开发中|fixture/.test(assetState.reason),
+      JSON.stringify(assetState));
     // 作息时间表在「节奏与状态」分区，先切分区再读文本。
     const rhythmText = await panel.eval(`(async()=>{
       [...document.querySelectorAll('.settings-nav button')].find(b=>b.textContent.trim()==='节奏与状态')?.click();
