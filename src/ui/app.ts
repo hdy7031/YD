@@ -9,14 +9,15 @@ import { BrandMark } from './brand.ts';
 import { ScheduleGrid, ManagementOverview, EmptyState } from './views.ts';
 import { DailySummary, DailyAgendaList, DailyEmptyState } from './daily-summary.ts';
 import { dailyItemState, dailyPlanFrom, type DailyAgendaItem } from './daily-plan.ts';
-import { getCompanionProfile, requireSelfProfile, resolvePetSubject } from '../people.ts';
+import { activeCompanionProfile, activeProfiles, requireSelfProfile, resolvePetSubject } from '../people.ts';
 import { personOptions, profileLabelFor, shellTabs, tabShortcuts, tabWidthPolicy, companionDisplayName, type ShellTab } from './shell.ts';
+import { ProfileLifecycleSettings } from './profile-settings.ts';
 import { OnboardingPanel, type SetupIntent } from './onboarding.ts';
 import type { SetupInput } from '../setup.ts';
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BellRing, CalendarClock, CalendarDays, Clock3, Inbox, ListTodo, Settings, Table2 } from 'lucide-react';
-import { createCompanionProfile, id, occurrences, conflicts, epoch, dateOf, addDays, weekday, DAY } from '../core.ts';
+import { id, occurrences, conflicts, epoch, dateOf, addDays, weekday, DAY } from '../core.ts';
 import type { DesktopAPI, State, Entity, Command, Course, Exception, Task, Event, Notice, Occurrence, Reminder, ChecklistItem, PersonId, SchedulePackage } from '../types.ts';
 declare global { interface Window { dayhub: DesktopAPI } }
 const api=window.dayhub;
@@ -275,6 +276,13 @@ function App(){
   useEffect(()=>api.onSettings(()=>setTab('settings')),[]);
   // 桌宠右键菜单的「设置当前状态」：主进程拉起主窗口后投递这个事件。
   useEffect(()=>api.onStatus(()=>{setTab('today');setManualOpen(true);}),[]);
+  // Phase 5B2：使用方式切换后（或保留了 companion 但当前是 Solo），已经不在导航里的
+  // 页面不能继续停在那里 —— 否则用户会看到一个"没有对应导航项"的孤立页面。
+  useEffect(()=>{
+    if(!state)return;
+    const keys=shellTabs(state).map(t=>t.key);
+    if(keys.length&&!keys.includes(tab))setTab(keys[0]);
+  },[state,tab]);
   async function change(cmd:Command){setPending(true);err('');try{const s=await api.change(cmd);set(s);return s;}catch(e){err(msg(e));return null;}finally{setPending(false);}}
   // Phase 5B1：首次使用的提交路径。失败时把说明交回 onboarding 面板自己显示
   // （背景页在这段时间是只读的，顶部的错误横幅用户看不到）。
@@ -287,21 +295,17 @@ function App(){
     finally{setPending(false);}
   }
   function open(entity:Entity,value?:any,convert?:string){if(entity==='notices'){setTab('inbox');setSelectedNotice(value?.id||null);return;}edit({entity,value:value||newValue(entity,activePerson,selfId),convert});err('');}
-  function addCompanion(){
-    const self=requireSelfProfile(s);
-    if(companion)return;
-    // 表单初值来自领域工厂（中性占位名 / 代号由显示规则派生），用户在同一个表单里改。
-    open('profiles',createCompanionProfile(now,self));
-  }
   async function importImage(paste=false){setImporting(true);err('');try{const result=await(paste?api.pasteImage():api.importImage());if(result){const noticeId=id();set(await api.change({type:'inbound',id:noticeId,payload:{image:result.image,sourceType:paste?'SCREENSHOT':'IMAGE_IMPORT'}}));setTab('inbox');setSelectedNotice(noticeId);try{const text=await api.ocr(result.image);if(text.trim())set(await api.parseNotice(noticeId,text,true));}catch(e){err(msg(e));}}else if(paste)say('剪贴板中没有图片，可使用粘贴文字。');}catch(e){err(msg(e));}finally{setImporting(false);}}
   async function chooseSchedule(){setImporting(true);err('');try{const value=await api.chooseSchedule();if(value)setSchedule(value);}catch(e){err(msg(e));}finally{setImporting(false);}}
   if(!state)return h('main',{className:'loading'},h('h1',null,'YD'),h('p',null,error||'正在打开本地记录…'));
   const s=state,live=snapshot(s,now),all=occurrences(s,epoch(selectedDate),epoch(addDays(selectedDate,1))),conflictIds=conflicts(all);
   const pendingReminders=selectPendingReminders(s);
-  // 身份与导航都从实际档案派生：Solo 只有本人页，Together 才有同行者页。
-  const selfId=requireSelfProfile(s).id,companion=getCompanionProfile(s),tabs=shellTabs(s);
+  // 身份与导航从**当前活跃人物**派生：Solo 只有本人页（哪怕数据库里保留着一个
+  // inactive companion），Together 才有同行者页。
+  const selfId=requireSelfProfile(s).id,companion=activeCompanionProfile(s),tabs=shellTabs(s);
   const tabSpec=tabs.find(t=>t.key===tab)??tabs[0],kind=tabSpec.kind;
-  const activePerson=person&&s.profiles.some(p=>p.id===person)?person:selfId;
+  const activePeople=activeProfiles(s);
+  const activePerson=person&&activePeople.some(p=>p.id===person)?person:selfId;
   const companionStatus=companion?live.people.find(p=>p.person===companion.id):undefined;
   const companionRows=companion?occurrences(s,epoch(selectedDate),epoch(addDays(selectedDate,1)),companion.id,{includeCancelled:true}):[];
   const hasCompanionSchedule=!!companion&&s.courses.some(c=>c.person===companion.id),selectedIsToday=selectedDate===dateOf(now);
@@ -437,9 +441,11 @@ function App(){
       kind==='settings'?h('div',{className:'settings-layout'},
         h('nav',{className:'settings-nav','aria-label':'设置分区'},...([['companionship','角色与陪伴'],['rhythm','节奏与状态'],['school','课表与学校'],['runtime','运行与提醒'],['data','数据与备份'],['about','关于 YD']] as const).map(([key,label])=>h('button',{key,type:'button',className:settingsSection===key?'active':'','aria-current':settingsSection===key?'page':undefined,onClick:()=>setSettingsSection(key)},label))),
         h('div',{className:'settings-content'},
-          settingsSection==='companionship'?h('div',{className:'settings-stack'},h(PetSettings,{live,settings:s.settings,state:s,section:'companionship'}),!companion?h('section',{className:'entry solo-companion-invite'},h('h2',null,'添加陪伴对象'),h('p',{className:'muted'},'添加后可查看对方安排与状态，并为其选择独立角色。单人模式中的现有数据不会改变。'),b('添加陪伴对象',addCompanion,'secondary')):null):null,
+          // Phase 5B2：使用方式 + 档案（生命周期）在桌宠设置之前；它们回答"现在怎么用 YD"，
+          // 桌宠设置回答"桌面上显示什么"。两者不重复表达同一件事。
+          settingsSection==='companionship'?h('div',{className:'settings-stack'},h(ProfileLifecycleSettings,{state:s}),h(PetSettings,{live,settings:s.settings,state:s,section:'companionship'})):null,
           settingsSection==='rhythm'?h(PetSettings,{live,settings:s.settings,state:s,section:'rhythm'}):null,
-          settingsSection==='school'?h('section',{className:'entry settings-section'},h('h2',null,'课表与学校'),h('p',{className:'muted'},'分别维护每个档案的学期范围与节次时间，不会自动生成或覆盖课程。'),h('div',{className:'actions'},...s.profiles.map(p=>b(`${p.name}的学期与节次`,()=>open('profiles',p),'secondary')))):null,
+          settingsSection==='school'?h('section',{className:'entry settings-section'},h('h2',null,'课表与学校'),h('p',{className:'muted'},'分别维护每个档案的学期范围与节次时间，不会自动生成或覆盖课程。'),h('div',{className:'actions'},...activePeople.map(p=>b(`${p.name}的学期与节次`,()=>open('profiles',p),'secondary')))):null,
           settingsSection==='runtime'?h('div',{className:'settings-stack'},h(PetSettings,{live,settings:s.settings,state:s,section:'runtime'}),h('section',{className:'entry settings-section'},h('h2',null,'系统通知'),h('p',{className:'muted'},'退出应用、关机或休眠时暂停提醒，恢复后汇总遗漏事项。系统通知是否可见受 Windows 通知设置影响。'),b('发送测试通知',async()=>{try{say(await api.testNotification());}catch(e){err(msg(e));}},'secondary'))):null,
           settingsSection==='data'?h('section',{className:'entry settings-section'},h('h2',null,'数据与备份'),h('p',{className:'muted'},`备份包含${s.profiles.length>1?'所有档案的':'当前'}课表、日程、待办、原始通知图片和提醒状态。请妥善保存备份文件。`),h('div',{className:'actions'},b('导出完整备份',async()=>{try{const file=await api.backup();if(file)say('备份已导出：'+file);}catch(e){err(msg(e));}},'primary'),b('从备份恢复',async()=>{try{const result=await api.restore();if(result){set(result);say('备份已恢复。恢复前的数据已自动备份在应用数据目录。');}}catch(e){err(msg(e));}},'secondary'))):null,
           settingsSection==='about'?h(AboutPanel,null):null)):null
