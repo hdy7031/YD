@@ -231,7 +231,8 @@ app.whenReady().then(async () => {
       afterDrag.width === beforeDrag.width && afterDrag.height === beforeDrag.height,
       JSON.stringify({ before: beforeDrag, after: afterDrag }));
     await cursorAway();
-    const settled = await measure();
+    // 真实光标测试不能假设"移动完立刻生效"：主进程每 60ms 采样一次，这里等到状态落定。
+    const settled = await expectAt(dock, 6, 6, { hit: 'through', view: 'collapsed' });
     check('D 拖动结束后清理：没有残留 hover / dragging / 穿透状态回到 through',
       settled.view === 'collapsed' && !settled.dragging && settled.hit === 'through',
       JSON.stringify({ view: settled.view, dragging: settled.dragging, hit: settled.hit }));

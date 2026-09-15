@@ -64,11 +64,15 @@ function assertFreshContract(view, notes) {
   check('fresh：Avatar 用官方默认 Pack', self?.avatar?.packId === 'yd-default' && self.avatar.source === 'default', JSON.stringify(self?.avatar));
   // Phase 5B1：fresh install 不静默创建桌面悬浮物 —— 桌宠要在首次设置里显式选择。
   check('fresh：桌面桌宠默认关闭（petEnabled=false）', state.settings.petEnabled === false, String(state.settings.petEnabled));
-  // 源码级能直接读 BrowserWindow.isVisible()；打包版只能读渲染层的 visibilityState，
-  // 因此这里只在能拿到真实窗口状态时断言（不静默跳过源码级证据）。
-  check('fresh：桌宠窗口没有出现在桌面上',
-    dom.dock.windowVisible !== undefined ? dom.dock.windowVisible === false : dom.dock.visibility === 'hidden',
-    JSON.stringify({ windowVisible: dom.dock.windowVisible, visibility: dom.dock.visibility }));
+  // 源码级能直接读 BrowserWindow.isVisible()（真实窗口状态）；打包版只有 CDP，
+  // 读不到主进程窗口状态（隐藏窗口的 document.visibilityState 仍是 visible），
+  // 因此打包版只锁定状态字段，窗口可见性由源码级证据覆盖。
+  if (dom.dock.windowVisible !== undefined) {
+    check('fresh：桌宠窗口没有出现在桌面上', dom.dock.windowVisible === false, JSON.stringify({ windowVisible: dom.dock.windowVisible }));
+  } else {
+    check('fresh：桌宠仍然关闭（打包版：窗口可见性由源码级 verify-v050 覆盖）',
+      state.settings.petEnabled === false, String(state.settings.petEnabled));
+  }
   // Phase 5B1：schema 升到 7（桌宠主体偏好）；Fresh Install Contract 本身不放宽。
   check('fresh：DOMAIN_VERSION = 7', state.settings.domainVersion === 7, String(state.settings.domainVersion));
   check('fresh：桌宠主体偏好是本人（默认 Solo 没有歧义）', state.settings.petSubjectRole === 'self', String(state.settings.petSubjectRole));

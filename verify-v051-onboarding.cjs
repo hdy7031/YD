@@ -411,8 +411,8 @@ async function phaseTogether(driver, dataDir) {
   check('设置 → 桌面陪伴：桌宠表示给出「我 / TA」，当前是 TA',
     settingsView.subjectSetting.join(',') === 'self,companion' && settingsView.subjectSettingChecked === 'companion',
     JSON.stringify({ options: settingsView.subjectSetting, checked: settingsView.subjectSettingChecked }));
-  check('设置 → 桌面陪伴：形象仍然按人显示（我的 / TA 的），不是"当前桌宠形象"',
-    settingsView.avatarTitles.join(',') === '我的桌宠形象,丹丹的桌宠形象', JSON.stringify(settingsView.avatarTitles));
+  check('设置 → 桌面陪伴：形象仍然按人分组（我的形象 / TA 的形象），不是"当前桌宠形象"',
+    settingsView.avatarTitles.join(',') === '我的形象,丹丹的形象', JSON.stringify(settingsView.avatarTitles));
   const beforeSwitch = await driver.view();
   // —— 关掉桌宠：立即隐藏，数据保留 ——
   await driver.click('[data-pet-enabled]');
@@ -569,11 +569,36 @@ async function phaseAbandonRestart(driver, dataDir) {
     && view.state.courses.length === 0 && view.state.tasks.length === 0);
 }
 
+/**
+ * 老用户升级（打包清房用）：把 v3 双人 fixture 复制进隔离 userData 后启动。
+ * 断言"升级不会把已经存在的桌宠弄没"：petEnabled=true、主体仍是同行者、
+ * 桌面桌宠仍然用 TA 的形象；同时不能重新进入 onboarding。
+ */
+async function phaseLegacyMigration(driver, dataDir) {
+  const view = await driver.view();
+  const self = view.state.profiles.find((profile) => profile.role === 'self');
+  const companion = view.state.profiles.find((profile) => profile.role === 'companion');
+  check('老库升级：不重新进入 onboarding（setup=true → 直接 Home）',
+    !view.setup.present && view.state.settings.setup === true && view.setup.homeTitle === '我的安排',
+    JSON.stringify({ setup: view.state.settings.setup, title: view.setup.homeTitle }));
+  check('老库升级：DOMAIN_VERSION = 7', view.state.settings.domainVersion === 7, String(view.state.settings.domainVersion));
+  check('老库升级：桌宠仍然启用（不会因为升级突然消失）',
+    view.state.settings.petEnabled === true, String(view.state.settings.petEnabled));
+  check('老库升级：桌宠主体仍是同行者', view.state.settings.petSubjectRole === 'companion', String(view.state.settings.petSubjectRole));
+  check('老库升级：桌面桌宠仍然代表 TA，并用 TA 的形象',
+    view.live.petInstance.subjectId === companion?.id && view.live.petInstance.avatarPackId === companion?.avatar?.packId,
+    JSON.stringify({ instance: view.live.petInstance, companion: companion?.id }));
+  check('老库升级：双方档案与状态照常投影',
+    !!self && !!companion && view.live.people.length === 2, String(view.live.people.length));
+  check('老库升级：界面没有 undefined', !view.setup.hasUndefined);
+}
+
 const PHASES = {
   'solo-off': phaseSoloOff, 'solo-on': phaseSoloOn, 'solo-restart': phaseSoloRestart,
   together: phaseTogether, 'together-restart': phaseTogetherRestart,
   toggle: phaseToggle,
   abandon: phaseAbandon, 'abandon-restart': phaseAbandonRestart,
+  legacy: phaseLegacyMigration,
 };
 async function runPhase(kind, driver, dataDir) {
   const fn = PHASES[kind];
@@ -687,13 +712,20 @@ async function withPackagedApp(dataDir, fn) {
 }
 
 async function runPackaged() {
-  const soloDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yd-v051-packaged-solo-'));
+  const soloOffDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yd-v051-packaged-solo-off-'));
+  const soloOnDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yd-v051-packaged-solo-on-'));
   const togetherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yd-v051-packaged-together-'));
-  console.log(`Phase 5B1 packaged clean-room · solo=${soloDir} · together=${togetherDir}`);
-  await withPackagedApp(soloDir, (driver) => runPhase('solo', driver, soloDir));
-  await withPackagedApp(soloDir, (driver) => runPhase('solo-restart', driver, soloDir));
+  // 老库升级：把 v3 双人 fixture 复制进隔离 userData，启动后必须仍然保留桌宠。
+  const legacyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yd-v051-packaged-legacy-'));
+  require('./scripts/electron-test-profile.cjs').seedWorkspace(legacyDir, 'together');
+  console.log(`Phase 5B1 packaged clean-room · soloOff=${soloOffDir} · soloOn=${soloOnDir} · together=${togetherDir} · legacy=${legacyDir}`);
+  await withPackagedApp(soloOffDir, (driver) => runPhase('solo-off', driver, soloOffDir));
+  await withPackagedApp(soloOffDir, (driver) => runPhase('solo-restart', driver, soloOffDir));
+  await withPackagedApp(soloOnDir, (driver) => runPhase('solo-on', driver, soloOnDir));
+  await withPackagedApp(soloOnDir, (driver) => runPhase('solo-restart', driver, soloOnDir));
   await withPackagedApp(togetherDir, (driver) => runPhase('together', driver, togetherDir));
   await withPackagedApp(togetherDir, (driver) => runPhase('together-restart', driver, togetherDir));
+  await withPackagedApp(legacyDir, (driver) => runPhase('legacy', driver, legacyDir));
 }
 
 // ---------------------------------------------------------------------------

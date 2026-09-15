@@ -190,6 +190,10 @@ If feature work reveals a visual improvement worth considering, record it only; 
 
 The next visual upgrade must be explicitly requested by the user, which lifts the freeze only for the requested scope.
 
+设置页负责"做选择"，不负责解释系统架构：不允许"标题套标题"（外层分区标题 + 分组标题 + 行标题重复同一件事）、
+一件事解释两遍、或永久性大段说明。控件与它控制的标题放在一起（例如开关与所属标题同行），
+能从控件本身读懂的语义不要再配文案；Solo 时不显示无意义的对照项（如 TA 的选择）。
+
 Outside a frozen area, YD should still feel quiet, restrained, modern, readable, and locally trustworthy: low-saturation surfaces, light hierarchy, whitespace, gentle corners and shadows, and purposeful motion. Avoid dashboard/SaaS styling, heavy glass effects, excessive gradients, gamification, and decorative animation that harms clarity. Reuse existing spacing, typography, radius, shadow, icon, and component conventions.
 
 The companion/orb should remain low-interruption, geometrically stable, draggable, and predictable on hover. Drag cleanup must remove transient tooltip, overlay, and hover state. Treat production art as a first-class asset: use approved assets or an explicitly labeled development placeholder, never a disguised substitute.
