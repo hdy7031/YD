@@ -23,11 +23,138 @@ This is an npm project (`package-lock.json`) using Electron, TypeScript in stric
 - `npm run fixtures:build` intentionally regenerates committed test fixtures. `npm run assets:companion` runs the companion-asset generator.
 - `npm run dist -- --config.electronDist=node_modules/electron/dist` builds the x64 NSIS installer using the local Electron runtime. Packaging is a release step, not a default consequence of an ordinary change.
 
-Select the verifier that covers the change: root `verify-*.cjs` scripts; `scripts/verify-*.{cjs,mjs}`; `scripts/verify-upgrade.mjs`; `scripts/ui-audit.cjs`; and `scripts/visual-*.cjs`. Electron/UI verifiers may need `npx electron <script>`. This repository has no lint script. For code changes, run `npm test`, `npm run typecheck`, and the relevant targeted verifier; do not weaken tests or assertions to manufacture a pass. For documentation-only work, inspect the diff instead of creating unrelated build output.
+Select the verifier that covers the change: root `verify-*.cjs` scripts; `scripts/verify-*.{cjs,mjs}`; `scripts/verify-upgrade.mjs`; `scripts/ui-audit.cjs`; and `scripts/visual-*.cjs`. Electron/UI verifiers may need `npx electron <script>`. This repository has no lint script. Do not weaken tests or assertions to manufacture a pass.
+
+### Proportionate Verification
+
+The goal is to prove the current change correct, not to run the maximum number of commands. Default to the smallest sufficient verification set that covers the actual risk.
+
+Do not run unrelated full tests, UI audits, visual verifiers, installer builds, fixture rebuilds, repeated smoke checks, or repeated static audits merely to complete a process.
+
+#### Level 0 — Docs, AGENTS, comments, non-runtime code
+
+Examples: `AGENTS.md`, `docs/`, `README`, comments, and copy changes that do not alter runtime logic.
+
+Default:
+- Inspect `git diff`.
+- Check formatting or references only if the edit requires it.
+
+Do not run `npm test`, typecheck, build, Electron, or UI verifiers unless the change itself requires it.
+
+#### Level 1 — Low-risk local changes
+
+Examples: a single non-core UI event, local display logic, a small utility function with no persistence effect, or a clearly scoped small bug fix.
+
+Default:
+- Run the directly relevant targeted test or verifier.
+- Run `npm run typecheck` when TypeScript types may be affected.
+
+Full `npm test` is not required by default. If no targeted test exists, use the lightest check that still proves the change.
+
+#### Level 2 — Core logic changes
+
+This level remains strict for:
+- StateEngine.
+- Schedule/routine/manual state derivation.
+- Time and cross-midnight semantics.
+- Persistence.
+- Database schema and migrations.
+- IPC, preload, and Electron main.
+- Profile, solo, and companion semantics.
+- Avatar runtime and fallback.
+- Important data conversion.
+- Cross-module refactors.
+
+Default:
+- `npm run typecheck`.
+- Relevant targeted tests or verifiers.
+- `npm test` when the change may affect multiple domain modules.
+
+Do not add unrelated visual audits or packaging.
+
+#### Level 3 — Release, migration, and high-risk system changes
+
+Use the full relevant gate for:
+- A formal release.
+- Installer or packaging work.
+- Database migrations.
+- Large architecture refactors.
+- Multiple domain modules changing together.
+- An explicit user request for full acceptance.
+- Preparing a stable version to merge or tag.
+
+The relevant gate may include:
+- `npm test`.
+- `npm run typecheck`.
+- Relevant targeted verifiers.
+- `npm run build`.
+- Necessary Electron smoke checks.
+- Necessary visual or UI audits.
+- Necessary installer verification.
+
+Run only the parts that are actually relevant.
+
+### No Redundant Verification
+
+- If a check passed in the same task and no code it covers changed afterward, do not rerun it.
+- After fixing a failed check, rerun only that check and any necessary higher-level gate.
+- Do not rerun passing commands solely to produce the final report.
+- Do not repeat tests merely because the content is unchanged before and after a commit.
+- Do not create a temporary verifier for behavior already covered by an existing test.
+- Do not rescan the repository to reconfirm facts already established.
+
+Verification should follow changes in code risk, not the number of conversation turns.
+
+### Audit Only When Needed
+
+Audit is required by default only when:
+- The user explicitly requests an audit.
+- There is a large refactor.
+- There is a release.
+- There is a migration.
+- There is a data-safety concern.
+- Unknown legacy behavior is involved.
+- Cross-module side effects are suspected.
+
+For ordinary features, scoped bug fixes, and small functional adjustments, use:
+
+Inspect relevant code -> implement -> targeted verification -> diff review -> commit.
+
+Do not add full-repository searches, architecture reviews, unrelated verifiers, or full history analysis for form.
+
+### Efficient Agent Behavior
+
+- Inspect the most relevant files first; do not start by traversing the whole repository.
+- Go directly to known module paths.
+- Do not reread files already read in the same turn when they have not changed.
+- Do not output large intermediate reasoning, test logs, or code summaries.
+- Do not write a long plan for a simple task.
+- For clear small tasks, proceed directly from inspection to implementation.
+- Write a detailed plan only when architecture is unclear, impact is large, or risk exists.
+- Limit searches to relevant directories and keywords; avoid aimless greps and full-repository scans.
+- Keep test output to conclusions and necessary errors.
+- Keep the final report short and complete.
+
+Save tokens through precise reading, less repetition, and less unrelated verification, not by skipping necessary code understanding.
 
 ## Architecture and Domain Rules
 
 Keep business rules deterministic, pure, and testable; do not mix UI rendering, IPC, storage, time calculation, and state selection in one module. Extend the existing domain model rather than creating a parallel state system.
+
+These invariants are non-negotiable and are not relaxed by the faster workflow:
+
+- `CurrentState` remains authoritative; source order is **manual > schedule > routine > idle**.
+- Solo and Together profiles remain generalized; never assume one fixed profile pair.
+- Time semantics remain `Asia/Shanghai`, with correct cross-midnight and boundary handling.
+- Database migrations preserve compatibility and protect real user data.
+- Secrets and credentials are never committed or exposed.
+- Electron main, preload, and IPC security boundaries remain intact.
+- Do not change system-level network configuration without explicit permission.
+- Do not add dependencies without a clear need and explicit impact review.
+- Avatar production and fallback contracts remain intact.
+- AI or message-derived inference must never override manual facts.
+- Demo data must never contaminate a real database.
+- Git history protection and user-change preservation remain mandatory.
 
 `CurrentState` in `src/state/engine.ts` is the authoritative answer to what a person is doing. Its fixed source order is **manual > schedule > routine > idle**. `DailyException` modifies a schedule candidate; it is not a competing source. UI and companion rendering may project or decorate `CurrentState`, but must not override it. The workspace supports either a solo profile or self plus companion profiles—never assume a fixed pair or infer identity from array position.
 
@@ -43,7 +170,27 @@ Treat model output and external messages as untrusted input. Preserve source, ti
 
 ## UI and Visual Changes
 
-Preserve information architecture and user flows unless the user explicitly requests a redesign. YD should feel quiet, restrained, modern, readable, and locally trustworthy: low-saturation surfaces, light hierarchy, whitespace, gentle corners and shadows, and purposeful motion. Avoid dashboard/SaaS styling, heavy glass effects, excessive gradients, gamification, and decorative animation that harms clarity. Reuse existing spacing, typography, radius, shadow, icon, and component conventions.
+### Visual Baseline Freeze
+
+The current YD main window, navigation, card system, typography hierarchy, color palette, spacing, radii, shadows, icon language, and overall Mist & Sage visual direction are treated as an accepted stage baseline.
+
+Unless the current user explicitly requests visual design work or the current bug is itself a visual problem:
+
+- Do not proactively redesign.
+- Do not proactively polish.
+- Do not change UI for subjective reasons such as "more modern", "more premium", or "more unified".
+- Do not adjust colors, font sizes, fonts, spacing, radii, shadows, icons, card proportions, or layout as a side effect.
+- Do not replace existing production assets.
+- Do not change the main window size, information architecture, or operation paths.
+- Prefer existing components and visual tokens for feature work.
+- If a functional change must produce a visual difference, limit it to the minimum required by the feature.
+- Do not expand a non-visual task into an "overall visual improvement".
+
+If feature work reveals a visual improvement worth considering, record it only; do not handle it incidentally unless it blocks the current feature or the user explicitly asks for it.
+
+The next visual upgrade must be explicitly requested by the user, which lifts the freeze only for the requested scope.
+
+Outside a frozen area, YD should still feel quiet, restrained, modern, readable, and locally trustworthy: low-saturation surfaces, light hierarchy, whitespace, gentle corners and shadows, and purposeful motion. Avoid dashboard/SaaS styling, heavy glass effects, excessive gradients, gamification, and decorative animation that harms clarity. Reuse existing spacing, typography, radius, shadow, icon, and component conventions.
 
 The companion/orb should remain low-interruption, geometrically stable, draggable, and predictable on hover. Drag cleanup must remove transient tooltip, overlay, and hover state. Treat production art as a first-class asset: use approved assets or an explicitly labeled development placeholder, never a disguised substitute.
 
@@ -53,6 +200,27 @@ Make the smallest complete change. Diagnose bugs through reproduction, real stat
 
 Do not change the application version for every commit. Change it only for an explicit user-requested version, a defined release, or a requested installer; then verify every real version source (package metadata, application/about presentation, and packaging metadata) remains consistent. Do not silently migrate large datasets, alter user preferences, restore retired behavior, or change network configuration. Design an explicit fallback policy instead.
 
-Before committing, run proportionate checks, review `git diff`, and confirm the staged set contains only task files. Use narrow Conventional Commit-style messages such as `feat: ...`, `fix: ...`, `refactor: ...`, `ui: ...`, `test: ...`, `docs: ...`, or `chore: ...`. Commit a completed, independently verifiable task unless the user says not to. Never amend or force-push without explicit approval.
+Before committing, use this flow:
 
-In the final report, state completed work, checks run and their result, branch, commit, and working-tree status. If existing user changes remain, name them rather than altering them. For release work, also report application version, installer path and type, build result, checksum, and packaged smoke evidence.
+requested change -> proportionate verification -> `git diff` review -> commit.
+
+Do not mechanically run the full test suite before an ordinary commit. Run full testing only when the risk level requires it. Confirm the staged set contains only task files. `AGENTS.md` is also under Git management.
+
+Use narrow Conventional Commit-style messages such as `feat: ...`, `fix: ...`, `refactor: ...`, `ui: ...`, `test: ...`, `docs: ...`, or `chore: ...`. Commit a completed, independently verifiable task unless the user says not to. Never amend or force-push without explicit approval.
+
+For ordinary tasks, the final report should contain only:
+
+完成
+- One or two lines describing the actual change.
+
+验证
+- Only checks actually executed, with PASS / FAIL.
+
+Git
+- Branch.
+- Commit.
+- Working tree.
+
+Do not repeat every modified file, write a long design explanation, paste full test logs, or restate what the commit message already makes clear.
+
+Use a detailed report only for release work or when a blocker exists. Release reports must include application version, installer path and type, build result, checksum, and packaged smoke evidence. If existing user changes remain, name them rather than altering them.
