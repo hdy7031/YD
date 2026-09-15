@@ -95,16 +95,24 @@ app.whenReady().then(async () => {
     const selfStatus = manualLive.people.find(p => p.person === 'me');
     check('引擎来源是 manual 且 confidence = 1', selfStatus.current.source === 'manual' && selfStatus.current.confidence === 1, JSON.stringify(selfStatus.current));
     check('手动状态压过课程', selfStatus.current.kind === 'focus' && selfStatus.current.endAt === Date.UTC(2027, 2, 1, 3, 30), JSON.stringify(selfStatus.current));
-    // 同上：Dock 形态读 .person，角色陪伴形态读 .rail-chip，取同一句话。
-    check('桌宠状态条显示「专注」', (await pet(`(()=>{
+    // 同上：Dock 形态读 .person（主文案 = 完整标签「专注中」），角色陪伴形态读 .rail-chip
+    // （短标签「专注」）。短代号来自档案本身，不再写死成 D / Y。
+    const petRail = await pet(`(()=>{
       const chips=[...document.querySelectorAll('.rail-chip')].map(e=>e.title);
-      const rows=[...document.querySelectorAll('.person')].map(r=>r.querySelector('.status-text')?.textContent?.trim()??'');
-      return [...chips,...rows];
-    })()`)).includes('专注'));
-    check('托盘 tooltip 同源', (tooltips.at(-1) ?? '').includes('D · 专注中'), tooltips.at(-1) ?? '');
+      const rows=[...document.querySelectorAll('.person')].map(r=>{
+        const alias=r.querySelector('.person-letter')?.textContent?.trim()??'';
+        return alias+' · '+(r.querySelector('.status-text')?.textContent?.trim()??'');
+      });
+      return {chips,rows};
+    })()`);
+    const petSurfaces=[];
+    if(petRail.chips.length)petSurfaces.push({name:'rail-chip',ok:petRail.chips.some(text=>text===`${selfStatus.alias} · 专注`)});
+    if(petRail.rows.length)petSurfaces.push({name:'dock',ok:petRail.rows.some(text=>text===`${selfStatus.alias} · 专注中`)});
+    check('桌宠状态条显示「专注」', petSurfaces.length>0&&petSurfaces.every(surface=>surface.ok), JSON.stringify({alias:selfStatus.alias,petRail,petSurfaces}));
+    check('托盘 tooltip 同源', (tooltips.at(-1) ?? '').includes(`${selfStatus.alias} · 专注中`), tooltips.at(-1) ?? '');
     await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");
     await wait(150);
-    check('悬停提示同源', (await tip.webContents.executeJavaScript("document.querySelector('.presence-tip')?.textContent??''")).trim() === 'D · 专注中');
+    check('悬停提示同源', (await tip.webContents.executeJavaScript("document.querySelector('.presence-tip')?.textContent??''")).trim() === `${selfStatus.alias} · 专注中`);
     await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");
     // 手动"专注"没有专属素材，桌宠不会被伪装成别的姿态；本人不再算"忙碌中的另一位"。
     check('桌宠不被手动状态伪造姿态', (await pet("document.querySelector('.companion-figure')?.dataset.assetSlot")) === 'idle');

@@ -8,8 +8,10 @@
 //      可见标题、根与页面两级无横向溢出、正文不含 undefined。
 //   2. 课表页：没有"一览模式"残留、有"编辑课表"、八节完整 HH:mm–HH:mm 表侧时间、有周次切换。
 //   3. 设置页：六个顶部分区、按宽度切换的导航布局、共享 setting-row 结构、关于页版本号。
-//   4. Together Dock：两块等宽 person 区域、无旧 Orb DOM、hover 几何固定、Mini 两张卡。
-//   5. Solo Dock：单行、无分隔线与空槽、hover 几何固定、Mini 单张全宽卡。
+//   4. Together Dock：两块同高同基线的 person 区域（牌面宽度由内容决定）、无旧 Orb DOM、
+//      hover 几何固定、点 Dock 在同一个窗口里打开两张卡详情（Mini 窗口保持隐藏）。
+//   5. Solo Dock：单行、无分隔线与空槽、牌面按内容宽度收敛、hover 几何固定、
+//      详情是同一窗口里的单张全宽卡。
 //
 // 数据隔离：所有 Electron 进程都通过 scripts/electron-test-profile.cjs 使用
 // os.tmpdir() 下的独立 userData，绝不读取、迁移、恢复或修改 %APPDATA%\事务助手。
@@ -344,6 +346,61 @@ async function checkSettings(panel, mode) {
 // ---------------------------------------------------------------------------
 const LEGACY_ORB = '.presence-orb,.presence-surface,.identity-mark,.orb-shell,.split-orb';
 
+// 牌面宽度契约："内容完整优先" —— 渲染层实测内容后由主进程定窗口，
+// 因此这里按同一份口径复算：children + gap + 内边距 + 边框，不足时由最小宽度兜底。
+// 最小宽度与 src/companion-layout.ts 的 companionDock.minWidth/soloMinWidth（中档）一致。
+const DOCK_MIN_WIDTH = { together: 180, solo: 158 };
+const DOCK_PLATE_HEIGHT = 56;
+const DOCK_CONTENT_MEASURE = `(() => {
+  const surface = document.querySelector('.dock-surface');
+  if (!surface) return null;
+  const style = getComputedStyle(surface);
+  const kids = [...surface.children].map(child => child.getBoundingClientRect().width);
+  const gap = parseFloat(style.columnGap) || 0;
+  return {
+    content: kids.reduce((sum, value) => sum + value, 0) + Math.max(0, kids.length - 1) * gap,
+    padding: parseFloat(style.paddingLeft) + parseFloat(style.paddingRight),
+    border: parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth),
+  };
+})()`;
+
+/** 牌面右下角在**屏幕**上的位置：详情展开 / 收起时它必须原地不动。 */
+async function dockPlateAnchor(dock) {
+  const bounds = dock.getBounds();
+  const rect = await dock.webContents.executeJavaScript(
+    "(()=>{const r=document.querySelector('.dock-surface').getBoundingClientRect();return {right:Math.round(r.right),bottom:Math.round(r.bottom)}})()"
+  );
+  return { x: bounds.x + rect.right, y: bounds.y + rect.bottom };
+}
+
+/** 详情形态：0.3 收口后详情与状态牌共用同一个 floating 窗口（没有第二个 BrowserWindow）。 */
+async function dockDetailState(dock) {
+  return dock.webContents.executeJavaScript(`(() => {
+    const panel = document.querySelector('.mini-panel.dock');
+    const cards = [...document.querySelectorAll('.detail-person')];
+    const card = cards[0]?.getBoundingClientRect();
+    return {
+      view: document.querySelector('.pet-dock')?.dataset.dockView ?? null,
+      panel: !!panel,
+      solo: panel?.classList.contains('solo') ?? false,
+      title: panel?.querySelector('.mini-head h2')?.textContent ?? '',
+      cards: cards.length,
+      next: panel?.querySelectorAll('.detail-next').length ?? 0,
+      people: cards.map(entry => entry.dataset.person),
+      cardWidth: Math.round(card?.width ?? 0),
+      panelWidth: Math.round(panel?.getBoundingClientRect().width ?? 0),
+      hasUndefined: /undefined/.test(document.body.innerText),
+    };
+  })()`);
+}
+
+async function clickDock(dock) {
+  await dock.webContents.executeJavaScript(
+    `document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('click', { bubbles: true }))`
+  );
+  await wait(420);
+}
+
 // 悬浮区域必须用"当前工作区真实存在的 PersonId"：Solo fixture 的本人 id 不是 'me'，
 // 主进程会直接以"无效状态区域"拒绝。因此从 Dock 自己的 data-person 读取。
 async function firstDockPerson(dock) {
@@ -373,27 +430,39 @@ async function checkDuoDock(panel, dock, mini) {
     const surface = document.querySelector('.dock-surface');
     const rows = [...document.querySelectorAll('.person')].map(row => row.getBoundingClientRect());
     const style = surface ? getComputedStyle(surface) : null;
+    const box = surface ? surface.getBoundingClientRect() : null;
     return {
       rows: rows.map(rect => ({ left: rect.left, top: rect.top, width: rect.width, height: rect.height })),
       solo: surface?.classList.contains('solo') ?? null,
       people: [...document.querySelectorAll('.person')].map(row => row.dataset.person),
       hasLegacy: !!document.querySelector('${LEGACY_ORB}'),
       hasUndefined: /undefined/.test(document.body.innerText),
-      surface: surface ? surface.getBoundingClientRect().width : 0,
+      surface: box ? { left: box.left, right: box.right, width: box.width, height: box.height } : null,
+      dividers: document.querySelectorAll('.dock-divider').length,
       background: style?.backgroundColor ?? '',
     };
   })()`);
   check('Together Dock 渲染两块并列 person 区域', structure.rows.length === 2 && structure.solo === false, JSON.stringify(structure.people));
   const [first, second] = structure.rows;
   check(
-    'Together Dock 两块 person 区域等宽同高',
-    !!first && !!second && Math.abs(first.width - second.width) <= 2 && Math.abs(first.height - second.height) <= 2 && Math.abs(first.top - second.top) <= 2,
-    JSON.stringify(structure.rows)
+    'Together Dock 两块 person 区域同高同基线并由中线分隔',
+    !!first && !!second && Math.abs(first.height - second.height) <= 2 && Math.abs(first.top - second.top) <= 2 && structure.dividers === 1,
+    JSON.stringify({ rows: structure.rows, dividers: structure.dividers })
   );
   check(
     'Together Dock 两块区域都在状态牌内并左右排列',
-    !!first && !!second && first.left >= 0 && second.left > first.left && second.left + second.width <= structure.surface + 1,
+    !!structure.surface && !!first && !!second &&
+      first.left >= structure.surface.left - 1 && second.left > first.left &&
+      second.left + second.width <= structure.surface.right + 1,
     JSON.stringify({ surface: structure.surface, rows: structure.rows })
+  );
+  const measure = await dock.webContents.executeJavaScript(DOCK_CONTENT_MEASURE);
+  const expectedPlate = measure ? Math.max(DOCK_MIN_WIDTH.together, Math.ceil(measure.content + measure.padding + measure.border)) : 0;
+  check(
+    'Together Dock 牌面按实测内容定宽（内容完整优先）',
+    !!measure && !!structure.surface && Math.abs(structure.surface.width - expectedPlate) <= 2 &&
+      Math.abs(structure.surface.height - DOCK_PLATE_HEIGHT) <= 1,
+    JSON.stringify({ surface: structure.surface, measure, expectedPlate })
   );
   check('Together Dock 无旧 Orb DOM 残留', !structure.hasLegacy);
   check('Together Dock 文案不含 undefined', !structure.hasUndefined);
@@ -412,25 +481,34 @@ async function checkDuoDock(panel, dock, mini) {
   check('Together Dock hover 只在固定几何内展开补充信息', geometry.hovered.rows === 1 && geometry.hovered.extra, JSON.stringify(geometry.hovered));
   check('Together Dock hover 不弹出外置 tooltip', !geometry.tipVisible);
 
-  const handle = dock.getBounds();
-  await dock.webContents.executeJavaScript(`document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('click', { bubbles: true }))`);
-  await wait(400);
-  const shown = mini.isVisible();
-  const cards = await mini.webContents.executeJavaScript(`(() => {
-    const cards = [...document.querySelectorAll('.detail-person')];
-    return {
-      cards: cards.length,
-      next: document.querySelectorAll('.detail-next').length,
-      people: cards.map(card => card.dataset.person),
-      hasUndefined: /undefined/.test(document.body.innerText),
-    };
-  })()`);
-  check('Together Dock 点击打开 Mini 面板', shown);
-  check('Together Mini 是两张平级状态卡', cards.cards === 2 && new Set(cards.people).size === 2, JSON.stringify(cards.people));
-  check('Together Mini 每卡都有下一项区且无 undefined', cards.next === 2 && !cards.hasUndefined, JSON.stringify(cards));
-  fs.writeFileSync(path.join(output, 'together-mini.png'), (await mini.capturePage()).toPNG());
-  check('Together Dock 点击不改变外框几何', Math.abs(dock.getBounds().width - handle.width) <= 8 && dock.getBounds().height === handle.height);
-  if (mini.isVisible()) await mini.hide();
+  // 单击 = 在同一个窗口里展开详情（0.3 收口后不再是第二个 BrowserWindow）。
+  const plateBefore = await dockPlateAnchor(dock);
+  const canvasBefore = dock.getBounds();
+  await clickDock(dock);
+  const detail = await dockDetailState(dock);
+  check(
+    'Together Dock 单击在同一个窗口里打开详情（Mini 窗口保持隐藏）',
+    detail.view === 'detail' && detail.panel && !mini.isVisible(),
+    JSON.stringify({ view: detail.view, panel: detail.panel, miniVisible: mini.isVisible() })
+  );
+  check('Together 详情是两张平级状态卡，各有自己的「下一项」', detail.cards === 2 && new Set(detail.people).size === 2 && detail.next === 2, JSON.stringify(detail));
+  check('Together 详情文案不含 undefined', !detail.hasUndefined);
+  if (detail.panel) fs.writeFileSync(path.join(output, 'together-detail.png'), (await dock.capturePage()).toPNG());
+  const plateAfter = await dockPlateAnchor(dock);
+  check(
+    'Together Dock 打开详情不移动状态牌',
+    Math.abs(plateAfter.x - plateBefore.x) <= 2 && Math.abs(plateAfter.y - plateBefore.y) <= 2,
+    JSON.stringify({ plateBefore, plateAfter })
+  );
+  await clickDock(dock);
+  const closed = await dockDetailState(dock);
+  const canvasAfter = dock.getBounds();
+  check(
+    'Together Dock 再点收起详情并回到默认画布',
+    closed.view !== 'detail' && !closed.panel &&
+      Math.abs(canvasAfter.width - canvasBefore.width) <= 2 && Math.abs(canvasAfter.height - canvasBefore.height) <= 2,
+    JSON.stringify({ view: closed.view, canvasBefore, canvasAfter })
+  );
   await wait(200);
 }
 
@@ -439,21 +517,28 @@ async function checkSoloDock(dock, mini) {
     const surface = document.querySelector('.dock-surface');
     const rows = [...document.querySelectorAll('.person')];
     const rect = rows[0]?.getBoundingClientRect();
-    const divider = rows[0] ? getComputedStyle(rows[0], '::before').display : '';
+    const box = surface ? surface.getBoundingClientRect() : null;
     return {
       rowCount: rows.length,
       solo: surface?.classList.contains('solo') ?? null,
       width: rect?.width ?? 0,
-      surfaceWidth: surface ? surface.getBoundingClientRect().width : 0,
-      dividerDisplay: divider,
-      dividerWidth: rows[0] ? getComputedStyle(rows[0], '::before').width : '',
+      surfaceWidth: box?.width ?? 0,
+      surfaceHeight: box?.height ?? 0,
+      dividers: document.querySelectorAll('.dock-divider').length,
       hasLegacy: !!document.querySelector('${LEGACY_ORB}'),
       hasUndefined: /undefined/.test(document.body.innerText),
     };
   })()`);
   check('Solo Dock 只有一行 person 区域', structure.rowCount === 1 && structure.solo === true, JSON.stringify(structure));
-  check('Solo Dock 没有中线分隔与空槽', structure.dividerDisplay === 'none', JSON.stringify({ display: structure.dividerDisplay, width: structure.dividerWidth }));
-  check('Solo Dock 单行铺满状态牌内容宽度', structure.width >= structure.surfaceWidth - 30, JSON.stringify({ row: structure.width, surface: structure.surfaceWidth }));
+  check('Solo Dock 没有中线分隔与空槽', structure.dividers === 0 && structure.rowCount === 1, JSON.stringify({ dividers: structure.dividers, rows: structure.rowCount }));
+  const measure = await dock.webContents.executeJavaScript(DOCK_CONTENT_MEASURE);
+  const expectedPlate = measure ? Math.max(DOCK_MIN_WIDTH.solo, Math.ceil(measure.content + measure.padding + measure.border)) : 0;
+  check(
+    'Solo Dock 单行按实测内容定宽（不保留空槽宽度）',
+    !!measure && structure.width > 0 && Math.abs(structure.surfaceWidth - expectedPlate) <= 2 &&
+      Math.abs(structure.surfaceHeight - DOCK_PLATE_HEIGHT) <= 1,
+    JSON.stringify({ row: structure.width, surface: structure.surfaceWidth, measure, expectedPlate })
+  );
   check('Solo Dock 无旧 Orb DOM 残留', !structure.hasLegacy);
   check('Solo Dock 文案不含 undefined', !structure.hasUndefined);
 
@@ -470,24 +555,34 @@ async function checkSoloDock(dock, mini) {
   );
   check('Solo Dock hover 展开本人补充信息且无外置 tooltip', geometry.hovered.rows === 1 && geometry.hovered.extra && !geometry.tipVisible);
 
-  const handle = dock.getBounds();
-  await dock.webContents.executeJavaScript(`document.querySelector('.pet-handle').dispatchEvent(new MouseEvent('click', { bubbles: true }))`);
-  await wait(400);
-  const cards = await mini.webContents.executeJavaScript(`(() => {
-    const cards = [...document.querySelectorAll('.detail-person')];
-    return {
-      visible: true,
-      cards: cards.length,
-      width: cards[0]?.getBoundingClientRect().width ?? 0,
-      grid: document.querySelector('.mini-grid') ? document.querySelector('.mini-grid').getBoundingClientRect().width : 0,
-      hasUndefined: /undefined/.test(document.body.innerText),
-    };
-  })()`);
-  check('Solo Mini 只有一个平级人物区', mini.isVisible() && cards.cards === 1, JSON.stringify(cards));
-  check('Solo Mini 人物区铺满一行', cards.width >= cards.grid * 0.8, JSON.stringify({ card: cards.width, grid: cards.grid }));
-  check('Solo Mini 文案不含 undefined', !cards.hasUndefined);
-  fs.writeFileSync(path.join(output, 'solo-mini.png'), (await mini.capturePage()).toPNG());
-  check('Solo Dock 点击不改变外框几何', Math.abs(dock.getBounds().width - handle.width) <= 8 && dock.getBounds().height === handle.height);
+  const plateBefore = await dockPlateAnchor(dock);
+  const canvasBefore = dock.getBounds();
+  await clickDock(dock);
+  const detail = await dockDetailState(dock);
+  check(
+    'Solo Dock 单击在同一个窗口里打开详情（Mini 窗口保持隐藏）',
+    detail.view === 'detail' && detail.panel && detail.solo && detail.title === '此刻' && !mini.isVisible(),
+    JSON.stringify({ view: detail.view, panel: detail.panel, solo: detail.solo, title: detail.title, miniVisible: mini.isVisible() })
+  );
+  check('Solo 详情只有一个平级人物区', detail.cards === 1 && new Set(detail.people).size === 1, JSON.stringify(detail));
+  check('Solo 详情单张卡铺满一行', detail.cardWidth >= detail.panelWidth - 40 && detail.cardWidth > 0, JSON.stringify({ card: detail.cardWidth, panel: detail.panelWidth }));
+  check('Solo 详情文案不含 undefined', !detail.hasUndefined);
+  if (detail.panel) fs.writeFileSync(path.join(output, 'solo-detail.png'), (await dock.capturePage()).toPNG());
+  const plateAfter = await dockPlateAnchor(dock);
+  check(
+    'Solo Dock 打开详情不移动状态牌',
+    Math.abs(plateAfter.x - plateBefore.x) <= 2 && Math.abs(plateAfter.y - plateBefore.y) <= 2,
+    JSON.stringify({ plateBefore, plateAfter })
+  );
+  await clickDock(dock);
+  const closed = await dockDetailState(dock);
+  const canvasAfter = dock.getBounds();
+  check(
+    'Solo Dock 再点收起详情并回到默认画布',
+    closed.view !== 'detail' && !closed.panel &&
+      Math.abs(canvasAfter.width - canvasBefore.width) <= 2 && Math.abs(canvasAfter.height - canvasBefore.height) <= 2,
+    JSON.stringify({ view: closed.view, canvasBefore, canvasAfter })
+  );
 }
 
 // ---------------------------------------------------------------------------

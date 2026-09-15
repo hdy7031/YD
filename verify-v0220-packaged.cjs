@@ -116,11 +116,11 @@ class Session {
 
     const selfCheck = await (async () => {
       for (let i = 0; i < 40; i++) {
-         // VS2 的默认显示模式是状态 Dock（.dock-row），角色陪伴形态才有 .rail-chip /
-         // .companion-rail。脚本先切回角色陪伴（后续固定画布 / 拖动断言都按角色形态），
-         // 再用同一句话读取：一个人一行，行内 bold 是短代号。
+         // VS2 的默认显示模式是状态 Dock（.person / .person-letter），角色陪伴形态才有
+         // .rail-chip / .companion-rail。脚本先切回角色陪伴（后续固定画布 / 拖动断言都按
+         // 角色形态），再用同一句话读取：一个人一行，行内 bold 是短代号。
          await orb.eval("window.dayhub.change({type:'settings',pet:{mode:'custom',size:'medium'}})");
-         const value = await orb.eval("(()=>{const rail=document.querySelector('.companion-rail');const chips=[...document.querySelectorAll('.companion-rail .rail-chip')];const rows=[...document.querySelectorAll('.dock-row')];return {stage:!!document.querySelector('.sprite-stage'),inner:!!document.querySelector('.sprite-inner'),rail:!!document.querySelector('.status-rail')||rail!==null||rows.length>0,chips:chips.length||rows.length,letters:chips.length?chips.map(c=>c.querySelector('b')?.textContent??'').join(''):rows.map(r=>r.querySelector('.dock-alias')?.textContent??'').join(''),slot:document.querySelector('.companion-figure')?.dataset.assetSlot,avatarPack:document.querySelector('.companion-figure')?.dataset.avatarPack,avatarFallback:document.querySelector('.companion-figure')?.dataset.avatarFallback,img:(()=>{const s=document.querySelector('.companion-frame.is-current');return !!s&&s.complete&&s.naturalWidth>0})(),filter:rail?getComputedStyle(rail).backdropFilter:(rows[0]?getComputedStyle(rows[0].closest('.dock-surface')??rows[0]).backdropFilter:null)}})()");
+         const value = await orb.eval("(()=>{const rail=document.querySelector('.companion-rail');const chips=[...document.querySelectorAll('.companion-rail .rail-chip')];const rows=[...document.querySelectorAll('.person')];return {stage:!!document.querySelector('.sprite-stage'),inner:!!document.querySelector('.sprite-inner'),rail:!!document.querySelector('.status-rail')||rail!==null||rows.length>0,chips:chips.length||rows.length,letters:chips.length?chips.map(c=>c.querySelector('b')?.textContent??'').join(''):rows.map(r=>r.querySelector('.person-letter')?.textContent??'').join(''),slot:document.querySelector('.companion-figure')?.dataset.assetSlot,avatarPack:document.querySelector('.companion-figure')?.dataset.avatarPack,avatarFallback:document.querySelector('.companion-figure')?.dataset.avatarFallback,img:(()=>{const s=document.querySelector('.companion-frame.is-current');return !!s&&s.complete&&s.naturalWidth>0})(),filter:rail?getComputedStyle(rail).backdropFilter:(rows[0]?getComputedStyle(rows[0].closest('.dock-surface')??rows[0]).backdropFilter:null)}})()");
         if (value.img && value.chips === 2) return value;
         await wait(300);
       }
@@ -188,7 +188,7 @@ class Session {
     const moved = await orb.eval('({x:window.screenX,y:window.screenY,w:innerWidth,h:innerHeight})');
     await orb.eval('window.dayhub.endDrag()');
     await wait(400);
-    const afterDrag = await orb.eval("(()=>({dragging:document.querySelector('.pet-dock').classList.contains('is-dragging'),rail:document.querySelectorAll('.companion-rail .rail-chip').length||document.querySelectorAll('.dock-row').length,animation:getComputedStyle(document.querySelector('.companion-body')).animationName}))()");
+    const afterDrag = await orb.eval("(()=>({dragging:document.querySelector('.pet-dock').classList.contains('is-dragging'),rail:document.querySelectorAll('.companion-rail .rail-chip').length||document.querySelectorAll('.person').length,animation:getComputedStyle(document.querySelector('.companion-body')).animationName}))()");
     // 拖动期间角色不能有位移形变；呼吸动画的冻结由 is-dragging 关闭动画实现，
     // 这里通过产品拖动通道驱动，重点是"期间无形变、位移真实发生、结束后无残留"。
     check('打包版拖动期间角色无位移形变', during.transform === 'none', JSON.stringify(during));

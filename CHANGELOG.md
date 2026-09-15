@@ -1,6 +1,6 @@
 ## 未发布 · 品牌 / 安装器 / 托盘 / Dock 收口
 
-### Dock 指示灯三态、hover / drag 状态机与详情浮层重建（本阶段）
+### Dock 指示灯三态、hover / drag 状态机与详情浮层重建（中间形态，已被下节「状态 Dock 收口」取代）
 
 - **指示灯回到三态**：绿 = 空闲、红 = 忙碌（上课 / 会议 / 教研 / 专注 / 用餐 / 通勤）、
   灰 = 下线（睡眠）。灰色下线与桌宠夜间睡眠同源（本人 Routine 的 `sleep` 规则，
@@ -43,6 +43,27 @@
 - Asset 03 语义图标接入详情面板（presentation-only 映射，找不到映射就不显示图标）。
 - Hover 按参考稿向上生长（Together ≈1.4×、Solo ≈1.24×），差量预留在固定画布内：
   窗口尺寸与位置不变、底边固定，命中区域只覆盖可见牌面。
+
+> 说明：本节与下一节记录的是「状态牌 + 独立详情浮层」的中间形态（牌面 184×36、Together 316×162
+> popover 等）。最终形态见下面的「状态 Dock 收口」：牌面按内容定宽、详情与状态牌合并到同一个窗口。
+
+### 状态 Dock 收口：内容定宽状态牌 + 合并式详情（`ui: rebuild dock detail and floating behavior` → `ui: soften dock status text color`）
+
+- **牌面按内容定宽**：宽度 = max(最小宽度, 渲染层实测内容宽度)，内容完整优先；
+  中档牌面高 56、首字母 22px 衬线、状态词 16px。两块 person 区域只保证同高同基线，
+  不再强制等宽（谁的文字长谁更宽），Solo 单行不保留空的同行者槽。
+- **详情与状态牌在同一个窗口里**：点 Dock 进入 detail 画布（卡片 + 10px 间距 + 状态牌 +
+  4px 阴影画布），不再有第二个 BrowserWindow；卡片默认在牌面上方，贴屏幕顶部时改到下方，
+  牌面在屏幕上的右下角在展开 / 收起前后完全不动。
+- **hover 生长留在固定画布内**：hover 期间窗口尺寸与位置不变；点击穿透窗口收不到 pointerleave，
+  因此用系统光标位置做兜底确认，避免"鼠标离开仍保持放大"。
+- **置顶生命周期**：show / resize / 移动 / 点击穿透切换 / 拖动结束 / 渲染层取快照后重新断言
+  `alwaysOnTop`，普通桌面窗口（含浏览器）盖不住 Dock。
+- **三态指示灯**：绿 = 空闲、灰 = 下线（睡眠，与桌宠夜间睡眠同源）、红 = 忙碌；
+  「今日课程已结束」是空闲的第二行上下文，圆点保持绿色。
+- **验收**：`verify-v030-dock.cjs`（结构 / hover / click / drag / 位置落盘 + 重启）、
+  `scripts/visual-vs2.cjs`（Duo 同高同基线、牌面按实测内容定宽、同窗口详情、牌面锚点不动）、
+  `runtime-audit.cjs` / `runtime-audit-solo.cjs` 与统一入口 `npm run verify:vs2` 一并锁定。
 
 ### 品牌资源单一来源（`fix: centralize current YD production brand assets`）
 

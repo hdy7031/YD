@@ -13,7 +13,7 @@
 | `npm run typecheck` | `tsc --noEmit` 全量类型检查 |
 | `npm run build` | esbuild 打包 main / UI 到 `dist/`（Electron verifier 的前置步骤） |
 | `npm run verify:vs2` | **VS2 视觉 / 运行时门禁统一入口**：依次运行 `scripts/visual-vs2.cjs` → `runtime-audit.cjs` → `runtime-audit-solo.cjs` → `verify-v030-dock.cjs` |
-| `npx electron scripts/visual-vs2.cjs` | 三档宽度（780×600 / 1050×780 / 1600×960）× 六个页面；课表周次与八节时间、设置六分区与共享 setting-row、Duo Dock 两区等宽、Solo Dock 单行无分隔与 Mini 单卡；报告含 `screen.getAllDisplays()` 缩放率与本次临时 userData 路径 |
+| `npx electron scripts/visual-vs2.cjs` | 三档宽度（780×600 / 1050×780 / 1600×960）× 六个页面；课表周次与八节时间、设置六分区与共享 setting-row、Duo Dock 两区同高同基线且牌面按实测内容定宽、点 Dock 在同一个窗口里打开详情（Mini 窗口保持隐藏）、Solo Dock 单行无分隔与单张全宽卡；报告含 `screen.getAllDisplays()` 缩放率与本次临时 userData 路径 |
 | `npx electron runtime-audit.cjs` | Together 工作区端到端运行时审计 |
 | `npx electron runtime-audit-solo.cjs` | Solo 工作区端到端运行时审计 |
 | `npx electron verify-v0220.cjs` | 桌宠十态契约、作息时间边界、提醒优先级、拖动稳定性 |

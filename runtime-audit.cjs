@@ -67,10 +67,12 @@ app.whenReady().then(async()=>{
   // Phase 2：'orb' 模式已经是 Dual Status Dock（圆角状态牌），不再有单球体与 D/Y 字母标记。
   const dockLabels=await orb.webContents.executeJavaScript("[...document.querySelectorAll('.person')].map(row=>row.querySelector('.person-letter')?.textContent.trim())");
   check('状态 Dock 双人平级结构：短标签来自档案',await orb.webContents.executeJavaScript("document.querySelectorAll('.person').length===2&&document.querySelectorAll('.status-core').length===2")&&dockLabels.join('|')==='D|Y','labels='+dockLabels.join('|'));
-  const dockBox=await orb.webContents.executeJavaScript("(()=>{const s=document.querySelector('.dock-surface').getBoundingClientRect();return {width:s.width,height:s.height,radius:getComputedStyle(document.querySelector('.dock-surface')).borderRadius}})()");console.log('dock',dockBox);
+  const dockBox=await orb.webContents.executeJavaScript("(()=>{const s=document.querySelector('.dock-surface'),st=getComputedStyle(s),r=s.getBoundingClientRect(),kids=[...s.children].map(el=>el.getBoundingClientRect().width),gap=parseFloat(st.columnGap)||0;return {width:r.width,height:r.height,radius:st.borderRadius,content:kids.reduce((a,b)=>a+b,0)+Math.max(0,kids.length-1)*gap,padding:parseFloat(st.paddingLeft)+parseFloat(st.paddingRight),border:parseFloat(st.borderLeftWidth)+parseFloat(st.borderRightWidth)}})()");console.log('dock',dockBox);
   // 检查的是可见表面（.dock-surface）；窗口本身比它大约 8px，作为阴影 / 圆角安全区。
-  // 牌面 = 窗口 − 8px 阴影画布；中档默认态 176×36（窗口 220×54，hover 在画布内生长）。
-  check('状态浮标是校正后的圆角状态牌',dockBox.width>=174&&dockBox.width<=178&&dockBox.height>=34&&dockBox.height<=38&&dockBox.width>dockBox.height&&parseFloat(dockBox.radius)>=999*0.9,JSON.stringify(dockBox));
+  // 牌面高度取产品常量（中档 56），宽度 = max(最小宽度 180, 实测内容宽度 + 内边距 + 边框)：
+  // 内容完整优先，不再是对称固定宽度；hover 只在这块画布内生长。
+  const dockExpected=Math.max(180,Math.ceil(dockBox.content+dockBox.padding+dockBox.border));
+  check('状态浮标是随内容定宽的圆角状态牌',Math.abs(dockBox.height-56)<=1&&dockBox.width>=180-1&&Math.abs(dockBox.width-dockExpected)<=2&&dockBox.width>dockBox.height&&parseFloat(dockBox.radius)>=999*0.9,JSON.stringify({dockBox,expected:dockExpected}));
   const dockRows=await orb.webContents.executeJavaScript("(()=>{const rows=[...document.querySelectorAll('.person')].map(r=>r.getBoundingClientRect()),s=document.querySelector('.dock-surface').getBoundingClientRect();return {rows:rows.map(r=>({top:r.top,left:r.left,width:r.width,height:r.height})),surface:{left:s.left,width:s.width}}})()");console.log('dock rows',dockRows);
   check('两个 person item 在同一水平面并由中线分隔',dockRows.rows.every(r=>r.left>=dockRows.surface.left-.5&&r.left+r.width<=dockRows.surface.left+dockRows.surface.width+.5)&&Math.abs(dockRows.rows[0].top-dockRows.rows[1].top)<1&&dockRows.rows[0].left<dockRows.rows[1].left);
   check('旧球体结构与原生title均已删除',await orb.webContents.executeJavaScript("!document.querySelector('.presence-orb,.presence-surface,.identity-mark,.presence-seam')&&!document.querySelector('.pet-handle').hasAttribute('title')"));
@@ -80,20 +82,23 @@ app.whenReady().then(async()=>{
   const injectKinds=value=>({...value,preferences:{...value.preferences,mode:'orb'},people:value.people.map(p=>({...p,current:{...p.current,kind:p.person==='me'?'meeting':'research'}}))});
   orb.webContents.send('dayhub:live',injectKinds(next));await wait(80);
   // 主进程每秒会广播一次真实快照，注入的快照可能被下一帧覆盖，因此重试几次。
-  let zones=false;
-  for(let i=0;i<6&&!zones;i++){
+  // 注入的快照只活到主进程下一帧广播（Dock 按内容测量后会立刻回环一次真实快照），
+  // 因此必须"发完立刻读"：读取注入帧本身，而不是等它稳定。
+  let zones={ok:false,rows:[]};
+  for(let i=0;i<6&&!zones.ok;i++){
     orb.webContents.send('dayhub:live',injectKinds(next));
-    await wait(60);
-    zones=await orb.webContents.executeJavaScript("!!document.querySelector('.person.presence-me.state-busy')&&!!document.querySelector('.person.presence-partner.state-focus')");
+    zones=await orb.webContents.executeJavaScript("(()=>{const rows=[...document.querySelectorAll('.person')].map(r=>({who:r.dataset.person,kind:r.dataset.stateKind,cls:r.className}));return {ok:!!document.querySelector('.person.presence-me.state-busy')&&!!document.querySelector('.person.presence-partner.state-focus'),rows}})()");
   }
-  check('忙碌与专注状态映射到独立状态核心',zones);
+  console.log('dock zones',zones);
+  check('忙碌与专注状态映射到独立状态核心',zones.ok);
   await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(80);check('CASE 1 hover 只展开内部信息且外框不变',!tip.isVisible()&&Math.abs(orb.getSize()[1]-64)<=2&&await orb.webContents.executeJavaScript("document.querySelectorAll('.person.is-hovered').length===1"));
   check('内部补充信息无 undefined',await orb.webContents.executeJavaScript("!!document.querySelector('.person.is-hovered .person-meta')&&!document.body.textContent.includes('undefined')"));
   await orb.webContents.executeJavaScript("window.dayhub.presence('leave')");await wait(80);check('CASE 2 离开后外框仍保持固定且无 tooltip',!tip.isVisible()&&Math.abs(orb.getSize()[1]-64)<=2);
   // Windows 会把透明无边框窗口对齐到物理像素栅格（DPI 缩放下会 ±几 px），
   // 因此窗口尺寸允许物理像素取整；Dock 的固定布局常量由 layout 单测锁定。
   const beforeDrag=orb.getBounds();
-  check('状态浮标窗口为固定圆角状态牌',Math.abs(beforeDrag.width-220)<=8&&beforeDrag.height===54,JSON.stringify({width:beforeDrag.width,height:beforeDrag.height}));
+  // 画布 = 牌面（宽度由内容决定，见上）+ 8px 阴影画布；中档牌面高 56 → 窗口高 64。
+  check('状态浮标窗口为随内容定宽的圆角状态牌',Math.abs(beforeDrag.height-64)<=2&&beforeDrag.width>=dockBox.width+8-3&&beforeDrag.width>beforeDrag.height,JSON.stringify({width:beforeDrag.width,height:beforeDrag.height,plateWidth:dockBox.width}));
   const pointer={x:beforeDrag.x+Math.round(beforeDrag.width/2),y:beforeDrag.y+Math.round(beforeDrag.height/2)};
   await orb.webContents.executeJavaScript("window.dayhub.presence('enter','me')");await wait(30);
   await orb.webContents.executeJavaScript(`window.dayhub.beginDrag(${pointer.x},${pointer.y})`);
