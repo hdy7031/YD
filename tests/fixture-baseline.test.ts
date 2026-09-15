@@ -15,6 +15,8 @@ import { validateState } from '../src/core.ts';
 import { v020Synthetic } from './fixtures/v020-synthetic.ts';
 import { syntheticSchedule, syntheticScheduleFile } from './fixtures/synthetic.ts';
 import { v3SoloSynthetic } from './fixtures/v3-solo-synthetic.ts';
+import { v3TogetherSynthetic } from './fixtures/v3-together-synthetic.ts';
+import { v3TogetherBaseline } from './fixtures/v3-together-baseline.ts';
 import { getCompanionProfile } from '../src/people.ts';
 import { ROUTINE_DOMAIN_VERSION } from '../src/migration.ts';
 
@@ -108,4 +110,50 @@ test('提交的 Solo fixture 与构造器一致，且确实是 1 人工作区', 
   assert.ok(state.profiles.every(profile => profile.routine === undefined), 'v3 fixture 不应带 routine');
   assert.ok(state.courses.length > 0 && state.events.length > 0 && state.tasks.length > 0 && state.reminders.length > 0);
   assert.ok(state.events.every(event => event.person === 'alex'), '会议归属本人');
+});
+
+// Phase 5A：生产 fresh install 不再预建同行者，Together 验收改用显式种下的 fixture。
+// 这份 fixture 是"一个真实双人数据库在 v3 的样子"（Phase 2A 之前），由运行环境复制到
+// 隔离 userData 后启动，因此 Together 门禁不再依赖生产默认值。
+test('提交的 Together fixture 与构造器一致，且确实是 2 人 v3 工作区', async () => {
+  const state = v3TogetherSynthetic();
+  const normalized = JSON.parse(JSON.stringify(state));
+  const packed = unpack(fs.readFileSync(path.join(fixturesDir, 'v3-together-synthetic.dayhub'), 'utf8'));
+  assert.ok(sameJson(packed.state, normalized), 'together dayhub fixture 过期：请运行 npm run fixtures:build');
+  const SQL = await initSqlJs({ wasmBinary: Uint8Array.from(fs.readFileSync(path.join(root, 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'))).buffer });
+  const db = new SQL.Database(fs.readFileSync(path.join(fixturesDir, 'v3-together-synthetic.sqlite')));
+  try {
+    const body = JSON.parse(String(db.exec('SELECT body FROM app_state WHERE id = 1')[0].values[0][0]));
+    assert.ok(sameJson(body, normalized), 'together sqlite fixture 过期：请运行 npm run fixtures:build');
+  } finally { db.close(); }
+  assert.equal(state.profiles.length, 2);
+  assert.deepEqual(state.profiles.map(profile => profile.role), ['self', 'companion']);
+  assert.deepEqual(state.profiles.map(profile => profile.id), ['me', 'partner'], 'legacy 身份证号只在这里作为兼容输入');
+  assert.equal(state.settings.domainVersion, ROUTINE_DOMAIN_VERSION - 1);
+  assert.ok(state.profiles.every(profile => profile.routine === undefined), 'v3 fixture 不应带 routine');
+  assert.ok(state.courses.length > 0 && state.tasks.length > 0 && state.events.length > 0 && state.notices.length > 0);
+});
+
+// Phase 5A：需要双人的门禁（runtime-audit / verify-v0220 / verify-v030-* / Dock / VS2 / packaged）
+// 在启动前把这份最小双人工作区复制进隔离 userData。业务集合必须保持为空，
+// 否则 pending / 需要处理 这类计数断言会被 fixture 悄悄污染。
+test('提交的门禁基线 fixture 与构造器一致，且业务集合全空', async () => {
+  const state = v3TogetherBaseline();
+  const normalized = JSON.parse(JSON.stringify(state));
+  const packed = unpack(fs.readFileSync(path.join(fixturesDir, 'v3-together-baseline.dayhub'), 'utf8'));
+  assert.ok(sameJson(packed.state, normalized), 'baseline dayhub fixture 过期：请运行 npm run fixtures:build');
+  const SQL = await initSqlJs({ wasmBinary: Uint8Array.from(fs.readFileSync(path.join(root, 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'))).buffer });
+  const db = new SQL.Database(fs.readFileSync(path.join(fixturesDir, 'v3-together-baseline.sqlite')));
+  try {
+    const body = JSON.parse(String(db.exec('SELECT body FROM app_state WHERE id = 1')[0].values[0][0]));
+    assert.ok(sameJson(body, normalized), 'baseline sqlite fixture 过期：请运行 npm run fixtures:build');
+  } finally { db.close(); }
+  assert.deepEqual(state.profiles.map(profile => profile.id), ['me', 'partner']);
+  assert.deepEqual(state.profiles.map(profile => profile.role), ['self', 'companion']);
+  assert.deepEqual(state.profiles.map(profile => profile.startDate), ['2027-03-01', '2027-02-22']);
+  for (const key of ['courses', 'exceptions', 'events', 'tasks', 'notices', 'reminders'] as const) {
+    assert.equal(state[key].length, 0, `${key} 必须为空（门禁自己灌数据）`);
+  }
+  assert.equal(state.settings.domainVersion, ROUTINE_DOMAIN_VERSION - 1);
+  assert.ok(state.profiles.every(profile => profile.routine === undefined && profile.avatar === undefined), 'v3 形态：routine / avatar 由启动迁移补齐');
 });

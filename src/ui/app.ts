@@ -14,7 +14,7 @@ import { personOptions, profileLabelFor, shellTabs, tabShortcuts, tabWidthPolicy
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BellRing, CalendarClock, CalendarDays, Clock3, Inbox, ListTodo, Settings, Table2 } from 'lucide-react';
-import { initial, id, occurrences, conflicts, epoch, dateOf, addDays, weekday, DAY } from '../core.ts';
+import { createCompanionProfile, id, occurrences, conflicts, epoch, dateOf, addDays, weekday, DAY } from '../core.ts';
 import type { DesktopAPI, State, Entity, Command, Course, Exception, Task, Event, Notice, Occurrence, Reminder, ChecklistItem, PersonId, SchedulePackage } from '../types.ts';
 declare global { interface Window { dayhub: DesktopAPI } }
 const api=window.dayhub;
@@ -276,9 +276,10 @@ function App(){
   async function change(cmd:Command){setPending(true);err('');try{const s=await api.change(cmd);set(s);return s;}catch(e){err(msg(e));return null;}finally{setPending(false);}}
   function open(entity:Entity,value?:any,convert?:string){if(entity==='notices'){setTab('inbox');setSelectedNotice(value?.id||null);return;}edit({entity,value:value||newValue(entity,activePerson,selfId),convert});err('');}
   function addCompanion(){
-    const self=requireSelfProfile(s),template=getCompanionProfile(initial(now));
-    if(!template||companion)return;
-    open('profiles',{...template,id:id(),name:'TA',shortAlias:'D',startDate:self.startDate,weeks:self.weeks,periods:structuredClone(self.periods),updatedAt:now});
+    const self=requireSelfProfile(s);
+    if(companion)return;
+    // 表单初值来自领域工厂（中性占位名 / 代号由显示规则派生），用户在同一个表单里改。
+    open('profiles',createCompanionProfile(now,self));
   }
   async function importImage(paste=false){setImporting(true);err('');try{const result=await(paste?api.pasteImage():api.importImage());if(result){const noticeId=id();set(await api.change({type:'inbound',id:noticeId,payload:{image:result.image,sourceType:paste?'SCREENSHOT':'IMAGE_IMPORT'}}));setTab('inbox');setSelectedNotice(noticeId);try{const text=await api.ocr(result.image);if(text.trim())set(await api.parseNotice(noticeId,text,true));}catch(e){err(msg(e));}}else if(paste)say('剪贴板中没有图片，可使用粘贴文字。');}catch(e){err(msg(e));}finally{setImporting(false);}}
   async function chooseSchedule(){setImporting(true);err('');try{const value=await api.chooseSchedule();if(value)setSchedule(value);}catch(e){err(msg(e));}finally{setImporting(false);}}

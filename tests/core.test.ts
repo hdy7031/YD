@@ -2,10 +2,11 @@ import { personStatus, statusLabel } from '../src/live.ts';
 const partnerStatus=(s:State,now:number)=>personStatus(s,now,'partner');
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { initial, epoch, dateOf, addDays, occurrences, conflicts, apply, tick, validateState, showPanelOnLaunch, DAY } from '../src/core.ts';
+import { epoch, dateOf, addDays, occurrences, conflicts, apply, tick, validateState, showPanelOnLaunch, DAY } from '../src/core.ts';
+import { togetherWorkspace } from './helpers/workspaces.ts';
 import type { State, Course, Task, Event, SchedulePackage } from '../src/types.ts';
 const start=epoch('2026-09-07T00:00');
-function state(){return initial(start);}
+function state(){return togetherWorkspace(start);}
 function course(overrides:Partial<Course>={}):Course{return {id:'c1',person:'me',title:'数学',place:'A302',notes:'',weekday:1,first:1,last:1,weeks:[1,2,3],reminders:[10],checklist:[],updatedAt:start,...overrides};}
 function task(overrides:Partial<Task>={}):Task{return {id:'t1',title:'提交报告',due:'2026-09-08T12:00',notes:'',done:false,checklist:[],reminders:[1440,120,0],updatedAt:start,...overrides};}
 function event(overrides:Partial<Event>={}):Event{return {id:'e1',title:'会议',start:'2026-09-07T10:00',end:'2026-09-07T11:00',place:'',notes:'',reminders:[30],checklist:[],updatedAt:start,...overrides};}

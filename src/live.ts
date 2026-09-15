@@ -1,7 +1,7 @@
 import { pendingReminders } from './selectors.ts';
 import { occurrences, epoch, dateOf, DAY } from './core.ts';
 import { companionDisplay, type CompanionDisplay } from './companion-display.ts';
-import { defaultAliasFor, effectiveRole, personAlias } from './people.ts';
+import { defaultAliasFor, effectiveRole, personAlias, profileAlias } from './people.ts';
 import { resolvePetInstance, type PetInstance } from './pet-instance.ts';
 import { getCurrentState, getRoutineState, STATE_SOURCE_PRIORITY } from './state/engine.ts';
 import { buildPersonStatusPresentation, stateLabel, stateTone, type PersonStatusPresentation } from './state/presentation.ts';
@@ -33,8 +33,8 @@ export const petDefaults:PetPreferences={mode:'custom',size:'medium',animate:tru
 // BUSY_CLASS / BUSY_EVENT 由统一状态引擎选出的 CurrentState 派生（source = schedule），
 // 其余码只在 CurrentState 为 idle 时补充说明（今天无课 / 学期结束 / 尚未录入…）。
 export type StatusCode="FREE"|"BUSY_CLASS"|"BUSY_EVENT"|"UPCOMING"|"UNKNOWN"|"TERM_NOT_STARTED"|"NO_SCHEDULE"|"TERM_ENDED"|"DAY_FINISHED"|"NO_CLASS_TODAY";
-// 状态短代号的默认值（D / Y）由 people.ts 的身份解析决定：显式 shortAlias 优先。
-export const profileAlias=(p:{id:PersonId;role?:ProfileRole;shortAlias?:string},index=0)=>p.shortAlias??defaultAliasFor(p,index);
+// 状态短代号的显示规则只在 people.ts 实现一次：显式 shortAlias → 名称首字素 → 角色兜底。
+export { profileAlias };
 export interface PersonStatus {
   code:StatusCode;
   alias:string;

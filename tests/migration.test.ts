@@ -10,7 +10,8 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { Store } from '../src/store.ts';
-import { initial, validateState } from '../src/core.ts';
+import { validateState } from '../src/core.ts';
+import { togetherWorkspace } from './helpers/workspaces.ts';
 import { unpack } from '../src/backup.ts';
 import { getCompanionProfile, getSelfProfile } from '../src/people.ts';
 import { legacyDefaultRoutine } from '../src/routine.ts';
@@ -423,7 +424,7 @@ test('v4 → v6：补空的临时状态集合与默认 Avatar', async () => {
 });
 
 test('v5 → v6：只为缺失选择的档案补默认 Avatar，已有选择保持不变', () => {
-  const state = initial(v020Now);
+  const state = togetherWorkspace(v020Now);
   state.settings.domainVersion = MANUAL_STATUS_DOMAIN_VERSION;
   delete state.profiles[0].avatar;
   state.profiles[1].avatar = { packId: 'removed-pack', source: 'user' };

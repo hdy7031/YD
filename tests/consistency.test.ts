@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { initial, apply, epoch, occurrences, tick, validateState, DAY } from '../src/core.ts';
+import { apply, epoch, occurrences, tick, validateState, DAY } from '../src/core.ts';
+import { togetherWorkspace } from './helpers/workspaces.ts';
 import { personStatus, snapshot, migrateLive, statusLabel } from '../src/live.ts';
 import { pendingReminders, emptyScheduleText, scheduleDays, attentionSummary } from '../src/selectors.ts';
 import { v020Synthetic } from './fixtures/v020-synthetic.ts';
 const start=epoch('2026-09-07');
 function fixture(){
-  let s=initial(start);
+  let s=togetherWorkspace(start);
   for(const person of ['me','partner'] as const)s=apply(s,{type:'save',entity:'courses',value:{id:person,person,title:'语文',weekday:1,first:1,last:1,weeks:[1,3],notes:'',place:'101',checklist:[],reminders:[0]}},start);
   return s;
 }
@@ -28,13 +29,13 @@ test('0.2.10 有课表的 Ta 直接显示明确状态，无数据另有空状态
   const s=fixture();for(const [time,code,label] of [['08:10','BUSY_CLASS','上课中'],['12:00','DAY_FINISHED','今日课程已结束']] as const){
     const status=personStatus(s,epoch('2026-09-07T'+time),'partner');assert.equal(status.code,code);assert.equal(statusLabel(status),label);
   }
-  assert.equal(personStatus(initial(start),start,'partner').code,'NO_SCHEDULE');
+  assert.equal(personStatus(togetherWorkspace(start),start,'partner').code,'NO_SCHEDULE');
   // 未录入课表时："空闲"才显示「尚未录入课表」；落在作息里时如实显示作息状态。
-  assert.equal(statusLabel(personStatus(initial(start),epoch('2026-09-07T10:00'),'partner')),'尚未录入课表');
+  assert.equal(statusLabel(personStatus(togetherWorkspace(start),epoch('2026-09-07T10:00'),'partner')),'尚未录入课表');
   assert.notEqual(emptyScheduleText(0),emptyScheduleText(1));
 });
 test('0.2.8 单一未处理集合在触发、确认、延后时同步，确认不完成待办',()=>{
-  let s=apply(initial(start),{type:'save',entity:'tasks',value:{id:'todo',title:'报告',due:'2026-09-07T08:00',done:false,notes:'',checklist:[],reminders:[0]}},start);
+  let s=apply(togetherWorkspace(start),{type:'save',entity:'tasks',value:{id:'todo',title:'报告',due:'2026-09-07T08:00',done:false,notes:'',checklist:[],reminders:[0]}},start);
   assert.equal(snapshot(s,start).pending,0);tick(s,epoch('2026-09-07T08:00'));
   assert.equal(pendingReminders(s).length,1);assert.equal(snapshot(s,start).pending,1);
   s=apply(s,{type:'snooze',id:pendingReminders(s)[0].id},epoch('2026-09-07T08:00'));
@@ -43,13 +44,13 @@ test('0.2.8 单一未处理集合在触发、确认、延后时同步，确认�
   assert.equal(snapshot(s,start).pending,pendingReminders(s).length);assert.equal(snapshot(s,start).pending,0);assert.equal(s.tasks[0].done,false);
 });
 test('0.2.14 提醒生命周期兼容旧状态并支持可选延后时长',()=>{
-  let s=initial(start);s=apply(s,{type:'save',entity:'tasks',value:{id:'todo',title:'报告',due:'2026-09-07T08:00',done:false,notes:'',checklist:[],reminders:[0]}},start);
+  let s=togetherWorkspace(start);s=apply(s,{type:'save',entity:'tasks',value:{id:'todo',title:'报告',due:'2026-09-07T08:00',done:false,notes:'',checklist:[],reminders:[0]}},start);
   (s.reminders[0] as any).status='fired';s=validateState(s);assert.equal(s.reminders[0].status,'due');
   s=apply(s,{type:'snooze',id:s.reminders[0].id,minutes:30},epoch('2026-09-07T08:00'));
   assert.equal(s.reminders[0].status,'snoozed');assert.equal(s.reminders[1].status,'scheduled');assert.equal(s.reminders[1].due,epoch('2026-09-07T08:30'));assert.equal(s.reminders[1].snoozedFrom,s.reminders[0].id);
 });
 test('0.2.14 需要处理摘要只汇总待核对、已到提醒与逾期待办',()=>{
-  let s=initial(start);s.notices.push({id:'n',title:'',text:'原文',state:'inbox',parseStatus:'NEEDS_REVIEW',updatedAt:start});
+  let s=togetherWorkspace(start);s.notices.push({id:'n',title:'',text:'原文',state:'inbox',parseStatus:'NEEDS_REVIEW',updatedAt:start});
   s=apply(s,{type:'save',entity:'tasks',value:{id:'late',title:'逾期',due:'2026-09-07T07:00',done:false,notes:'',checklist:[],reminders:[]}},start);
   s=apply(s,{type:'save',entity:'tasks',value:{id:'due',title:'提醒',due:'2026-09-07T08:00',done:false,notes:'',checklist:[],reminders:[0]}},start);tick(s,epoch('2026-09-07T08:00'));
   assert.deepEqual(attentionSummary(s,epoch('2026-09-07T08:00')),{notices:1,reminders:1,overdue:1,total:3});
@@ -67,7 +68,8 @@ test('合成 v0.2 旧备份升级迁移不丢业务、提醒、设置或扩展�
   delete pet.nightRest;delete pet.miniPanel;delete pet.rememberPosition;
   validateState(legacy);const before=structuredClone(legacy);const next=migrateLive(structuredClone(legacy));validateState(next);
   for(const key of ['courses','tasks','events','notices','exceptions','reminders'] as const)assert.deepEqual((next as unknown as Record<string,unknown>)[key],(before as unknown as Record<string,unknown>)[key]);
-  assert.equal(next.settings.liveVersion,5);assert.deepEqual(next.profiles.map(p=>p.shortAlias),['Y','D']);assert.equal(next.profiles[1].name,'Sam');
+  // 旧安装没有 shortAlias：升级时按显示名称派生（Alex → A、Sam → S），不再写死 Y / D。
+  assert.equal(next.settings.liveVersion,5);assert.deepEqual(next.profiles.map(p=>p.shortAlias),['A','S']);assert.equal(next.profiles[1].name,'Sam');
   assert.equal(next.settings.pet?.nightRest,true);assert.equal(next.settings.trayResident,true);
   assert.deepEqual(migrateLive(structuredClone(next)),next);
   const profile={...next.profiles[0],shortAlias:'自定义'};const edited=apply(next,{type:'save',entity:'profiles',value:profile},start);assert.equal(snapshot(edited,start).people[0].alias,'自定义');

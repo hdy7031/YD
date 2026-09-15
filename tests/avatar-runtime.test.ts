@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AvatarRuntime, type AvatarRuntimeResource } from '../src/avatar-runtime.ts';
 import { companionGeometry } from '../src/companion-layout.ts';
-import { epoch, initial } from '../src/core.ts';
+import { epoch } from '../src/core.ts';
+import { togetherWorkspace } from './helpers/workspaces.ts';
 import { snapshot } from '../src/live.ts';
 
 interface Fixture { canvas: { width: number; height: number }; asset: string }
@@ -117,7 +118,7 @@ test('older success cannot commit after a newer request fails',async()=>{
 
 test('PetInstance subject changes drive Pack requests without touching CurrentState',async()=>{
   const now=epoch('2027-03-01T10:00');
-  const state=initial(now);
+  const state=togetherWorkspace(now);
   const self=state.profiles.find(profile=>profile.role==='self')!;
   const companion=state.profiles.find(profile=>profile.role==='companion')!;
   self.avatar={packId:'test-pack-a',source:'user'};
@@ -141,7 +142,7 @@ test('PetInstance subject changes drive Pack requests without touching CurrentSt
 
 test('Solo and Together hot-switch only the active subject Pack',async()=>{
   const now=epoch('2027-03-01T10:00');
-  const together=initial(now);
+  const together=togetherWorkspace(now);
   const self=together.profiles.find(profile=>profile.role==='self')!;
   const companion=together.profiles.find(profile=>profile.role==='companion')!;
   self.avatar={packId:'test-pack-a',source:'user'};

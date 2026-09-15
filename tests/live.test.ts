@@ -2,7 +2,8 @@
 // 不再依赖开发者私人课表或任何真实用户记录。
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {initial,apply,epoch,occurrences} from '../src/core.ts';
+import {apply,epoch,occurrences} from '../src/core.ts';
+import {togetherWorkspace} from './helpers/workspaces.ts';
 import {personStatus,bubbleEvents,migrateLive,snapshot,presenceStateFor,statusLabel} from '../src/live.ts';
 import {syntheticState} from './fixtures/synthetic.ts';
 const base=()=>syntheticState(epoch('2027-02-22T00:00'));
@@ -30,7 +31,7 @@ test('0.2.10 状态覆盖上课、课间、结束、无课、未开始、调课�
   const weekend=personStatus(s,epoch('2027-02-28T10:00'),'partner');
   assert.equal(weekend.code,'NO_CLASS_TODAY');assert.equal(statusLabel(weekend),'今天无课');
   // 未录入课表时："空闲"才显示「尚未录入课表」；落在作息里时如实显示作息状态。
-  const emptyState=initial(epoch('2027-02-21T00:00'));
+  const emptyState=togetherWorkspace(epoch('2027-02-21T00:00'));
   assert.equal(statusLabel(personStatus(emptyState,epoch('2027-02-21T10:00'),'partner')),'尚未录入课表');
   assert.equal(statusLabel(personStatus(emptyState,epoch('2027-02-21T00:00'),'partner')),'睡觉中','默认作息里 00:00 是睡觉时段');
   const beforeTerm=personStatus(s,epoch('2027-02-21T10:00'),'partner');

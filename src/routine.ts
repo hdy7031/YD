@@ -187,7 +187,7 @@ export const LEGACY_DEFAULT_ROUTINE_TIMES = [
   { id: 'legacy-afternoon-wake', kind: 'wake', label: '午睡后起床', start: '14:00', end: '14:20' },
 ] as const;
 
-// 默认规则的唯一构造处：迁移、initial() 与设置页的"使用默认作息"共用它，
+// 默认规则的唯一构造处：迁移与设置页的"使用默认作息"共用它，
 // 任何地方都不允许再写一遍这组时间。
 function defaultRoutineRules(): RoutineRule[] {
   return LEGACY_DEFAULT_ROUTINE_TIMES.map(entry => ({

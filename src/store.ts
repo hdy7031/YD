@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { initial, validateState } from './core.ts';
+import { createFreshState, validateState } from './core.ts';
 import type { State } from './types.ts';
 export interface DB { run(sql:string, params?:unknown[]):unknown; exec(sql:string):{columns:string[];values:unknown[][]}[]; export():Uint8Array; close():void }
 export type OpenDB=(bytes?:Uint8Array)=>DB;
@@ -25,7 +25,7 @@ export class Store {
     if(fs.existsSync(this.file)) {
       try{this.state=this.decode(fs.readFileSync(this.file));}
       catch(error){if(!fs.existsSync(this.file+'.bak'))throw new Error('数据库无法读取，请从备份恢复。原文件未改动。');this.state=this.decode(fs.readFileSync(this.file+'.bak'));fs.copyFileSync(this.file,this.file+'.damaged-'+Date.now());fs.copyFileSync(this.file+'.bak',this.file);this.recovered=true;}
-    }else{this.state=initial(now);this.persist(this.state);}
+    }else{this.state=createFreshState(now);this.persist(this.state);}
   }
   private decode(bytes:Uint8Array):State {const db=this.open(bytes);try{const result=db.exec('SELECT body FROM app_state WHERE id = 1');if(!result[0]?.values[0])throw new Error('数据库没有状态');return validateState(JSON.parse(String(result[0].values[0][0])));}finally{db.close();}}
   private encode(state:State):Uint8Array {

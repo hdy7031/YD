@@ -4,7 +4,7 @@
 // 且历史 id 'me' / 'partner' 仍然沿用同一条兼容路径。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apply, initial, validateState } from '../src/core.ts';
+import { apply, createFreshState, validateState } from '../src/core.ts';
 import { personStatus, profileAlias, snapshot } from '../src/live.ts';
 import { companionId, effectiveRole, getCompanionProfile, getProfileById, getSelfProfile, personAlias, requireSelfProfile, roleCounts } from '../src/people.ts';
 import { AVATAR_SELECTION_DOMAIN_VERSION, DOMAIN_VERSION, IDENTITY_DOMAIN_VERSION, PERSON_AWARE_DOMAIN_VERSION, ROUTINE_DOMAIN_VERSION, identityRoleMigration, migrationSteps } from '../src/migration.ts';
@@ -18,7 +18,7 @@ const profile = (id: PersonId, role?: ProfileRole, name = id): Profile => ({
 });
 // domainVersion: v2 = 已迁移（要求显式 role）；省略 = v1 旧数据。
 function stateWith(profiles: Profile[], options: { domainVersion?: number } = {}): State {
-  const state = initial(0);
+  const state = createFreshState(0);
   state.profiles = profiles;
   if (options.domainVersion === undefined) delete state.settings.domainVersion;
   else state.settings.domainVersion = options.domainVersion;
@@ -105,16 +105,26 @@ test('课表导入按工作区现有档案校验人员：自定义 id 可导入�
   assert.equal(Object.keys(workspace.profiles).some(key => !/^\d+$/.test(key)), false);
 });
 
-test('短代号默认值跟随角色：本人 Y、同行者 D，显式设置优先', () => {
-  assert.equal(profileAlias(profile('alex', 'self')), 'Y');
-  assert.equal(profileAlias(profile('sam', 'companion')), 'D');
-  assert.equal(profileAlias(profile('me')), 'Y');
-  assert.equal(profileAlias(profile('partner')), 'D');
+test('显示代号派生：显式 shortAlias 优先，否则取名称首字素，无名称时按角色兜底', () => {
+  // 合成档案的 name 默认等于 id。
+  assert.equal(profileAlias(profile('alex', 'self')), 'a');
+  assert.equal(profileAlias(profile('Sam', 'companion')), 'S');
+  // 中文 / emoji / 代理对 / ZWJ 序列都取"第一个字素"，不会像 name[0] 那样被切开。
+  assert.equal(profileAlias(profile('p', 'self', '阿丽')), '阿');
+  assert.equal(profileAlias(profile('p', 'self', '🌟星')), '🌟');
+  assert.equal(profileAlias(profile('p', 'self', '👨‍👩‍👧 一家')), '👨‍👩‍👧');
+  // 显式 shortAlias 永远优先：既有用户已经持久化的 Y / D 一字不改。
   assert.equal(profileAlias({ ...profile('sam', 'companion'), shortAlias: 'S' }), 'S');
-  const reversed = stateWith([profile('partner', 'companion'), profile('me', 'self')], { domainVersion: 2 });
-  assert.equal(personAlias(reversed, 'me'), 'Y');
-  assert.equal(personAlias(reversed, 'partner'), 'D');
-  assert.equal(personAlias(reversed, 'ghost'), 'Y');
+  assert.equal(profileAlias({ ...profile('me', 'self'), shortAlias: 'Y' }), 'Y');
+  assert.equal(profileAlias({ ...profile('partner', 'companion'), shortAlias: 'D' }), 'D');
+  // 名称为空 / 只有空格 → 按角色兜底：本人「我」、同行者「TA」，不再默认 Y / D。
+  assert.equal(profileAlias({ ...profile('anon', 'self'), name: '' }), '我');
+  assert.equal(profileAlias({ ...profile('anon', 'companion'), name: '   ' }), 'TA');
+  const reversed = stateWith([profile('partner', 'companion', 'Sam'), profile('me', 'self', 'Alex')], { domainVersion: 2 });
+  assert.equal(personAlias(reversed, 'me'), 'A');
+  assert.equal(personAlias(reversed, 'partner'), 'S');
+  // 查不到的档案（历史 id / 已删除档案）不抛错，退回中性兜底。
+  assert.equal(personAlias(reversed, 'ghost'), '我');
 });
 
 // 投影按档案数量输出：单人一条、双人两条；顺序取 profiles 顺序，身份语义来自 role。

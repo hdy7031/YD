@@ -5,7 +5,7 @@
 // 并锁定"提醒只为工作区本人生成、同行者不产生本机提醒"的既有策略。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apply, epoch, initial, occurrences, validateState } from '../src/core.ts';
+import { apply, createFreshState, epoch, occurrences, validateState } from '../src/core.ts';
 import { personStatus, snapshot } from '../src/live.ts';
 import { scheduleDays } from '../src/selectors.ts';
 import type { Course, Event, PersonId, Profile, ProfileRole, Task } from '../src/types.ts';
@@ -21,7 +21,7 @@ const course = (id: string, owner: PersonId, over: CourseOverrides = {}): Course
 const event = (id: string, owner?: PersonId, over: EventOverrides = {}): Event => ({ id, ...(owner ? { person: owner } : {}), title: 'Project Review', start: '2027-03-01T10:00', end: '2027-03-01T11:00', place: 'Room 101', notes: '', reminders: [30], checklist: [], updatedAt: 0, ...over });
 const task = (id: string, over: TaskOverrides = {}): Task => ({ id, title: 'Submit report', due: '2027-03-02T18:00', notes: '', done: false, checklist: [], reminders: [60], updatedAt: 0, ...over });
 const at = (text: string) => epoch(text);
-const workspace = (profiles: Profile[]) => { const state = initial(0); state.profiles = profiles; return state; };
+const workspace = (profiles: Profile[]) => { const state = createFreshState(0); state.profiles = profiles; return state; };
 
 test('Solo 课程：单人工作区的课程照常产生 occurrence 与状态', () => {
   let s = workspace([person('alex', 'self', 'Alex')]);
@@ -31,7 +31,8 @@ test('Solo 课程：单人工作区的课程照常产生 occurrence 与状态', 
   assert.equal(today[0].person, 'alex');
   const status = personStatus(s, at('2027-03-01T08:10'), 'alex');
   assert.equal(status.code, 'BUSY_CLASS');
-  assert.equal(status.alias, 'Y');
+  // 代号从显示名称派生（Alex → A）；Y / D 不再是系统身份机制。
+  assert.equal(status.alias, 'A');
   assert.equal(status.todayCount, 1);
   assert.deepEqual(scheduleDays(s, '2027-03-01', 'alex').map(day => day.day), ['2027-03-01']);
 });
@@ -87,7 +88,7 @@ test('Solo 快照：只投影一个档案，没有幽灵同行者与空代号', 
   assert.equal(live.people.length, 1);
   assert.deepEqual(live.people.map(status => status.person), ['alex']);
   assert.equal(live.people[0].code, 'BUSY_CLASS');
-  assert.equal(live.people[0].alias, 'Y');
+  assert.equal(live.people[0].alias, 'A');
   assert.ok(live.people.every(status => typeof status.alias === 'string' && status.alias.length > 0));
   assert.equal(personStatus(s, at('2027-03-01T08:10'), 'partner').code, 'UNKNOWN', '不存在的同行者不抛错');
 });

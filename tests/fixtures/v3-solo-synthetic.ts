@@ -6,7 +6,7 @@
 //   * v3 → v4 迁移测试与 Electron 迁移验收：它刻意保持在 Phase 2A **之前**的 v3 形态
 //     （domainVersion = 3、档案没有 routine），构建产物也固定在这个形态。
 // 用自定义 id（而不是 'me'）是刻意的：它证明界面与桌宠都不再依赖历史字面量。
-import { apply, epoch, initial, validateState } from '../../src/core.ts';
+import { apply, createFreshState, epoch, validateState } from '../../src/core.ts';
 import type { Course, Event, State, Task } from '../../src/types.ts';
 
 export const soloPersonId = 'alex';
@@ -31,11 +31,11 @@ const task = (over: Partial<Task> = {}): Task => ({
 });
 
 export function v3SoloSynthetic(now = soloNow): State {
-  const state = initial(now);
+  const state = createFreshState(now);
   // 只保留一个本人档案，并换成自定义 id / 名称：Solo 工作区没有任何同行者。
   const self = state.profiles[0];
   const profile = { ...self, id: soloPersonId, role: 'self' as const, name: 'Alex', shortAlias: 'A', startDate: '2027-03-01', weeks: 16, updatedAt: now };
-  // v4 之前档案没有 routine：删掉 initial() 种下的字段，让这份 fixture 真的是"迁移前"。
+  // v4 之前档案没有 routine：删掉 fresh state 种下的字段，让这份 fixture 真的是"迁移前"。
   delete profile.routine;
   delete profile.avatar;
   // v5 之前也没有临时状态（Phase 3C）：fixture 固定表示 v3 形态。

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {initial,apply,epoch} from '../src/core.ts';
+import {apply,epoch} from '../src/core.ts';
+import {togetherWorkspace} from './helpers/workspaces.ts';
 import {migrateLive,snapshot,personStatus,petDefaults} from '../src/live.ts';
 import {CompanionTimeline,companionDisplay,companionRailLabel,reminderHoldMs,reminderNudgeMs} from '../src/companion-display.ts';
 import {currentStateToPetDisplay,petRoutineSummary,resolvePetState,routineKindToPetState} from '../src/companion-display.ts';
@@ -138,7 +139,7 @@ test('0.2.16 状态颜色只有一套：语义相同必然同色，空闲不会�
   assert.equal(companionTone(presenceStateFor(statusOf('idle','NO_CLASS_TODAY'))),'calm');
   // 未录入课表的人是"空闲"（绿），不是"下线"（灰）：灰只表示正在睡觉。
   // 空闲阶段（含尚未录入课表）绝不允许落到红色。
-  const empty=migrateLive(initial(epoch('2027-02-22T00:00')));
+  const empty=migrateLive(togetherWorkspace(epoch('2027-02-22T00:00')));
   for(const status of people(empty,idleNow))assert.equal(companionTone(presenceStateFor(status)),'calm');
   for(const status of people(empty,idleNow))assert.notEqual(companionTone(presenceStateFor(status)),'busy');
   assert.equal(presenceStateFor(people(s,epoch('2027-02-23T16:10'))[1]),'upcoming');

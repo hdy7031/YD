@@ -6,7 +6,8 @@
 // v0.3 Phase 1 的 Person 迁移中解除，本文件是唯一的测试入口。
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { apply, epoch, initial } from '../../src/core.ts';
+import { apply, epoch } from '../../src/core.ts';
+import { togetherWorkspace } from '../helpers/workspaces.ts';
 import { migrateLive } from '../../src/live.ts';
 import type { SchedulePackage, State } from '../../src/types.ts';
 
@@ -21,5 +22,5 @@ export function syntheticSchedule(): SchedulePackage {
 // 用与产品相同的命令构建状态：先建空状态，再导入合成课表，最后跑一次 live 迁移，
 // 因此 fixture 与真实升级路径共享同一套不变量。
 export function syntheticState(now = epoch('2027-02-22T00:00')): State {
-  return migrateLive(apply(initial(now), { type: 'importSchedule', value: syntheticSchedule() }, now));
+  return migrateLive(apply(togetherWorkspace(now), { type: 'importSchedule', value: syntheticSchedule() }, now));
 }

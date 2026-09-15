@@ -8,7 +8,7 @@
 // 表现层叠加（提醒保持、刚结束的轻庆祝）只影响桌宠姿态，绝不改写人物状态。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apply, epoch, initial } from '../src/core.ts';
+import { apply, createFreshState, epoch } from '../src/core.ts';
 import { companionRailLabel, currentStateToPetDisplay, resolvePetState } from '../src/companion-display.ts';
 import { personStatus, presenceStateFor, snapshot, statusLabel } from '../src/live.ts';
 import { getCurrentState } from '../src/state/engine.ts';
@@ -32,7 +32,7 @@ const routineOf = (...rules: RoutineRule[]): RoutineProfile => ({ source: 'user'
 const person = (id: PersonId, role: ProfileRole, name = id, routine: RoutineProfile = emptyRoutine(0)): Profile =>
   ({ id, role, name, routine, startDate: MONDAY, weeks: 16, periods, updatedAt: 0 });
 const workspace = (profiles: Profile[]): State => {
-  const state = initial(at(`${MONDAY}T00:00`));
+  const state = createFreshState(at(`${MONDAY}T00:00`));
   state.profiles = profiles;
   return state;
 };

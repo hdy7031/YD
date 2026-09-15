@@ -56,14 +56,37 @@ export function resolvePetSubject(state: Pick<State, 'profiles'>): Profile {
   return getCompanionProfile(state) ?? requireSelfProfile(state);
 }
 
-// Visual System 2.0 默认：本人 Y（Your）、同行者 D（Day）。显式 shortAlias 永远优先，
-// 因此升级不会改写用户已经设置好的代号。
-export function defaultAliasFor(profile: Pick<Profile, 'id' | 'role'>, index = 0): string {
-  return effectiveRole(profile, index) === PROFILE_COMPANION ? 'D' : 'Y';
+/**
+ * 显示代号派生（Phase 5A 泛化）：
+ *
+ *   1. 用户显式设置过 shortAlias → 用它（既有用户已持久化的 Y / D 一字不改）；
+ *   2. 否则取显示名称的第一个字素（中文 / 英文 / emoji / 代理对都不会被切坏）；
+ *   3. 名称为空 → 本人「我」、同行者「TA」。
+ *
+ * Y / D 不再是系统身份机制；它只是"用户自己存过这两个字母"时的合法取值。
+ */
+export function firstVisibleGrapheme(value?: string): string {
+  const text = (value ?? '').trim();
+  if (!text) return '';
+  const constructor = (Intl as unknown as { Segmenter?: new (locale?: string, options?: { granularity: string }) => { segment(input: string): Iterable<{ segment: string }> } }).Segmenter;
+  if (constructor) {
+    const segmenter = new constructor('zh-CN', { granularity: 'grapheme' });
+    for (const part of segmenter.segment(text)) return part.segment;
+    return '';
+  }
+  // 兜底：按码位取第一个字素，绝不用 name[0]（会切开代理对 / emoji）。
+  return Array.from(text)[0] ?? '';
 }
 
-export function profileAlias(profile: Pick<Profile, 'id' | 'role'> & { shortAlias?: string }, index = 0): string {
-  return profile.shortAlias ?? defaultAliasFor(profile, index);
+export function defaultAliasFor(profile: Pick<Profile, 'id' | 'role'> & { name?: string }, index = 0): string {
+  const derived = firstVisibleGrapheme(profile.name);
+  if (derived) return derived;
+  return effectiveRole(profile, index) === PROFILE_COMPANION ? 'TA' : '我';
+}
+
+export function profileAlias(profile: Pick<Profile, 'id' | 'role' | 'name'> & { shortAlias?: string }, index = 0): string {
+  const explicit = profile.shortAlias?.trim();
+  return explicit ? explicit : defaultAliasFor(profile, index);
 }
 
 export function personAlias(state: Pick<State, 'profiles'>, id: PersonId): string {

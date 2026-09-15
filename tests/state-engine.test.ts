@@ -6,7 +6,7 @@
 // personStatus 在 Schedule 场景一致"的安全绳（消费者迁移留 Phase 3B）。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apply, epoch, initial, occurrences } from '../src/core.ts';
+import { apply, createFreshState, epoch, occurrences } from '../src/core.ts';
 import { personStatus } from '../src/live.ts';
 import { getCurrentState, getWorkspaceCurrentStates, STATE_SOURCE_PRIORITY } from '../src/state/engine.ts';
 import { emptyRoutine, routineKindPriority, type RoutineProfile, type RoutineRule } from '../src/routine.ts';
@@ -36,7 +36,7 @@ const routineOf = (...rules: RoutineRule[]): RoutineProfile => ({ source: 'user'
 const person = (id: PersonId, role: ProfileRole, name = id, routine: RoutineProfile = emptyRoutine(0)): Profile =>
   ({ id, role, name, routine, startDate: MONDAY, weeks: 16, periods, updatedAt: 0 });
 const workspace = (profiles: Profile[]): State => {
-  const state = initial(at(`${MONDAY}T00:00`));
+  const state = createFreshState(at(`${MONDAY}T00:00`));
   state.profiles = profiles;
   return state;
 };

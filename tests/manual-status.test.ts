@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { apply, epoch, initial, validateState } from '../src/core.ts';
+import { apply, createFreshState, epoch, validateState } from '../src/core.ts';
 import { Store } from '../src/store.ts';
 import { companionRailLabel } from '../src/companion-display.ts';
 import { personStatus, snapshot, statusLabel } from '../src/live.ts';
@@ -35,7 +35,7 @@ const routineOf = (...rules: RoutineRule[]): RoutineProfile => ({ source: 'user'
 const person = (id: PersonId, role: ProfileRole, name = id, routine: RoutineProfile = emptyRoutine(0)): Profile =>
   ({ id, role, name, routine, avatar:{packId:DEFAULT_AVATAR_PACK_ID,source:'default'}, startDate: MONDAY, weeks: 16, periods, updatedAt: 0 });
 const workspace = (profiles: Profile[]): State => {
-  const state = initial(at(`${MONDAY}T00:00`));
+  const state = createFreshState(at(`${MONDAY}T00:00`));
   state.profiles = profiles;
   return state;
 };

@@ -12,7 +12,7 @@
 // 指针事件下才有意义，合成 DOM 断言证明不了任何东西。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apply, epoch, initial } from '../src/core.ts';
+import { apply, createFreshState, epoch } from '../src/core.ts';
 import { personPresentation, personStatus, presenceStateFor } from '../src/live.ts';
 import { relativeDayLabel, nextItemText, statusLight } from '../src/state/presentation.ts';
 import { companionTone } from '../src/companion-colors.ts';
@@ -37,7 +37,7 @@ const routineOf = (...rules: RoutineRule[]): RoutineProfile => ({ source: 'user'
 const person = (id: PersonId, role: ProfileRole, name = id, routine: RoutineProfile = emptyRoutine(0)): Profile =>
   ({ id, role, name, routine, startDate: MONDAY, weeks: 16, periods, updatedAt: 0 });
 const workspace = (profiles: Profile[]): State => {
-  const state = initial(at(`${MONDAY}T00:00`));
+  const state = createFreshState(at(`${MONDAY}T00:00`));
   state.profiles = profiles;
   return state;
 };

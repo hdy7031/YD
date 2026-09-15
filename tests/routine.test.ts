@@ -5,7 +5,8 @@
 // 写死时间表逐分钟等价"——后者是 Phase 2B 切换消费方时的安全绳。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apply, epoch, initial, validateState } from '../src/core.ts';
+import { apply, epoch, validateState } from '../src/core.ts';
+import { togetherWorkspace } from './helpers/workspaces.ts';
 import { routineKindToPetState, type ScheduledPetState } from '../src/companion-display.ts';
 import {
   activeRoutine, assertRoutineProfile, assertRoutineRule, emptyRoutine, legacyDefaultRoutine,
@@ -182,7 +183,7 @@ test('校验：非法时间、时长、星期、优先级、编号与来源都�
 
 test('v4 不变式：每个档案都必须带合法 RoutineProfile，v3 数据仍然可以没有', () => {
   const now = at(`${MONDAY}T08:00`);
-  const state = initial(now);
+  const state = togetherWorkspace(now);
   assert.deepEqual(state.profiles.map(profile => profile.routine?.source), ['user', 'legacy-default']);
   assert.equal(state.profiles[0].routine?.rules.length, 0);
   assert.equal(state.profiles[1].routine?.rules.length, 5);
@@ -204,7 +205,7 @@ test('v4 不变式：每个档案都必须带合法 RoutineProfile，v3 数据�
 
 test('档案保存不会丢作息：带 routine 覆盖、缺省保留、非法 routine 被拒绝', () => {
   const now = at(`${MONDAY}T08:00`);
-  const state = initial(now);
+  const state = togetherWorkspace(now);
   const custom = { ...state.profiles[0], routine: routineOf(rule({ id: 'my-focus', kind: 'focus', start: '20:00', end: '21:00' })) };
   const saved = apply(state, { type: 'save', entity: 'profiles', value: custom }, now);
   assert.deepEqual(saved.profiles[0].routine, custom.routine);

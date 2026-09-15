@@ -2,7 +2,7 @@ import { migrateInbox, receive, confirmDraft } from './inbox.ts';
 import { validDraft } from './inbox-types.ts';
 import { DOMAIN_VERSION, stateDomainVersion } from './domain.ts';
 import { isProfileRole, isSelfId, requireSelfProfile, roleCounts } from './people.ts';
-import { assertRoutineProfile, emptyRoutine, legacyDefaultRoutine } from './routine.ts';
+import { assertRoutineProfile, emptyRoutine } from './routine.ts';
 import { MANUAL_LABEL_LIMIT, MANUAL_OVERRIDE_LIMIT, assertManualOverride, isManualStateKind, pruneManualOverrides } from './state/manual.ts';
 import { assertAvatarSelection, resetAvatarPack, setAvatarPack } from './avatar-selection.ts';
 import { DEFAULT_AVATAR_PACK_ID } from './avatar.ts';
@@ -15,14 +15,74 @@ export function dateOf(time: number): string { return new Date(time + 8 * 360000
 export function epoch(value: string|null): number { if(value===null)return NaN; return Date.parse(value.length === 10 ? value + 'T00:00:00+08:00' : (/[zZ]$|[+-]\d{2}:\d{2}$/.test(value) ? value : value + (value.length===16 ? ':00' : '') + '+08:00')); }
 export function addDays(date: string, days: number): string { return dateOf(epoch(date) + days * DAY); }
 export function weekday(date: string): number { return new Date(date + 'T12:00:00Z').getUTCDay() || 7; }
-export function initial(now = Date.now()): State {
-  const date = dateOf(now), monday = addDays(date, 1 - weekday(date));
-  // 默认首次启动仍然是当前的双人体验（本人 + 同行者）；由 Onboarding 决定几个人的事情留到后续阶段。
-  const profile = (pid: PersonId, role: ProfileRole, name: string, routine: RoutineProfile): Profile => ({ id: pid, role, name, routine, avatar: { packId: DEFAULT_AVATAR_PACK_ID, source: 'default' }, startDate: monday, weeks: 20, periods: [{start:'08:00',end:'08:45'},{start:'08:55',end:'09:40'},{start:'10:00',end:'10:45'},{start:'10:55',end:'11:40'},{start:'14:00',end:'14:45'},{start:'14:55',end:'15:40'},{start:'16:00',end:'16:45'},{start:'16:55',end:'17:40'}], updatedAt: now });
-  // v4 起每个档案都必须带 RoutineProfile：本人从空规则开始；同行者沿用 0.2.x 的默认
-  // 桌宠时间表（由 routine.ts 的统一 factory 生成，这里不写 magic time）。
-  const profiles = [profile('me','self','我', emptyRoutine(now)), profile('partner','companion','Ta', legacyDefaultRoutine(now))];
-  return { version: 1, profiles, courses: [], exceptions: [], events: [], tasks: [], notices: [], reminders: [], manualOverrides: [], settings: { domainVersion: DOMAIN_VERSION, launch: false, setup: false }, lastTick: now };
+// ---------------------------------------------------------------------------
+// Fresh Install Contract（Phase 5A）
+//
+// 全新安装（本地没有任何现存数据库）只由 createFreshState 生成：
+//   * 默认 Solo：只有 1 个 self 档案，**绝不**预建 companion；
+//   * PersonId 用正式生成器（crypto.randomUUID），不写死 legacy 'me' / 'partner'；
+//   * 课表 / 单次调停课 / 会议 / 待办 / 通知 / 提醒 / 临时状态全部为空；
+//   * 作息为空：不替新用户决定几点睡觉、几点吃饭。设置页的「使用默认作息」
+//     （routine.ts 的 createDefaultRoutine）仍然是用户主动选择的 preset；
+//   * Avatar 用官方 default Pack（产品默认视觉资源，不是私人数据）。
+//
+// 校历占位（Phase 5B gap）：当前 schema 用 startDate / weeks / periods 表达学期，
+// 没有"尚未配置"这一档，因此这里给出一组与任何真实学校无关的中性占位值
+// （本周周一 + 20 周 + 八节等长节次）。settings.setup=false 才是"还没核对校历"的
+// 产品信号；Phase 5B onboarding 会让用户自己填真实学期。
+export const NEUTRAL_SELF_NAME = '我';
+export const NEUTRAL_COMPANION_NAME = 'TA';
+export const PLACEHOLDER_TERM_WEEKS = 20;
+export const PLACEHOLDER_PERIODS: { start: string; end: string }[] = [
+  { start: '08:00', end: '08:45' }, { start: '08:55', end: '09:40' },
+  { start: '10:00', end: '10:45' }, { start: '10:55', end: '11:40' },
+  { start: '14:00', end: '14:45' }, { start: '14:55', end: '15:40' },
+  { start: '16:00', end: '16:45' }, { start: '16:55', end: '17:40' },
+];
+/** 中性学期占位：本周周一（不含任何真实校历信息）。 */
+export function placeholderTermStart(now: number): string {
+  const date = dateOf(now);
+  return addDays(date, 1 - weekday(date));
+}
+/** 全新安装的唯一状态工厂：纯函数，不读 UI / DOM / 网络 / fixture / 真实用户文件。 */
+export function createFreshState(now = Date.now()): State {
+  const self: Profile = {
+    id: id(),
+    role: 'self',
+    name: NEUTRAL_SELF_NAME,
+    routine: emptyRoutine(now),
+    avatar: { packId: DEFAULT_AVATAR_PACK_ID, source: 'default' },
+    startDate: placeholderTermStart(now),
+    weeks: PLACEHOLDER_TERM_WEEKS,
+    periods: structuredClone(PLACEHOLDER_PERIODS),
+    updatedAt: now,
+  };
+  return {
+    version: 1,
+    profiles: [self],
+    courses: [], exceptions: [], events: [], tasks: [], notices: [], reminders: [], manualOverrides: [],
+    settings: { domainVersion: DOMAIN_VERSION, launch: false, setup: false },
+    lastTick: now,
+  };
+}
+/**
+ * 用户主动添加同行者时的表单初值（界面「添加陪伴对象」用）。
+ *
+ * 它只是模板：真实写入仍然走 `{type:'save',entity:'profiles'}`，不绕过 Registry / validate。
+ * 名称与代号都是中性占位，用户在同一个表单里改成自己的。
+ */
+export function createCompanionProfile(now: number, self: Profile): Profile {
+  return {
+    id: id(),
+    role: 'companion',
+    name: NEUTRAL_COMPANION_NAME,
+    routine: emptyRoutine(now),
+    avatar: { packId: DEFAULT_AVATAR_PACK_ID, source: 'default' },
+    startDate: self.startDate,
+    weeks: self.weeks,
+    periods: structuredClone(self.periods),
+    updatedAt: now,
+  };
 }
 function assert(v: unknown, message: string): asserts v { if (!v) throw new Error(message); }
 function text(v: unknown, max = 20000): v is string { return typeof v === 'string' && v.length <= max; }

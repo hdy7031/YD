@@ -7,12 +7,19 @@ import initSqlJs from 'sql.js';
 import { pack } from '../src/backup.ts';
 import { v020Synthetic } from '../tests/fixtures/v020-synthetic.ts';
 import { v3SoloSynthetic } from '../tests/fixtures/v3-solo-synthetic.ts';
+import { v3TogetherSynthetic } from '../tests/fixtures/v3-together-synthetic.ts';
+import { v3TogetherBaseline } from '../tests/fixtures/v3-together-baseline.ts';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixtures = path.join(root, 'tests', 'fixtures');
 const SQL = await initSqlJs({ wasmBinary: Uint8Array.from(fs.readFileSync(path.join(root, 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'))).buffer });
 const summary = {};
-for (const [name, state] of [['v020-synthetic', v020Synthetic()], ['v3-solo-synthetic', v3SoloSynthetic()]]) {
+for (const [name, state] of [
+  ['v020-synthetic', v020Synthetic()],
+  ['v3-solo-synthetic', v3SoloSynthetic()],
+  ['v3-together-synthetic', v3TogetherSynthetic()],
+  ['v3-together-baseline', v3TogetherBaseline()],
+]) {
   const dayhub = path.join(fixtures, `${name}.dayhub`);
   fs.writeFileSync(dayhub, pack(state, fixtures), 'utf8');
   const db = new SQL.Database();
