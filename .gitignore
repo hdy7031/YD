@@ -15,3 +15,6 @@ scripts/build-2026-autumn-schedule.mjs
 scripts/verify-2026-autumn-schedule.mjs
 scripts/seed-v028-smoke.mjs
 scripts/verify-v028-smoke.mjs
+
+# Local Codex session handoff
+HANDOFF.md

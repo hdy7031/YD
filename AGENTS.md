@@ -145,6 +145,147 @@ Save tokens through precise reading, less repetition, and less unrelated verific
 - Use commentary updates while work is in progress for long tasks; do not wait until the final answer.
 - Keep the final report in Chinese unless the user requests another language, and keep it aligned with the report format above.
 
+### Session Handoff
+
+`HANDOFF.md` is a temporary handoff file for moving the current work state between long Codex sessions.
+
+Keep responsibilities separate:
+
+- `AGENTS.md`: durable project rules, architecture constraints, and working conventions.
+- `HANDOFF.md`: what the current task has reached, why it stopped there, and what comes next.
+- Git: code-history facts that have actually happened and been committed.
+
+Do not mix these three.
+
+Create or update `HANDOFF.md` only when:
+
+- A long session is ending.
+- The current context is already long and a fresh session is safer.
+- Current work is unfinished and must pause.
+- The user is switching model, agent, or Codex session.
+- The user explicitly requests a handoff.
+- Complex uncommitted changes need to continue in another session.
+
+Do not mechanically update `HANDOFF.md` for ordinary small tasks, short sessions, or simple work that is already complete and committed.
+
+#### Write handoff from repository truth
+
+Do not write a handoff from chat memory alone.
+
+Before creating or updating `HANDOFF.md`, inspect at least:
+
+- Current branch.
+- Current HEAD and recent relevant commits.
+- `git status`.
+- Current uncommitted diff.
+- Actual state of the task-relevant code.
+- Verification results already executed.
+
+If chat memory conflicts with the repository or Git, the repository and Git win. Never describe planned, intended, or interrupted work as completed.
+
+#### Handoff content
+
+Write for a new Codex session with no prior chat context. Keep it concise, factual, and executable; do not turn it into a chat summary.
+
+Use this structure:
+
+```md
+# HANDOFF
+
+Updated:
+Branch:
+HEAD:
+Working tree:
+
+## Current objective
+What problem is being solved, and what does completion look like.
+
+## Completed
+Real work completed in this session. Record important results only, not a file-by-file changelog.
+
+## Current state
+The exact stopping state.
+
+Include when needed:
+- Current symptom
+- Current implementation state
+- Relevant files
+- Uncommitted changes
+- Blockers
+- Known root cause
+
+## Next actions
+Specific steps the next session should execute, in order.
+
+Aim for "open a new session and continue directly", not "research the whole repository again".
+
+## Decisions / Invariants
+Task-specific decisions that should not be reopened without reason. Do not copy durable rules already in `AGENTS.md`.
+
+## Pitfalls / Do not repeat
+Known traps, failed approaches, wrong assumptions, and changes that caused regressions. Focus on what the next session is most likely to repeat.
+
+## Verification
+PASS:
+- Executed checks that are still valid.
+
+FAIL / pending:
+- Current failures.
+- Checks not yet run that are actually required.
+```
+
+Do not:
+
+- Copy long chat transcripts.
+- Paste large source excerpts.
+- Paste long test logs.
+- Repeat all of `AGENTS.md`.
+- Treat `HANDOFF.md` as a changelog.
+- Treat `HANDOFF.md` as long-term project documentation.
+- Preserve stale plans.
+- Include information unrelated to continuing the current task.
+- Mark unfinished work as complete.
+- Traverse the whole repository just to make the handoff feel complete.
+
+Keep `HANDOFF.md` quickly readable, normally tens of lines and about one hundred lines at most. Complex tasks may be longer, but the goal is accurate continuation, not maximum information.
+
+#### Resume from handoff
+
+If the root `HANDOFF.md` exists and the user asks to continue a prior session, read in this order:
+
+1. Root `AGENTS.md`.
+2. More specific `AGENTS.md` or `AGENTS.override.md` in the current scope.
+3. `HANDOFF.md`.
+4. Code paths named in the handoff.
+5. `git status`, branch, and HEAD to confirm the handoff is still valid.
+
+Do not start editing code from `HANDOFF.md` alone.
+
+If `HANDOFF.md` conflicts with Git, code, or `AGENTS.md`:
+
+- `AGENTS.md` and current user instructions win.
+- Actual repository state wins over the handoff description.
+- Correct the understanding of current state before continuing.
+
+Do not replan decisions that are explicit and still valid. Do not rerun verification already marked PASS in the handoff when the relevant code has not changed.
+
+#### Handoff lifecycle
+
+When the handoff task is complete:
+
+- Overwrite or refresh `HANDOFF.md` directly the next time a handoff is needed.
+- Do not append unlimited history.
+- Remove stale blockers, old plans, and obsolete information.
+- Keep it describing the present, not the past.
+
+`HANDOFF.md` is not a project archive.
+
+#### User triggers
+
+Treat phrases such as "this session is ending, write a handoff", "prepare a new session", "update HANDOFF", or "hand this work to the next Codex session" as requests to follow this section.
+
+If the user only says "continue" in a new session and `HANDOFF.md` exists, proactively read `AGENTS.md -> HANDOFF.md -> git status -> relevant files named by HANDOFF`, then continue from `Next actions`.
+
 ## Architecture and Domain Rules
 
 Keep business rules deterministic, pure, and testable; do not mix UI rendering, IPC, storage, time calculation, and state selection in one module. Extend the existing domain model rather than creating a parallel state system.
