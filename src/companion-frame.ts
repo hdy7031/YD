@@ -31,6 +31,9 @@ export interface CompanionAssets {
   available: boolean;
   // Human readable status for logs and the settings page.
   reason: string;
+  // 只在该说的话才说（Phase 5B1 UI 收口）：正常可用时是 null，界面不再重复解释
+  // "专属角色会跟随状态切换动作"这类永久说明；素材缺失 / 回退时才给出可操作提示。
+  notice: string | null;
   source: string;
   manifest: CompanionAssetManifest | null;
   // state key -> data URL

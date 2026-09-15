@@ -2815,6 +2815,8 @@ body.main-body .settings-nav button.active::before { top:auto; right:0; bottom:-
 .choice-chip.active { border-color:var(--yd-brand-line); background:var(--yd-brand-soft); color:var(--yd-brand-deep); font-weight:620; }
 .choice-chip:focus-visible { outline:2px solid #5E8583; outline-offset:2px; }
 .choice-chip:disabled { opacity:.55; cursor:not-allowed; }
+/* 单字选项（小 / 中 / 大）比「我 / Sam」更窄更轻，整体不抢右侧面积。 */
+.choice-chip-compact { min-width:52px; min-height:37px; padding:0 16px; }
 .setting-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(180px,auto); align-items:center; gap:20px; width:100%; max-width:none; min-height:54px; padding:8px 0; }
 .setting-row-copy { display:grid; gap:3px; min-width:0; }
 .setting-row-copy strong { color:var(--yd-ink); font-size:13px; font-weight:600; }

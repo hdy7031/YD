@@ -84,6 +84,7 @@ export function resolveCompanionAssets(baseDir: string, packId: string = DEFAULT
   const visual = packs[visualPack.id] ?? primary;
 
   // 面向用户的一句话，不暴露“接入 / 状态数 / fixture”这类工程说法。
+  const healthy = available && !usedDefault && primary.missing.length === 0;
   const reason = available
     ? usedDefault
       ? '所选角色素材不可用，已使用 YD 默认角色'
@@ -101,6 +102,8 @@ export function resolveCompanionAssets(baseDir: string, packId: string = DEFAULT
     packs,
     available,
     reason,
+    // 一切正常时不再向界面输出永久说明；只有真的需要用户知道时才给提示。
+    notice: healthy ? null : reason,
     source: visual.source,
     manifest: visual.manifest,
     // Compatibility projection for existing diagnostics and settings.

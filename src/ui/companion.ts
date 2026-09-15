@@ -650,7 +650,9 @@ export function PetSettings({live,settings,state,section='companionship'}:{live:
   const motionMode=p.reduceMotion?'reduced':'standard';
   // 这里说的是"桌宠主体"的作息：由 settings.petSubjectRole 决定（Solo 恒为本人）。
   const schedule=petRoutineSummary(state?resolvePetSubject(state).routine:undefined);
-  const sizeChoices=h('div',{className:'segmented setting-segmented'},...(['small','medium','large'] as const).map((value,index)=>h('button',{key:value,type:'button',className:p.size===value?'active':'',disabled:busy,onClick:()=>save({size:value})},['小','中','大'][index])));
+  // 三档尺寸也是"设置值选择"：与「桌宠表示」用同一套独立 Chip 语言，不再用黏连 segmented。
+  const sizeChoices=h('div',{className:'choice-chips','data-pet-size':'true',role:'radiogroup','aria-label':p.mode==='custom'?'角色大小':'Dock 大小'},
+    ...(['small','medium','large'] as const).map((value,index)=>h('button',{key:value,type:'button',role:'radio','aria-checked':p.size===value,'data-pet-size-option':value,className:p.size===value?'choice-chip choice-chip-compact active':'choice-chip choice-chip-compact',disabled:busy,onClick:()=>save({size:value})},['小','中','大'][index])));
   const together=(state?.profiles.length??1)>1;
   // Phase 5B1：桌宠主体是长期偏好（不是身份）。Solo 没有歧义，因此不给选择器。
   const companionProfile=state?getCompanionProfile(state):undefined;
@@ -684,7 +686,8 @@ export function PetSettings({live,settings,state,section='companionship'}:{live:
           h('strong',null,label),h('small',null,note));
       })),
       settingRow(p.mode==='custom'?'角色大小':'Dock 大小',p.mode==='custom'?'调整桌面角色的显示尺寸':'调整状态 Dock 的显示尺寸',sizeChoices),
-      h('p',{className:'muted setting-note'},assets?assets.reason:'正在读取专属角色素材……'),
+      // 素材正常时不再挂一条永久说明；只有缺失 / 回退这类需要用户知道的情况才提示。
+      assets?.notice?h('p',{className:'muted setting-note'},assets.notice):null,
       paused?h('p',{className:'muted setting-note'},`气泡已暂停，${clockText(p.pausedUntil)} 自动恢复。`):null)):null,
     section==='rhythm'?block('动态效果',h('div',{className:'mode-choices',role:'radiogroup','aria-label':'桌宠动态效果'},...motionOptions.map(([value,label,note])=>h('button',{key:value,type:'button',role:'radio','aria-checked':motionMode===value,className:motionMode===value?'mode-choice active':'mode-choice',disabled:busy,onClick:()=>save({animate:true,reduceMotion:value==='reduced'})},h('strong',null,label),h('small',null,note))))):null,
     section==='rhythm'?block('气泡提醒',h(React.Fragment,null,
