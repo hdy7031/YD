@@ -54,8 +54,10 @@ export function ScheduleGrid({state,profile,courses,now,edit,create,mode}:Schedu
       ...active.map(o=>{const c=courses.find(c=>c.id===o.courseId)!;
         const day=o.day,start=o.startClock,end=o.endClock;
         const index=profile.periods.findIndex(p=>p.end>start),first=index<0?profile.periods.length-1:index,last=profile.periods.findLastIndex(p=>p.start<end);
-        const content=h(React.Fragment,null,h('strong',null,o.title),h('small',null,mode==='overview'?(o.place||'地点未填'):`${start}—${end} · ${o.place||'未填地点'}`),state.exceptions.some(e=>e.courseId===o.courseId&&e.date===o.date)?h('em',null,'本次已调课'):null);
-        const props={className:`course-block ${courseTone(c)}`,'data-course-id':c.id,key:o.segmentId,style:{gridColumn:weekday(day)+1,gridRow:`${first+2} / ${Math.max(first,last)+3}`},title:mode==='edit'?`编辑课程模板 ${c.title}`:`${o.title} · ${start}—${end} · ${o.place||'地点未填'}`};
+        // 与日常列表同一条规则：可选信息缺失就不占位（没有地点就不显示"地点未填"）。
+        const slotText=mode==='overview'?o.place:`${start}—${end}${o.place?` · ${o.place}`:''}`;
+        const content=h(React.Fragment,null,h('strong',null,o.title),slotText?h('small',null,slotText):null,state.exceptions.some(e=>e.courseId===o.courseId&&e.date===o.date)?h('em',null,'本次已调课'):null);
+        const props={className:`course-block ${courseTone(c)}`,'data-course-id':c.id,key:o.segmentId,style:{gridColumn:weekday(day)+1,gridRow:`${first+2} / ${Math.max(first,last)+3}`},title:mode==='edit'?`编辑课程模板 ${c.title}`:`${o.title} · ${start}—${end}${o.place?` · ${o.place}`:''}`};
         return mode==='edit'?h('button',{...props,onClick:()=>edit(c)},content):h('div',props,content);}),
       !active.length?h('div',{className:'schedule-empty'},h('strong',null,emptyScheduleText(courses.length)),h('small',null,mode==='edit'?'点击空白节次添加安排。':'可以导入课表，或进入编辑后添加课程。')):null)),
     mode==='edit'?h('p',{className:'schedule-hint'},'点击课程进行修改，点击空白节次添加安排。'):null);
@@ -93,7 +95,8 @@ export function ManagementOverview({tasks,events,now,query,setQuery,taskCard,edi
   const shownEvents=events.filter(e=>(e.title+' '+e.notes+' '+e.place).toLowerCase().includes(q))
     .filter(e=>eventTime==='all'||eventTime==='upcoming'&&epoch(e.end||e.start)>=now||eventTime==='past'&&epoch(e.end||e.start)<now)
     .sort((a,b)=>epoch(a.start)-epoch(b.start));
-  const eventCard=(e:Event)=>h('article',{className:'entry management-event',key:e.id},h('div',{className:'entry-top'},h('h3',null,e.title),h('div',{className:'entry-flags'},epoch(e.end||e.start)<now?h('span',{className:'tag'},'已结束'):h('span',{className:'tag'},'会议 / 活动'),h('details',{className:'action-menu'},h('summary',{'aria-label':`${e.title}的更多操作`},'⋯'),h('div',{className:'action-menu-pop'},h('button',{className:'ghost',onClick:()=>editEvent(e)},'编辑'),h('button',{className:'text-button',onClick:()=>deleteEvent(e)},'删除'))))),h('p',{className:'time'},`${e.start.replace('T',' ')} — ${(e.end?e.end.slice(11):'结束时间 · 未填写')}`),h('p',{className:'muted'},e.place||'未填地点'),e.notes?h('p',{className:'note'},e.notes):null);
+  // 时间与地点都只显示真实存在的信息：没有结束时间就只报开始时间，没有地点就不占位。
+  const eventCard=(e:Event)=>h('article',{className:'entry management-event',key:e.id},h('div',{className:'entry-top'},h('h3',null,e.title),h('div',{className:'entry-flags'},epoch(e.end||e.start)<now?h('span',{className:'tag'},'已结束'):h('span',{className:'tag'},'会议 / 活动'),h('details',{className:'action-menu'},h('summary',{'aria-label':`${e.title}的更多操作`},'⋯'),h('div',{className:'action-menu-pop'},h('button',{className:'ghost',onClick:()=>editEvent(e)},'编辑'),h('button',{className:'text-button',onClick:()=>deleteEvent(e)},'删除'))))),h('p',{className:'time'},e.end?`${e.start.replace('T',' ')} — ${e.end.slice(11)}`:e.start.replace('T',' ')),e.place?h('p',{className:'muted'},e.place):null,e.notes?h('p',{className:'note'},e.notes):null);
   return h(React.Fragment,null,
     h('div',{className:'management-toolbar'},
       h('input',{'aria-label':'搜索事项与会议',placeholder:'搜索待办、会议、地点或备注',value:query,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>setQuery(e.target.value)}),
