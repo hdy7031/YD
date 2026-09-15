@@ -1,7 +1,7 @@
 import { migrateInbox, receive, confirmDraft } from './inbox.ts';
 import { validDraft } from './inbox-types.ts';
 import { DOMAIN_VERSION, stateDomainVersion } from './domain.ts';
-import { isProfileRole, isSelfId, requireSelfProfile, roleCounts } from './people.ts';
+import { getCompanionProfile, isPetSubjectRole, isProfileRole, isSelfId, requireSelfProfile, roleCounts } from './people.ts';
 import { assertRoutineProfile, emptyRoutine } from './routine.ts';
 import { MANUAL_LABEL_LIMIT, MANUAL_OVERRIDE_LIMIT, assertManualOverride, isManualStateKind, pruneManualOverrides } from './state/manual.ts';
 import { assertAvatarSelection, resetAvatarPack, setAvatarPack } from './avatar-selection.ts';
@@ -63,7 +63,9 @@ export function createFreshState(now = Date.now()): State {
     version: 1,
     profiles: [self],
     courses: [], exceptions: [], events: [], tasks: [], notices: [], reminders: [], manualOverrides: [],
-    settings: { domainVersion: DOMAIN_VERSION, launch: false, setup: false },
+    // Phase 5B1：fresh install 不静默创建桌面悬浮物 —— 桌宠要用户显式选择才出现；
+    // petSubjectRole 只是合法默认值（Solo 没有歧义，恒为本人）。
+    settings: { domainVersion: DOMAIN_VERSION, launch: false, setup: false, petEnabled: false, petSubjectRole: 'self' },
     lastTick: now,
   };
 }
@@ -243,6 +245,9 @@ export function apply(state: State, cmd: Command, now=Date.now()): State {
     if(cmd.type==='snooze'){const minutes=cmd.minutes??10;assert([10,30,60].includes(minutes),'延后时间无效');s.reminders.push({...r,id:`s:${id()}`,due:now+minutes*60000,status:'scheduled',firedAt:undefined,handledAt:undefined,snoozedFrom:r.id,snoozeMinutes:minutes,createdAt:now,updatedAt:now});}
   }else if(cmd.type==='settings'){
     assert(cmd.launch===undefined||typeof cmd.launch==='boolean','设置无效');assert(cmd.setup===undefined||typeof cmd.setup==='boolean','设置无效');assert(cmd.trayResident===undefined||typeof cmd.trayResident==='boolean','设置无效');
+    // Phase 5B1：桌宠主体偏好只是呈现偏好，不碰任何 Profile / PersonId / CurrentState。
+    assert(cmd.petSubjectRole===undefined||isPetSubjectRole(cmd.petSubjectRole),'设置无效');
+    assert(cmd.petEnabled===undefined||typeof cmd.petEnabled==='boolean','设置无效');
     if(cmd.pet!==undefined){
       const pet={mode:'custom',size:'medium',animate:true,reduceMotion:false,bubbles:true,duration:8,pausedUntil:0,miniPanel:true,rememberPosition:true,...s.settings.pet,...cmd.pet};
       // 0.2.20 起不再提供小猫桌宠：旧客户端的 'pet' 请求统一落到默认形象。
@@ -251,6 +256,14 @@ export function apply(state: State, cmd: Command, now=Date.now()): State {
       s.settings.pet=pet as any;
     }
     if(cmd.launch!==undefined)s.settings.launch=cmd.launch;if(cmd.setup!==undefined)s.settings.setup=cmd.setup;if(cmd.trayResident!==undefined)s.settings.trayResident=cmd.trayResident;
+    if(cmd.petSubjectRole!==undefined){
+      // Solo 没有第二个 Person：此时的 'companion' 无法被任何档案满足，直接拒绝，
+      // 不写进一个"永远回落到本人"的假设置。
+      assert(cmd.petSubjectRole==='self'||!!getCompanionProfile(s),'工作区里没有陪伴对象，桌宠只能表示本人');
+      s.settings.petSubjectRole=cmd.petSubjectRole;
+    }
+    // 桌宠开关是呈现偏好：关掉它不删除任何档案 / 形象 / 作息，也不改变 CurrentState。
+    if(cmd.petEnabled!==undefined)s.settings.petEnabled=cmd.petEnabled;
   }else if(cmd.type==='importSchedule'){
     const value=cmd.value as SchedulePackage;
     assert(value?.format==='dayhub-schedule'&&value.version===1&&text(value.termName,80)&&value.termName.trim(),'课表文件格式或学期名称无效');
@@ -330,6 +343,8 @@ export function validateState(value: unknown): State {
   if(s.settings.domainVersion!==undefined)assert(Number.isInteger(s.settings.domainVersion)&&s.settings.domainVersion>=1,'领域版本无效');
   if(s.settings.pet){const p=s.settings.pet;assert(['custom','pet','orb'].includes(p.mode)&&['small','medium','large'].includes(p.size)&&typeof p.animate==='boolean'&&(p.reduceMotion===undefined||typeof p.reduceMotion==='boolean')&&typeof p.bubbles==='boolean'&&Number.isInteger(p.duration)&&p.duration>=3&&p.duration<=30&&Number.isFinite(p.pausedUntil)&&p.pausedUntil>=0&&(p.miniPanel===undefined||typeof p.miniPanel==='boolean')&&(p.rememberPosition===undefined||typeof p.rememberPosition==='boolean'),'桌宠设置无效');}
   if(s.settings.trayResident!==undefined)assert(typeof s.settings.trayResident==='boolean','托盘设置无效');
+  if(s.settings.petSubjectRole!==undefined)assert(isPetSubjectRole(s.settings.petSubjectRole),'桌宠主体设置无效');
+  if(s.settings.petEnabled!==undefined)assert(typeof s.settings.petEnabled==='boolean','桌宠开关设置无效');
   if(s.bubbleHistory)assert(Array.isArray(s.bubbleHistory)&&s.bubbleHistory.length<=50000&&s.bubbleHistory.every(x=>text(x.id,20000)&&Number.isFinite(x.at)),'气泡记录无效');
   if(s.settings.orb)assert(Number.isFinite(s.settings.orb.x)&&Number.isFinite(s.settings.orb.y),'悬浮球位置无效');
   const targets=new Set([...s.courses.map(v=>`courses:${v.id}`),...s.events.map(v=>`events:${v.id}`),...s.tasks.map(v=>`tasks:${v.id}`)]);

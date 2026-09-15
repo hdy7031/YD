@@ -16,11 +16,13 @@ const now = epoch('2027-03-03T09:00');
 // 私有默认哨兵：fresh state 与派生投影里都不允许出现（合成 fixture 的名字也不允许）。
 const PRIVATE_SENTINELS = ['黄德宇', '喻丹', '研究生英语', '高二', '湖南大学', 'Users\\hdy', 'Alex', 'Sam', 'Computer Vision'];
 
-test('fresh install：DOMAIN_VERSION=6、默认 Solo、只有一个 self、没有 companion', () => {
+test('fresh install：DOMAIN_VERSION=7、默认 Solo、只有一个 self、没有 companion', () => {
   const state = createFreshState(now);
   validateState(state);
   assert.equal(state.settings.domainVersion, DOMAIN_VERSION);
-  assert.equal(DOMAIN_VERSION, 6, 'Phase 5A 不升级 schema');
+  assert.equal(DOMAIN_VERSION, 7, 'Phase 5B1 把 schema 升到 7（桌宠主体偏好）');
+  assert.equal(state.settings.petSubjectRole, 'self', 'fresh install 是 Solo，桌宠主体直接是本人');
+  assert.equal(state.settings.petEnabled, false, 'fresh install 不静默创建桌面悬浮物：桌宠要用户选择');
   assert.equal(state.profiles.length, 1, '全新安装只有一个人');
   const [self] = state.profiles;
   assert.equal(self.role, 'self');

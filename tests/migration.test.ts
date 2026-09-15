@@ -11,11 +11,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { Store } from '../src/store.ts';
 import { validateState } from '../src/core.ts';
-import { togetherWorkspace } from './helpers/workspaces.ts';
+import { soloWorkspace, togetherWorkspace } from './helpers/workspaces.ts';
 import { unpack } from '../src/backup.ts';
-import { getCompanionProfile, getSelfProfile } from '../src/people.ts';
+import { getCompanionProfile, getSelfProfile, resolvePetSubject } from '../src/people.ts';
 import { legacyDefaultRoutine } from '../src/routine.ts';
-import { AVATAR_SELECTION_DOMAIN_VERSION, DOMAIN_VERSION, IDENTITY_DOMAIN_VERSION, MANUAL_STATUS_DOMAIN_VERSION, PERSON_AWARE_DOMAIN_VERSION, ROUTINE_DOMAIN_VERSION, avatarSelectionMigrationV6, createMigrationBackup, domainVersion, migrationStamp, migrationSteps, manualStatusMigrationV5, personAwareMigrationV3, restoreMigrationBackup, routineProfileMigrationV4, runMigrations, type MigrationStep } from '../src/migration.ts';
+import { AVATAR_SELECTION_DOMAIN_VERSION, DOMAIN_VERSION, IDENTITY_DOMAIN_VERSION, MANUAL_STATUS_DOMAIN_VERSION, PERSON_AWARE_DOMAIN_VERSION, PET_SUBJECT_DOMAIN_VERSION, ROUTINE_DOMAIN_VERSION, avatarSelectionMigrationV6, createMigrationBackup, domainVersion, migrationStamp, migrationSteps, manualStatusMigrationV5, personAwareMigrationV3, petSubjectPreferenceMigrationV7, restoreMigrationBackup, routineProfileMigrationV4, runMigrations, type MigrationStep } from '../src/migration.ts';
 import type { State } from '../src/types.ts';
 import { v020Now, v020Synthetic } from './fixtures/v020-synthetic.ts';
 import { v2LegacySynthetic } from './fixtures/v2-legacy-synthetic.ts';
@@ -186,7 +186,7 @@ test('回滚路径是字节还原：备份保持 v1 形态，不依赖旧版读�
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('身份 / 归属 / 作息 / 手动状态 / Avatar 迁移 v1 → v6', async () => {
+test('身份 / 归属 / 作息 / 手动状态 / Avatar / 桌宠主体迁移 v1 → v7', async () => {
   const { dir, store, backups } = await seeded();
   try {
     const before = store.snapshot();
@@ -194,7 +194,7 @@ test('身份 / 归属 / 作息 / 手动状态 / Avatar 迁移 v1 → v6', async 
     assert.ok(before.profiles.every(profile => profile.role === undefined));
     const run = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
     assert.equal(run.migrated, true);
-    assert.deepEqual(run.steps, ['identity-roles', 'person-aware', 'routine-profile', 'manual-status', 'avatar-selection']);
+    assert.deepEqual(run.steps, ['identity-roles', 'person-aware', 'routine-profile', 'manual-status', 'avatar-selection', 'pet-subject-preference']);
     for (const file of [run.backup!.dayhub, run.backup!.sqlite, run.backup!.receipt]) assert.ok(fs.existsSync(file), file);
     const receipt = JSON.parse(fs.readFileSync(run.backup!.receipt, 'utf8'));
     assert.equal(receipt.fromDomainVersion, 1);
@@ -202,6 +202,8 @@ test('身份 / 归属 / 作息 / 手动状态 / Avatar 迁移 v1 → v6', async 
     assert.equal(receipt.counts.courses, before.courses.length);
 
     const after = store.snapshot();
+    // v0.2 的默认工作区有同行者：桌宠主体偏好必须落到同行者，旧视觉行为不变。
+    assert.equal(after.settings.petSubjectRole, 'companion');
     // 身份：legacy id 不变，角色按 self / companion 补齐。
     assert.deepEqual(after.profiles.map(p => p.id), before.profiles.map(p => p.id));
     assert.deepEqual(after.profiles.map(p => p.role), ['self', 'companion']);
@@ -262,7 +264,7 @@ test('迁移失败仍然回滚：后续版本的步骤抛错时数据库回到�
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('v2 → v6：旧会议归本人并补齐作息、手动状态与 Avatar', async () => {
+test('v2 → v7：旧会议归本人并补齐作息、手动状态、Avatar 与桌宠主体', async () => {
   const { dir, store, backups } = await seeded(v2LegacySynthetic());
   try {
     const before = store.snapshot();
@@ -272,7 +274,7 @@ test('v2 → v6：旧会议归本人并补齐作息、手动状态与 Avatar', a
 
     const run = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
     assert.equal(run.migrated, true);
-    assert.deepEqual(run.steps, ['person-aware', 'routine-profile', 'manual-status', 'avatar-selection']);
+    assert.deepEqual(run.steps, ['person-aware', 'routine-profile', 'manual-status', 'avatar-selection', 'pet-subject-preference']);
     for (const file of [run.backup!.dayhub, run.backup!.sqlite, run.backup!.receipt]) assert.ok(fs.existsSync(file), file);
     const receipt = JSON.parse(fs.readFileSync(run.backup!.receipt, 'utf8'));
     assert.equal(receipt.fromDomainVersion, IDENTITY_DOMAIN_VERSION);
@@ -324,7 +326,7 @@ test('v2 → v6：旧会议归本人并补齐作息、手动状态与 Avatar', a
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('v3 → v6（Together）：补齐作息、手动状态与 Avatar', async () => {
+test('v3 → v7（Together）：补齐作息、手动状态、Avatar 与桌宠主体', async () => {
   const { dir, store, backups } = await seeded(v3TogetherSynthetic());
   try {
     const before = store.snapshot();
@@ -334,7 +336,7 @@ test('v3 → v6（Together）：补齐作息、手动状态与 Avatar', async ()
 
     const run = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
     assert.equal(run.migrated, true);
-    assert.deepEqual(run.steps, ['routine-profile', 'manual-status', 'avatar-selection']);
+    assert.deepEqual(run.steps, ['routine-profile', 'manual-status', 'avatar-selection', 'pet-subject-preference']);
     for (const file of [run.backup!.dayhub, run.backup!.sqlite, run.backup!.receipt]) assert.ok(fs.existsSync(file), file);
     const receipt = JSON.parse(fs.readFileSync(run.backup!.receipt, 'utf8'));
     assert.equal(receipt.fromDomainVersion, ROUTINE_DOMAIN_VERSION - 1);
@@ -369,7 +371,7 @@ test('v3 → v6（Together）：补齐作息、手动状态与 Avatar', async ()
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('v3 → v6（Solo）：主体是本人，本人获得 legacy 作息与 Avatar', async () => {
+test('v3 → v7（Solo）：主体是本人，本人获得 legacy 作息、Avatar 与桌宠主体偏好', async () => {
   const { dir, store, backups } = await seeded(v3SoloSynthetic());
   try {
     const before = store.snapshot();
@@ -378,7 +380,7 @@ test('v3 → v6（Solo）：主体是本人，本人获得 legacy 作息与 Avat
     assert.equal(getCompanionProfile(before), undefined);
 
     const run = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
-    assert.deepEqual(run.steps, ['routine-profile', 'manual-status', 'avatar-selection']);
+    assert.deepEqual(run.steps, ['routine-profile', 'manual-status', 'avatar-selection', 'pet-subject-preference']);
 
     const after = store.snapshot();
     assert.equal(after.profiles.length, 1, '迁移不会凭空增加档案');
@@ -392,7 +394,7 @@ test('v3 → v6（Solo）：主体是本人，本人获得 legacy 作息与 Avat
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('v4 → v6：补空的临时状态集合与默认 Avatar', async () => {
+test('v4 → v7：补空的临时状态集合、默认 Avatar 与桌宠主体偏好', async () => {
   // 用 v3 的 Together fixture 先跑一次 v4 的作息步骤，得到真正的 v4 形态输入。
   const v4State = routineProfileMigrationV4(v3TogetherSynthetic(), v020Now);
   assert.equal(domainVersion(v4State), ROUTINE_DOMAIN_VERSION);
@@ -402,14 +404,15 @@ test('v4 → v6：补空的临时状态集合与默认 Avatar', async () => {
     const before = store.snapshot();
     const run = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
     assert.equal(run.migrated, true);
-    assert.deepEqual(run.steps, ['manual-status', 'avatar-selection']);
+    assert.deepEqual(run.steps, ['manual-status', 'avatar-selection', 'pet-subject-preference']);
     // 迁移前的备份保持 v4 形态：回滚靠字节还原，而不是让旧版读新库。
     const restored = unpack(fs.readFileSync(run.backup!.dayhub, 'utf8'));
     assert.equal((restored.state as { manualOverrides?: unknown }).manualOverrides, undefined);
     assert.equal(restored.state.settings.domainVersion, ROUTINE_DOMAIN_VERSION);
 
     const after = store.snapshot();
-    assert.equal(domainVersion(after), AVATAR_SELECTION_DOMAIN_VERSION);
+    assert.equal(domainVersion(after), PET_SUBJECT_DOMAIN_VERSION);
+    assert.equal(after.settings.petSubjectRole, 'companion', 'v3 Together fixture 有同行者 → 主体保持同行者');
     assert.deepEqual(after.manualOverrides, [], '旧数据补空数组');
     // 除新集合与 domainVersion 外，其它字段逐字段保持。
     assert.deepEqual(after.profiles.map(profile=>omit(profile,['avatar'])), before.profiles);
@@ -436,4 +439,68 @@ test('v5 → v6：只为缺失选择的档案补默认 Avatar，已有选择保�
   assert.deepEqual(omit(after.profiles[1], ['avatar']), omit(before.profiles[1], ['avatar']));
   assert.equal(after.settings.domainVersion, AVATAR_SELECTION_DOMAIN_VERSION);
   assert.deepEqual(avatarSelectionMigrationV6(structuredClone(after)), after);
+});
+
+test('v6 → v7：只补桌宠主体偏好，旧 Together 仍是同行者、旧 Solo 仍是本人', () => {
+  // Together：v6 形态（有同行者，但还没有 petSubjectRole）。
+  const together = togetherWorkspace(v020Now);
+  together.settings.domainVersion = AVATAR_SELECTION_DOMAIN_VERSION;
+  delete (together.settings as { petSubjectRole?: unknown }).petSubjectRole;
+  delete (together.settings as { petEnabled?: unknown }).petEnabled;
+  const before = structuredClone(together);
+  const after = petSubjectPreferenceMigrationV7(structuredClone(together));
+  assert.equal(after.settings.petSubjectRole, 'companion', '旧 Together 的桌宠一直代表同行者');
+  assert.equal(after.settings.petEnabled, true, '旧用户本来就有桌宠：升级不能把它弄没');
+  assert.equal(after.settings.domainVersion, PET_SUBJECT_DOMAIN_VERSION);
+  for (const key of Object.keys(before.settings) as (keyof typeof after.settings)[]) if (key !== 'domainVersion') assert.deepEqual(after.settings[key], before.settings[key], key);
+  assert.deepEqual(after.profiles, before.profiles, '档案逐字段不变');
+  for (const key of ['courses', 'exceptions', 'events', 'tasks', 'notices', 'reminders', 'manualOverrides'] as const) assert.deepEqual(after[key], before[key], key);
+  assert.deepEqual(petSubjectPreferenceMigrationV7(structuredClone(after)), after, '幂等');
+
+  // Solo：v6 形态（只有一个本人）。
+  const solo = soloWorkspace(v020Now);
+  solo.settings.domainVersion = AVATAR_SELECTION_DOMAIN_VERSION;
+  delete (solo.settings as { petSubjectRole?: unknown }).petSubjectRole;
+  delete (solo.settings as { petEnabled?: unknown }).petEnabled;
+  const soloAfter = petSubjectPreferenceMigrationV7(structuredClone(solo));
+  assert.equal(soloAfter.settings.petSubjectRole, 'self', '旧 Solo 的桌宠一直代表本人');
+  assert.equal(soloAfter.settings.petEnabled, true, '旧 Solo 的桌宠也继续存在');
+  assert.deepEqual(soloAfter.profiles, solo.profiles);
+  assert.deepEqual(petSubjectPreferenceMigrationV7(structuredClone(soloAfter)), soloAfter);
+
+  // 迁移后两个工作区的桌宠主体解析都与升级前完全一致。
+  assert.equal(resolvePetSubject(after).id, getCompanionProfile(after)!.id);
+  assert.equal(resolvePetSubject(soloAfter).id, getSelfProfile(soloAfter)!.id);
+  assert.doesNotThrow(() => validateState(structuredClone(after)));
+  assert.doesNotThrow(() => validateState(structuredClone(soloAfter)));
+});
+
+test('v6 → v7（真实迁移闸门）：备份保持 v6 形态，迁移后逐字段保持且幂等', async () => {
+  const v6 = soloWorkspace(v020Now);
+  v6.settings.domainVersion = AVATAR_SELECTION_DOMAIN_VERSION;
+  delete (v6.settings as { petSubjectRole?: unknown }).petSubjectRole;
+  delete (v6.settings as { petEnabled?: unknown }).petEnabled;
+  const { dir, store, backups } = await seeded(v6);
+  try {
+    const before = store.snapshot();
+    const run = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now });
+    assert.equal(run.migrated, true);
+    assert.deepEqual(run.steps, ['pet-subject-preference']);
+    // 备份是迁移前的字节：回滚靠还原，而不是让旧版读新库。
+    const restored = unpack(fs.readFileSync(run.backup!.dayhub, 'utf8'));
+    assert.equal((restored.state.settings as { petSubjectRole?: unknown }).petSubjectRole, undefined);
+    assert.equal(restored.state.settings.domainVersion, AVATAR_SELECTION_DOMAIN_VERSION);
+
+    const after = store.snapshot();
+    assert.equal(domainVersion(after), PET_SUBJECT_DOMAIN_VERSION);
+    assert.equal(after.settings.petSubjectRole, 'self');
+    assert.equal(after.settings.petEnabled, true, 'v6 Solo 升级后桌宠仍然启用');
+    assert.deepEqual(after.profiles, before.profiles, 'Solo 的唯一档案逐字段保持');
+    for (const key of ['courses', 'exceptions', 'events', 'tasks', 'notices', 'reminders', 'manualOverrides'] as const) assert.deepEqual(after[key], before[key], key);
+    assert.doesNotThrow(() => validateState(structuredClone(after)));
+
+    const again = await runMigrations(store, { target: DOMAIN_VERSION, version: domainVersion, steps: migrationSteps, backupDirectory: backups, attachments: dir, now: v020Now + 1000 });
+    assert.equal(again.migrated, false);
+    assert.deepEqual(store.snapshot(), after);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

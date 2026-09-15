@@ -25,7 +25,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { pack } from './backup.ts';
 import { DOMAIN_VERSION, stateDomainVersion } from './domain.ts';
-import { effectiveRole, getCompanionProfile, requireSelfProfile, resolvePetSubject } from './people.ts';
+import { effectiveRole, getCompanionProfile, isPetSubjectRole, requireSelfProfile, resolvePetSubject } from './people.ts';
 import { emptyRoutine, legacyDefaultRoutine } from './routine.ts';
 import { DEFAULT_AVATAR_PACK_ID } from './avatar.ts';
 import type { Store } from './store.ts';
@@ -44,6 +44,8 @@ export const ROUTINE_DOMAIN_VERSION = 4;
 export const MANUAL_STATUS_DOMAIN_VERSION = 5;
 /** v5 → v6：每个档案持有 Avatar Pack 选择。 */
 export const AVATAR_SELECTION_DOMAIN_VERSION = 6;
+/** v6 → v7：桌宠主体偏好（Phase 5B1）。 */
+export const PET_SUBJECT_DOMAIN_VERSION = 7;
 
 /**
  * v0.2 时代的一次性兼容规则（原先散落在 migrateLive() 里的私人业务分支）。
@@ -98,8 +100,9 @@ export function personAwareMigrationV3(state: State): State {
 /**
  * v3 → v4：给每个档案补上 RoutineProfile。
  *
- * 只有当前桌宠主体（resolvePetSubject：有同行者 → 同行者；Solo → 本人）会拿到
- * 0.2.x 桌宠写死的时间表，作为 source = 'legacy-default' 的默认作息；其他人的规则为空。
+ * 只有当前桌宠主体（resolvePetSubject；v3 数据还没有 petSubjectRole，因此走
+ * "有同行者 → 同行者，Solo → 本人"的兼容解析）会拿到 0.2.x 桌宠写死的时间表，
+ * 作为 source = 'legacy-default' 的默认作息；其他人的规则为空。
  * 这一步不虚构"所有人的真实作息"，不碰课程 / 会议 / 待办 / 提醒 / 调课 / 通知 / 设置，
  * 且幂等：已经有 routine 的档案原样保留。
  */
@@ -135,6 +138,30 @@ export function avatarSelectionMigrationV6(state: State): State {
   return state;
 }
 
+/**
+ * v6 → v7：桌面桌宠偏好（Phase 5B1）。一次补齐两个字段，其它字段逐字段保留
+ * （课表 / 会议 / 待办 / 提醒 / 作息 / Avatar / 手动状态 / 通知全部不动），且幂等。
+ *
+ *   * `settings.petEnabled`     —— 旧安装一直都有桌宠，因此必须补 `true`：
+ *                                  升级不能把用户已经在用的桌面桌宠弄没。
+ *   * `settings.petSubjectRole` —— 保持旧用户视觉与行为完全不变：
+ *                                  旧 Together（有同行者）→ `companion`；
+ *                                  旧 Solo（只有本人）    → `self`。
+ *
+ * 注意这里不能用 resolvePetSubject：那正是"迁移后"的语义；迁移只认档案事实。
+ */
+export function petSubjectPreferenceMigrationV7(state: State): State {
+  const settings = state.settings as { petSubjectRole?: unknown };
+  if (!isPetSubjectRole(settings.petSubjectRole)) {
+    settings.petSubjectRole = getCompanionProfile(state) ? 'companion' : 'self';
+  }
+  if (typeof (settings as { petEnabled?: unknown }).petEnabled !== 'boolean') {
+    (settings as { petEnabled?: boolean }).petEnabled = true;
+  }
+  state.settings.domainVersion = PET_SUBJECT_DOMAIN_VERSION;
+  return state;
+}
+
 // 每一步的 `to` 写成字面量：提升 DOMAIN_VERSION 时必须追加新步骤，
 // 由 tests/identity.test.ts 守住“最后一个步骤的 to === DOMAIN_VERSION”。
 export const migrationSteps: MigrationStep[] = [
@@ -143,6 +170,7 @@ export const migrationSteps: MigrationStep[] = [
   { from: PERSON_AWARE_DOMAIN_VERSION, to: ROUTINE_DOMAIN_VERSION, id: 'routine-profile', migrate: routineProfileMigrationV4 },
   { from: ROUTINE_DOMAIN_VERSION, to: MANUAL_STATUS_DOMAIN_VERSION, id: 'manual-status', migrate: manualStatusMigrationV5 },
   { from: MANUAL_STATUS_DOMAIN_VERSION, to: AVATAR_SELECTION_DOMAIN_VERSION, id: 'avatar-selection', migrate: avatarSelectionMigrationV6 },
+  { from: AVATAR_SELECTION_DOMAIN_VERSION, to: PET_SUBJECT_DOMAIN_VERSION, id: 'pet-subject-preference', migrate: petSubjectPreferenceMigrationV7 },
 ];
 
 export interface MigrationStep {

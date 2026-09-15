@@ -14,7 +14,7 @@ import {iconForCurrent,iconForNext,iconSrc} from './state-icons.ts';
 import {petRoutineSummary,type CompanionDisplay} from '../companion-display.ts';
 import {createDefaultRoutine,routineKindPriority,type RoutineRule} from '../routine.ts';
 import {EmptyState} from './views.ts';
-import {getProfileById,resolvePetSubject} from '../people.ts';
+import {getCompanionProfile,getProfileById,petSubjectRoleOf,resolvePetSubject} from '../people.ts';
 import {id} from '../core.ts';
 import {
   routineDaysText,routineDefaultLabelFor,routineDraft,routineDraftError,routineForRules,routineIsEmpty,
@@ -613,7 +613,8 @@ function AvatarPersonPicker({profile,busy,run}:{profile:Profile;busy:boolean;run
   useEffect(()=>{const current=getAvatarPack(persistedId);setCandidate(current?.id??DEFAULT_AVATAR_PACK_ID);},[profile.id,persistedId]);
   useEffect(()=>setPreviewState(pack.previewState),[pack.id]);
   const selectedAvailable=!!persistedPack;
-  const title=profile.role==='self'?'当前角色':`${profile.name}的角色`;
+  // 形象永远属于某个人：这是"我的 / TA 的"形象，不是"当前桌宠形象"。
+  const title=profile.role==='self'?'我的桌宠形象':`${profile.name}的桌宠形象`;
   return h('section',{className:'avatar-person-picker','data-avatar-person':profile.id},
     h('div',{className:'avatar-picker-head'},h('div',null,h('h4',null,title),h('p',{className:'muted'},profile.role==='self'?'单人或双人模式下的本人角色':'添加陪伴对象后显示的同行者角色')),
       !selectedAvailable?h('span',{className:'avatar-unavailable','data-avatar-unavailable':'true'},'当前选择不可用'):null),
@@ -646,12 +647,30 @@ export function PetSettings({live,settings,state,section='companionship'}:{live:
   const check=(label:string,description:string,checked:boolean,onChange:(value:boolean)=>void,disabled=false)=>settingRow(label,description,h('label',{className:'setting-switch'},h('input',{type:'checkbox',checked,disabled:disabled||busy,'aria-label':label,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>onChange(e.target.checked)}),h('span',{'aria-hidden':true})));
   const block=(title:string,children:React.ReactNode)=>h('div',{className:'setting-block'},h('h3',null,title),children);
   const motionMode=p.reduceMotion?'reduced':'standard';
-  // 这里说的是"桌宠主体"的作息：Together 是同行者，Solo 是本人。
+  // 这里说的是"桌宠主体"的作息：由 settings.petSubjectRole 决定（Solo 恒为本人）。
   const schedule=petRoutineSummary(state?resolvePetSubject(state).routine:undefined);
   const sizeChoices=h('div',{className:'segmented setting-segmented'},...(['small','medium','large'] as const).map((value,index)=>h('button',{key:value,type:'button',className:p.size===value?'active':'',disabled:busy,onClick:()=>save({size:value})},['小','中','大'][index])));
   const together=(state?.profiles.length??1)>1;
+  // Phase 5B1：桌宠主体是长期偏好（不是身份）。Solo 没有歧义，因此不给选择器。
+  const companionProfile=state?getCompanionProfile(state):undefined;
+  const subjectRole=state?petSubjectRoleOf(state):'self';
+  const petEnabled=state?state.settings.petEnabled!==false:true;
+  const subjectChoices=h('div',{className:'mode-choices',role:'radiogroup','aria-label':'桌宠表示'},
+    ...([['self','我','桌宠显示你的状态'],['companion',companionProfile?.name||'TA',`桌宠显示 ${companionProfile?.name||'TA'} 的状态`]] as const).map(([value,label,note])=>h('button',{
+      key:value,type:'button',role:'radio','aria-checked':subjectRole===value,'data-pet-subject-option':value,
+      className:subjectRole===value?'mode-choice active':'mode-choice',disabled:busy,
+      onClick:()=>{if(subjectRole!==value)void run(()=>api.change({type:'settings',petSubjectRole:value}));},
+    },h('strong',null,label),h('small',null,note))));
   return h('section',{className:'pet-settings'},h('h2',null,section==='companionship'?'桌面陪伴':section==='rhythm'?'节奏与状态':'运行与提醒'),
+    // Phase 5B1：桌面桌宠是可选能力。开关只控制桌宠这一件事：关闭时不删除任何
+    // 档案 / 形象 / 作息，重新打开立刻恢复原设置。
+    section==='companionship'&&state?block('桌面桌宠',h(React.Fragment,null,
+      settingRow('使用桌面桌宠',petEnabled?'桌面上显示桌宠，并跟随主体的状态变化':'桌宠已关闭；YD 的课表、待办与提醒照常可用',h('label',{className:'setting-switch'},h('input',{type:'checkbox',checked:petEnabled,disabled:busy,'aria-label':'使用桌面桌宠','data-pet-enabled':'true',onChange:(e:React.ChangeEvent<HTMLInputElement>)=>void run(()=>api.change({type:'settings',petEnabled:e.target.checked}))}),h('span',{'aria-hidden':true}))),
+      h('p',{className:'muted setting-note'},petEnabled?'关闭后立即隐藏桌宠，形象与桌宠表示都会保留。':'重新打开后会恢复此前的形象与桌宠表示。'))):null,
     section==='companionship'&&state?block('角色',h(AvatarSettings,{state,busy,run})):null,
+    section==='companionship'&&state&&petEnabled?block('桌宠表示',together
+      ?h(React.Fragment,null,subjectChoices,h('p',{className:'muted setting-note'},'桌面桌宠会使用这个人的形象，并跟随这个人的状态变化；切换后立即生效。'))
+      :h('p',{className:'muted setting-note'},'只有你一个人，桌宠显示你的状态。')):null,
     section==='companionship'?block('呈现方式',h(React.Fragment,null,
       h('div',{className:'mode-choices',role:'radiogroup','aria-label':'桌宠显示模式'},...modeOptions.map(([value,label,note])=>{
         return h('button',{key:value,type:'button',role:'radio','aria-checked':p.mode===value,className:p.mode===value?'mode-choice active':'mode-choice',disabled:busy,onClick:()=>save({mode:value})},

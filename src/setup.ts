@@ -14,10 +14,12 @@
 //   * 完成是一次原子的状态提交：要么全部写入（含 companion 创建），要么全部不写。
 //     因此 companion 创建也走领域 factory（createCompanionProfile），
 //     Avatar 写入走 Phase 4 的领域路径（setAvatarPack），不绕过 Registry 校验。
+//   * 桌宠主体偏好（settings.petSubjectRole）也在这里一次写入：它是呈现偏好，
+//     Solo 恒为本人，Together 才允许选择同行者；写入不会改动任何 Person。
 import { createCompanionProfile } from './core.ts';
 import { getAvatarPack, type AvatarPackId } from './avatar.ts';
 import { setAvatarPack } from './avatar-selection.ts';
-import { defaultAliasFor, getCompanionProfile, requireSelfProfile, roleCounts } from './people.ts';
+import { defaultAliasFor, getCompanionProfile, isPetSubjectRole, requireSelfProfile, roleCounts, type PetSubjectRole } from './people.ts';
 import type { State } from './types.ts';
 
 /** 名称上限与核心 validate('profiles') 的姓名上限保持一致（最多 40 个字符）。 */
@@ -36,6 +38,16 @@ export interface SetupInput {
   mode: SetupMode;
   selfAvatarPackId?: AvatarPackId;
   companion?: SetupCompanionInput;
+  /**
+   * 是否启用桌面桌宠（Phase 5B1）。关闭时形象 / 主体都不是必填输入，
+   * 档案上的 Avatar 保持合法默认值，也不 seed 任何作息。
+   */
+  petEnabled: boolean;
+  /**
+   * 桌面桌宠主要代表谁。Solo 一律被强制为 `self`（不信任 UI 隐藏字段）；
+   * Together 允许 `self` / `companion`，省略时按产品默认取同行者。
+   */
+  petSubjectRole?: PetSubjectRole;
 }
 
 /** 首次使用是否需要 onboarding：只有这一条判断，不用姓名 / 档案数量 / 课程猜。 */
@@ -86,9 +98,13 @@ export function completeSetup(state: State, input: unknown, now: number): void {
   const self = requireSelfProfile(state);
   const existing = getCompanionProfile(state);
   if (draft.mode !== 'solo' && draft.mode !== 'together') throw new Error('请选择使用方式');
+  if (typeof draft.petEnabled !== 'boolean') throw new Error('请选择是否使用桌面桌宠');
+  if (draft.petSubjectRole !== undefined && !isPetSubjectRole(draft.petSubjectRole)) throw new Error('桌宠表示无效');
+  const petEnabled = draft.petEnabled;
   const selfName = normalizeSetupName(draft.selfName, '称呼');
   // 先把整份输入校验完，再动 State：任何非法 Pack 都不允许留下半个 setup 结果。
-  const selfPack = draft.selfAvatarPackId === undefined ? undefined : requireRegisteredPack(draft.selfAvatarPackId, '桌宠形象');
+  // 桌宠关闭时，形象只是"合法内部默认"，不接收用户选择（也不写 source: 'user'）。
+  const selfPack = !petEnabled || draft.selfAvatarPackId === undefined ? undefined : requireRegisteredPack(draft.selfAvatarPackId, '桌宠形象');
   let companionName: string | null = null;
   let companionPack: AvatarPackId | undefined;
   if (draft.mode === 'solo') {
@@ -100,7 +116,7 @@ export function completeSetup(state: State, input: unknown, now: number): void {
   } else {
     if (!draft.companion) throw new Error('请填写 TA 的称呼');
     companionName = normalizeSetupName(draft.companion.name, 'TA 的称呼');
-    companionPack = draft.companion.avatarPackId === undefined ? undefined : requireRegisteredPack(draft.companion.avatarPackId, 'TA 的桌宠形象');
+    companionPack = !petEnabled || draft.companion.avatarPackId === undefined ? undefined : requireRegisteredPack(draft.companion.avatarPackId, 'TA 的桌宠形象');
   }
 
   // 名称：只有真的改了才更新 updatedAt，不给"确认一次"制造无意义的写入。
@@ -113,15 +129,22 @@ export function completeSetup(state: State, input: unknown, now: number): void {
     self.name = selfName;
     self.updatedAt = now;
   }
-  // Avatar：选了当前正在用的 Pack 时什么都不做，source 语义保持 Phase 4 的约定
-  // （默认卡片被选中 ≠ 用户选择；只有真的换 Pack 才记 source: 'user'）。
-  if (selfPack !== undefined && selfPack !== self.avatar?.packId) setAvatarPack(state, self.id, selfPack, now);
+  // Avatar：字段只在用户真的点过卡片时才出现（UI 的 draft 语义），因此
+  //   * 没点过 → 不动，默认卡片保持 source: 'default'（默认选中 ≠ 用户选择）；
+  //   * 点过   → 走 Phase 4 的 setAvatarPack 语义：显式选择记 source: 'user'，
+  //              包括"主动把默认形象当作自己的选择"。
+  // 只有"已经是用户选择、且 Pack 没变"才跳过，避免无意义的 updatedAt 写入。
+  if (selfPack !== undefined && !(selfPack === self.avatar?.packId && self.avatar?.source === 'user')) setAvatarPack(state, self.id, selfPack, now);
   if (companionName !== null) {
     const companion = createCompanionProfile(now, self);
     companion.name = companionName;
     state.profiles = [...state.profiles, companion];
     if (companionPack !== undefined) setAvatarPack(state, companion.id, companionPack, now);
   }
+  // 桌宠主体偏好：Solo 恒为本人；Together 由用户选择（省略时取产品默认：同行者）。
+  // 它只影响"桌宠消费谁的 CurrentState + Avatar"，不修改任何 Person。
+  state.settings.petEnabled = petEnabled;
+  state.settings.petSubjectRole = draft.mode === 'solo' ? 'self' : draft.petSubjectRole ?? 'companion';
   state.settings.setup = true;
 }
 

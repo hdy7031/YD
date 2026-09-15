@@ -1,6 +1,6 @@
 # YD 发布验收门禁（跨版本）
 
-基线：分支 `v0.3-productization`，Phase 5A + Phase 5B1，`DOMAIN_VERSION = 6`。
+基线：分支 `v0.3-productization`，Phase 5A + Phase 5B1（P0 桌面交互 + 可选桌宠），`DOMAIN_VERSION = 7`。
 （本文档原为 `docs/verification-v030.md`，从 Phase 5 起升级为跨版本的发布验收文档。）
 
 本文档只回答两个问题：**哪些验证必须全绿**、**哪些脚本只是历史考古**。
@@ -30,25 +30,49 @@ Electron 子进程；`--packaged` 时用 `release/win-unpacked/YD.exe` + CDP）�
 ## 0.1 First-Run Onboarding Contract（Phase 5B1）
 
 `settings.setup` 是"首次使用是否完成"的唯一真相，也是显示 onboarding 的唯一条件
-（不用姓名 / 档案数量 / 是否有课程来猜）。流程最多三步：**关于你 → 使用方式 → 桌宠形象**，
-默认「只为自己」，只有明确选择「我和另一位」才创建 companion。
+（不用姓名 / 档案数量 / 是否有课程来猜）。流程最多四步、按条件跳过：
+**关于你 → 使用方式 → 桌面陪伴 → 桌宠形象与日常节奏**。默认「只为自己」，
+只有明确选择「我和另一位」才创建 companion；桌面桌宠默认「暂时不用」，
+不选就不会出现任何桌面悬浮物。
 
 | 维度 | 契约 |
 | --- | --- |
 | 触发 | `settings.setup === false`（fresh install 与"没做完就关掉"的下一次启动） |
-| draft | 名字 / 使用方式 / Avatar 只存在于界面内存；不逐字写 Store，不落 draft 文件 |
+| draft | 名字 / 使用方式 / 桌宠开关 / Avatar / 主体只存在于界面内存；不逐字写 Store，不落 draft 文件 |
 | 提交 | 单条 `completeSetup` 命令（`src/setup.ts`）：校验通过才一次性写入，`settings.setup=true` 只在完整完成后设置 |
 | self 身份 | 复用 5A 生成的同一个 PersonId；名称 trim 后 1—40 字符，Unicode / emoji 原样保留 |
 | shortAlias | 不强迫填写，沿用 `people.ts` 的派生；改名时只清掉"系统自己填过"的代号 |
 | companion | 只有选 Together 才创建，走 `createCompanionProfile` + 现代 UUID，作息 / 课表 / 待办仍然全空 |
-| Avatar | 卡片来自 `listAvatarPacks()`；写入走 Phase 4 的 `setAvatarPack`，没动过的默认卡片保持 `source='default'` |
+| 桌宠开关 | `settings.petEnabled`：选「暂时不用」时跳过形象 / 主体 / 节奏引导，`petEnabled=false`；YD Core 照常完整可用 |
+| Avatar | 卡片来自 `listAvatarPacks()`；写入走 Phase 4 的 `setAvatarPack`，没动过的默认卡片保持 `source='default'`；关闭桌宠时不写入形象选择 |
+| 桌宠主体 | `settings.petSubjectRole`：Solo 恒为 `self`（领域层强制，不信任 UI 隐藏字段）；Together 默认 `companion`，可改 |
 | 不 seed | 不创建课表 / 待办 / 会议 / 作息示例数据；`CurrentState` 仍由状态引擎给出 idle |
 | 老用户 | `settings.setup === true` 时直接进入 Home，`completeSetup` 一律拒绝，State 零改写 |
-| schema | `DOMAIN_VERSION` 仍为 6，本阶段不新增 migration |
+| schema | `DOMAIN_VERSION = 7`；v6 → v7 一次补齐 `petEnabled`（旧用户 = true）与 `petSubjectRole`（旧视觉行为不变） |
 
-由 `verify-v051-onboarding.cjs` 锁定：三个全新临时 userData 目录、六个 Electron 阶段
-（solo / solo-restart / together / together-restart / abandon / abandon-restart），
-全部动作走真实 DOM 点击与输入；`--packaged` 时用 `release/win-unpacked/YD.exe` + CDP 跑同样路径。
+由 `verify-v051-onboarding.cjs` 锁定：五个全新临时 userData 目录、九个 Electron 阶段
+（solo-off / solo-restart / solo-on / solo-restart / together / together-restart /
+toggle / abandon / abandon-restart），全部动作走真实 DOM 点击与输入；包含
+「关掉桌宠 → 立即隐藏、数据保留 → 重新打开恢复主体与形象」的运行时生命周期；
+`--packaged` 时用 `release/win-unpacked/YD.exe` + CDP 跑同样路径。
+
+## 0.2 Desktop Interaction Contract（Phase 5B1 P0）
+
+桌面桌宠 / Dock 是"透明 + 点击穿透"窗口。实测（`test-data/hover-probe.cjs`）：
+`setIgnoreMouseEvents(true,{forward:true})` 在该 Electron / Windows 组合下**不会**把真实
+鼠标移动交给渲染层（点击穿透期间 0 个 mousemove / pointerenter），因此命中判定必须由主进程
+按真实系统光标位置完成。
+
+| 维度 | 契约 |
+| --- | --- |
+| 命中区 | 只有 `[data-hitbox]` 元素的真实渲染矩形 + 4–6px 容错接收鼠标：`sprite`（人物本体，可拖动）、`rail`（状态小框，hover/点击但不拖动）、`hover`（状态牌面，触发微展开）、`cloud`（提醒气泡） |
+| 穿透 | 其余透明区域始终 `setIgnoreMouseEvents(true,{forward:true})`，点击交给桌面；穿透状态只在真正变化时写一次 |
+| hover | 由主进程指针状态驱动（点击穿透时渲染层收不到 pointerleave）：进入牌面微展开，离开立即收起；hover 只改牌面布局，不改窗口 bounds |
+| 拖动 | 只能从人物本体开始；拖动期间冻结穿透状态切换，结束后清理 hover / 提示 / 拖动标记 |
+| 主窗口 viewport | 渲染层 CSS 视口必须等于窗口客户区；每条几何路径（resize / maximize / restore / show / 显示设置变化）核对一次，不一致才强制重排；页面缩放锁死为 1 |
+
+由 `verify-v051-desktop-interaction.cjs` 锁定（真实光标 + 命中区矩阵 + 布局不变量矩阵 +
+拖动清理），`verify-v030-dock.cjs` 继续覆盖 Dock 的 hover / 详情 / 拖动 / z-order。
 
 ## 1. 当前维护的 release gate（必须全绿）
 
@@ -74,6 +98,7 @@ Electron 子进程；`--packaged` 时用 `release/win-unpacked/YD.exe` + CDP）�
 | `npx electron verify-v030-dock.cjs` | Dual Status Dock：结构 / label / hover / click / drag / 快速拖动 / 位置落盘与重启恢复（Solo 见 `runtime-audit-solo.cjs`） |
 | `node verify-v050-generalization.cjs` | **Fresh Install Contract**：空 userData → 第一次启动（Solo / 单 self / 全空 / idle / UI 无 undefined）/ 第二次启动同一 PersonId；含私人哨兵扫描 |
 | `node verify-v051-onboarding.cjs` | **First-Run Onboarding Contract**：空 userData → 真实点击完成 Solo / Together（含未完成关闭与两次重启）；不 seed 业务数据、不改 PersonId、无 ghost companion |
+| `npx electron verify-v051-desktop-interaction.cjs` | **Desktop Interaction Contract**：主窗口 viewport 不变量 / 命中区矩阵 / hover / 拖动清理（真实光标） |
 | `node verify-v0220-packaged.cjs` | 打包版（`release/win-unpacked/YD.exe`）真实启动、Picker 热切换、冷启动持久化（数据由 `tests/fixtures/v3-together-synthetic.sqlite` 显式种下） |
 | `node verify-v050-generalization.cjs --packaged` | 打包版清房验证（本轮手动跑一次即可，见 Phase 5A 报告） |
 | `node verify-v051-onboarding.cjs --packaged` | 打包版清房 onboarding（Solo + Together + 重启；每轮手动跑一次即可，见 Phase 5B1 报告） |

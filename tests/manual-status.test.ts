@@ -37,6 +37,8 @@ const person = (id: PersonId, role: ProfileRole, name = id, routine: RoutineProf
 const workspace = (profiles: Profile[]): State => {
   const state = createFreshState(at(`${MONDAY}T00:00`));
   state.profiles = profiles;
+  // 这些工作区表达 Phase 5B1 之前的 Together：有同行者时桌宠代表同行者。
+  if (profiles.some(profile => profile.role === 'companion')) state.settings.petSubjectRole = 'companion';
   return state;
 };
 const course = (id: string, owner: PersonId, over: Partial<Course> = {}): Course =>

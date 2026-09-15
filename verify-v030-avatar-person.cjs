@@ -48,7 +48,7 @@ app.whenReady().then(async () => {
     await wait(400);
 
     const state = await run('window.dayhub.get()');
-    check('领域版本是 v6', state.settings.domainVersion === 6);
+    check('领域版本是 v7', state.settings.domainVersion === 7);
     check('v1 链式迁移为每个 Profile 补 Avatar', state.profiles.every(p => p.avatar?.packId === 'yd-default' && p.avatar?.source === 'default'));
     const self = state.profiles.find(p => p.role === 'self'), companion = state.profiles.find(p => p.role === 'companion');
     check('Together PetInstance 主体是 companion', domain.resolvePetInstance(state).subjectId === companion.id);

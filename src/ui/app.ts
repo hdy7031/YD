@@ -11,7 +11,7 @@ import { DailySummary, DailyAgendaList, DailyEmptyState } from './daily-summary.
 import { dailyItemState, dailyPlanFrom, type DailyAgendaItem } from './daily-plan.ts';
 import { getCompanionProfile, requireSelfProfile, resolvePetSubject } from '../people.ts';
 import { personOptions, profileLabelFor, shellTabs, tabShortcuts, tabWidthPolicy, companionDisplayName, type ShellTab } from './shell.ts';
-import { OnboardingPanel } from './onboarding.ts';
+import { OnboardingPanel, type SetupIntent } from './onboarding.ts';
 import type { SetupInput } from '../setup.ts';
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -278,7 +278,14 @@ function App(){
   async function change(cmd:Command){setPending(true);err('');try{const s=await api.change(cmd);set(s);return s;}catch(e){err(msg(e));return null;}finally{setPending(false);}}
   // Phase 5B1：首次使用的提交路径。失败时把说明交回 onboarding 面板自己显示
   // （背景页在这段时间是只读的，顶部的错误横幅用户看不到）。
-  async function finishSetup(value:SetupInput){setPending(true);err('');try{const next=await api.change({type:'completeSetup',value});set(next);return '';}catch(e){return msg(e);}finally{setPending(false);}}
+  // 完成后按用户选择落到 Home，或直接进"设置 → 节奏与状态"补当前桌宠主体的日常节奏
+  // （节奏编辑器只有 Phase 2 那一套，这里只负责导航，不复刻 Routine CRUD）。
+  async function finishSetup(value:SetupInput,intent:SetupIntent){
+    setPending(true);err('');
+    try{const next=await api.change({type:'completeSetup',value});set(next);if(intent==='routine'){setTab('settings');setSettingsSection('rhythm');}return '';}
+    catch(e){return msg(e);}
+    finally{setPending(false);}
+  }
   function open(entity:Entity,value?:any,convert?:string){if(entity==='notices'){setTab('inbox');setSelectedNotice(value?.id||null);return;}edit({entity,value:value||newValue(entity,activePerson,selfId),convert});err('');}
   function addCompanion(){
     const self=requireSelfProfile(s);

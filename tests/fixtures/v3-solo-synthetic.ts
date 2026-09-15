@@ -40,6 +40,9 @@ export function v3SoloSynthetic(now = soloNow): State {
   delete profile.avatar;
   // v5 之前也没有临时状态（Phase 3C）：fixture 固定表示 v3 形态。
   delete (state as { manualOverrides?: unknown }).manualOverrides;
+  // v7 之前没有桌宠主体偏好（Phase 5B1）：v3 fixture 不能带这个字段。
+  delete (state.settings as { petSubjectRole?: unknown }).petSubjectRole;
+  delete (state.settings as { petEnabled?: unknown }).petEnabled;
   state.profiles = [profile];
   state.settings.domainVersion = soloDomainVersion;
   state.settings.setup = true;

@@ -54,7 +54,7 @@ app.whenReady().then(async () => {
     check('production registry 有两个真实 Pack', packs.map(pack => pack.id).join(',') === 'yd-default,yd-pixel');
     check('yd-pixel manifest 独立完整', domain.getAvatarPack('yd-pixel').assetRoot === 'companion/pixel' && Object.keys(domain.getAvatarPack('yd-pixel').frames).length === 10);
     const state = await run('window.dayhub.get()');
-    check('DOMAIN_VERSION 保持 6', domain.DOMAIN_VERSION === 6 && state.settings.domainVersion === 6);
+    check('DOMAIN_VERSION 是 7', domain.DOMAIN_VERSION === 7 && state.settings.domainVersion === 7);
     const self = state.profiles.find(profile => profile.role === 'self');
     const companion = state.profiles.find(profile => profile.role === 'companion');
     check('Together 设置页同时显示 self/companion Picker', await run("document.querySelectorAll('.avatar-person-picker').length===2"));

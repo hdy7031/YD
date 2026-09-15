@@ -61,13 +61,15 @@ export function v020Synthetic(now = v020Now): State {
   s.inboxVersion = 1;
   s.lastTick = now;
   // 这份 fixture 固定表示“v0.2.20 写到磁盘上的 v1 数据”：档案没有 role、
-  // 设置里没有 domainVersion、会议没有 person、档案没有 routine、没有临时状态。
-  // 迁移测试才能证明 v1 → v2 → v3 → v4 → v5 的身份、归属、作息与手动状态真的发生过。
+  // 设置里没有 domainVersion / petSubjectRole、会议没有 person、档案没有 routine、
+  // 没有临时状态。迁移测试才能证明身份、归属、作息、手动状态与桌宠主体真的发生过。
   for(const profile of s.profiles) delete profile.role;
   for(const profile of s.profiles) delete profile.routine;
   for(const profile of s.profiles) delete profile.avatar;
   for(const event of s.events) delete event.person;
   delete (s as { manualOverrides?: unknown }).manualOverrides;
   delete s.settings.domainVersion;
+  delete (s.settings as { petSubjectRole?: unknown }).petSubjectRole;
+  delete (s.settings as { petEnabled?: unknown }).petEnabled;
   return validateState(s);
 }

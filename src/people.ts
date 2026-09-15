@@ -49,11 +49,38 @@ export const isSelfId = (state: Pick<State, 'profiles'>, id: PersonId): boolean 
 export const isCompanionId = (state: Pick<State, 'profiles'>, id: PersonId): boolean => getCompanionProfile(state)?.id === id;
 
 /**
- * 桌宠代表谁：有同行者时继续代表同行者（当前产品体验不变）；
- * 没有同行者（Solo）时代表本人。以后 Phase 4 的 PetInstance 会把它变成用户配置。
+ * 桌宠主体偏好：桌面桌宠"主要代表谁的状态"（Phase 5B1 / schema v7）。
+ *
+ * 它是**呈现偏好**，不是身份：不修改 Profile.role、不修改 PersonId、不复制档案。
+ * 因为要跨重启保持，所以正式持久化在 settings.petSubjectRole。
  */
-export function resolvePetSubject(state: Pick<State, 'profiles'>): Profile {
-  return getCompanionProfile(state) ?? requireSelfProfile(state);
+export type PetSubjectRole = 'self' | 'companion';
+
+export const isPetSubjectRole = (value: unknown): value is PetSubjectRole => value === PROFILE_SELF || value === PROFILE_COMPANION;
+
+/**
+ * 读取桌宠主体偏好。没有该字段的安装（未迁移的旧库、构造出来的测试状态）
+ * 沿用 0.2.x 的视觉行为：有同行者 → 同行者，Solo → 本人。
+ */
+export function petSubjectRoleOf(state: Pick<State, 'profiles'> & { settings?: State['settings'] }): PetSubjectRole {
+  const raw = (state.settings as { petSubjectRole?: unknown } | undefined)?.petSubjectRole;
+  if (isPetSubjectRole(raw)) return raw;
+  return getCompanionProfile(state) ? PROFILE_COMPANION : PROFILE_SELF;
+}
+
+/**
+ * 桌宠代表谁 —— 当前桌宠主体的**唯一**解析层（其它模块不得各自推导）。
+ *
+ *   Solo              → 一定是本人（Solo 没有第二个 Person，也没有歧义）
+ *   Together          → settings.petSubjectRole 对应的 Person
+ *   目标 Person 不存在 → 安全回落到本人（legacy / 损坏数据也不崩）
+ */
+export function resolvePetSubject(state: Pick<State, 'profiles'> & { settings?: State['settings'] }): Profile {
+  if (petSubjectRoleOf(state) === PROFILE_COMPANION) {
+    const companion = getCompanionProfile(state);
+    if (companion) return companion;
+  }
+  return requireSelfProfile(state);
 }
 
 /**

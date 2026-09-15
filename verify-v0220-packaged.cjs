@@ -100,7 +100,7 @@ class Session {
 
     const state = await panel.eval('window.dayhub.get()');
     const live = await panel.eval('window.dayhub.live()');
-    check('打包版 Profile.avatar 已迁移到 v6', state.settings.domainVersion === 6 && state.profiles.every(p => p.avatar?.packId === 'yd-default' && p.avatar?.source === 'default'));
+    check('打包版 Profile.avatar 已迁移到 v7', state.settings.domainVersion === 7 && state.profiles.every(p => p.avatar?.packId === 'yd-default' && p.avatar?.source === 'default'));
     check('打包版 PetInstance 与 companion Profile 一致', live.petInstance?.subjectId === state.profiles.find(p => p.role === 'companion')?.id && live.petInstance?.avatarPackId === 'yd-default');
 
     // ---- 素材：十态名单、缺帧说明、无猫 --------------------------------

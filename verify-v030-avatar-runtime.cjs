@@ -59,7 +59,7 @@ app.whenReady().then(async () => {
     const pet = code => orb.webContents.executeJavaScript(code);
     const state = await run('window.dayhub.get()');
     const live = await run('window.dayhub.live()');
-    check('DOMAIN_VERSION 保持 6', domain.DOMAIN_VERSION === 6 && state.settings.domainVersion === 6);
+    check('DOMAIN_VERSION 是 7', domain.DOMAIN_VERSION === 7 && state.settings.domainVersion === 7);
     check('LiveSnapshot 向桌宠提供 PetInstance', !!live.petInstance.subjectId && live.petInstance.avatarPackId === 'yd-default');
     check('yd-default 运行时完成解码并显示', await pet("document.querySelector('.companion-figure')?.dataset.avatarPack==='yd-default'"));
     const before = orb.getBounds();
@@ -109,6 +109,8 @@ app.whenReady().then(async () => {
     const now = domain.epoch('2027-03-01T10:00'), synthetic = domain.createFreshState(now);
     const self = synthetic.profiles.find(profile => profile.role === 'self'), companion = domain.createCompanionProfile(now, self);
     synthetic.profiles = [self, companion];
+    // Phase 5B1：桌宠主体是持久化偏好。用户添加同行者后选择"桌宠代表 TA"就是这个值。
+    synthetic.settings.petSubjectRole = 'companion';
     self.avatar = { packId: 'test-pack-a', source: 'user' }; companion.avatar = { packId: 'test-pack-b', source: 'user' };
     check('Together 最终 Pack 来自 companion', domain.snapshot(synthetic, now).petInstance.avatarPackId === 'test-pack-b');
     self.avatar = { packId: 'test-pack-c', source: 'user' };

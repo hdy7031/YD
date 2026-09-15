@@ -2696,6 +2696,7 @@ body.main-body {
 .setup-mode small { color:var(--yd-muted); font-size:11.5px; line-height:1.45; }
 .setup-mode.active { border-color:var(--yd-brand); background:var(--yd-brand-soft); box-shadow:0 0 0 2px rgba(70,108,106,.10); }
 .setup-avatar-group { display:grid; gap:8px; }
+.setup-divider { margin:2px 0 0; border:0; border-top:1px solid var(--yd-line); }
 .setup-avatar-title { margin:0; color:var(--yd-muted); font-size:12.5px; font-weight:600; }
 .setup-avatar-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 /* 首次使用的卡片只用来"选一个"，比设置页的完整预览卡矮一档：

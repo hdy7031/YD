@@ -26,6 +26,9 @@ export function togetherWorkspace(now = 0): State {
     { ...base, id: 'partner', role: 'companion', name: 'Ta', routine: legacyDefaultRoutine(now) },
   ];
   state.profiles = profiles;
+  // 这是 Phase 5B1 之前的 Together 工作区：桌宠主体偏好还不存在，产品行为是
+  // "有同行者就代表同行者"。把等价的偏好显式写出来，测试才继续表达同一个产品语义。
+  state.settings.petSubjectRole = 'companion';
   return state;
 }
 

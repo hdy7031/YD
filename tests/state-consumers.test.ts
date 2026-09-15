@@ -34,6 +34,9 @@ const person = (id: PersonId, role: ProfileRole, name = id, routine: RoutineProf
 const workspace = (profiles: Profile[]): State => {
   const state = createFreshState(at(`${MONDAY}T00:00`));
   state.profiles = profiles;
+  // 这些工作区表达的是 Phase 5B1 之前的 Together：只要有一个同行者，桌宠就代表同行者。
+  // Phase 5B1 之后主体由 settings.petSubjectRole 决定，因此这里显式写出等价的偏好。
+  if (profiles.some(profile => profile.role === 'companion')) state.settings.petSubjectRole = 'companion';
   return state;
 };
 const course = (id: string, owner: PersonId, over: Partial<Course> = {}): Course =>

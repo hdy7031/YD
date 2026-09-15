@@ -62,7 +62,16 @@ function assertFreshContract(view, notes) {
   check('fresh：作息为空（不替新用户决定生活作息）',
     Array.isArray(self?.routine?.rules) && self.routine.rules.length === 0, JSON.stringify(self?.routine));
   check('fresh：Avatar 用官方默认 Pack', self?.avatar?.packId === 'yd-default' && self.avatar.source === 'default', JSON.stringify(self?.avatar));
-  check('fresh：DOMAIN_VERSION = 6 且没有新增 migration', state.settings.domainVersion === 6, String(state.settings.domainVersion));
+  // Phase 5B1：fresh install 不静默创建桌面悬浮物 —— 桌宠要在首次设置里显式选择。
+  check('fresh：桌面桌宠默认关闭（petEnabled=false）', state.settings.petEnabled === false, String(state.settings.petEnabled));
+  // 源码级能直接读 BrowserWindow.isVisible()；打包版只能读渲染层的 visibilityState，
+  // 因此这里只在能拿到真实窗口状态时断言（不静默跳过源码级证据）。
+  check('fresh：桌宠窗口没有出现在桌面上',
+    dom.dock.windowVisible !== undefined ? dom.dock.windowVisible === false : dom.dock.visibility === 'hidden',
+    JSON.stringify({ windowVisible: dom.dock.windowVisible, visibility: dom.dock.visibility }));
+  // Phase 5B1：schema 升到 7（桌宠主体偏好）；Fresh Install Contract 本身不放宽。
+  check('fresh：DOMAIN_VERSION = 7', state.settings.domainVersion === 7, String(state.settings.domainVersion));
+  check('fresh：桌宠主体偏好是本人（默认 Solo 没有歧义）', state.settings.petSubjectRole === 'self', String(state.settings.petSubjectRole));
   // State
   check('fresh：CurrentState = idle', live.current.kind === 'idle' && live.current.source === 'idle', JSON.stringify(live.current));
   check('fresh：只有一个投影人且未处理提醒为 0', live.people.length === 1 && live.pending === 0);
@@ -111,6 +120,8 @@ async function runSourcePhase(kind, dataDir) {
       const pet = (code) => dock.webContents.executeJavaScript(code);
       const readState = () => readFresh(run, pet);
       const view = await readState();
+      // fresh install 的桌宠窗口状态：直接读 Electron 的真实可见性。
+      view.dom.dock.windowVisible = dock.isVisible();
       if (kind === 'first') {
         assertFreshContract(projectFresh(view), `${view.dom.text}\n${view.dom.dock.text}\n${JSON.stringify(view.state)}`);
         fs.writeFileSync(path.join(dataDir, selfFile), JSON.stringify({
@@ -151,7 +162,7 @@ async function readFresh(run, pet) {
     hasUndefined:/undefined/.test(text),text};})()`);
   await run("window.dayhub.change({type:'settings',pet:{mode:'orb',size:'medium'}})");
   await wait(700);
-  const dock = await pet("(()=>({people:document.querySelectorAll('.person').length,dividers:document.querySelectorAll('.dock-divider').length,chips:document.querySelectorAll('.rail-chip').length,text:document.body.innerText}))()");
+  const dock = await pet("(()=>({people:document.querySelectorAll('.person').length,dividers:document.querySelectorAll('.dock-divider').length,chips:document.querySelectorAll('.rail-chip').length,visibility:document.visibilityState,text:document.body.innerText}))()");
   await run("window.dayhub.window('settings')");
   await wait(700);
   const settings = await run("(()=>({pickers:document.querySelectorAll('.avatar-person-picker').length,text:document.body.innerText,hasUndefined:/undefined/.test(document.body.innerText)}))()");

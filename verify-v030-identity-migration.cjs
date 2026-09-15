@@ -43,10 +43,12 @@ app.whenReady().then(async () => {
     await wait(300);
 
     const state = await panel.webContents.executeJavaScript('window.dayhub.get()');
-    check('领域版本升级到 6', state.settings.domainVersion === 6, String(state.settings.domainVersion));
+    check('领域版本升级到 7', state.settings.domainVersion === 7, String(state.settings.domainVersion));
     check('本人档案 role=self', state.profiles.find(p => p.id === 'me')?.role === 'self');
     check('同行者档案 role=companion', state.profiles.find(p => p.id === 'partner')?.role === 'companion');
     check('每个档案都迁移出默认 Avatar 选择', state.profiles.every(p => p.avatar?.packId === 'yd-default' && p.avatar?.source === 'default'));
+    // Phase 5B1：旧库有同行者 → 桌宠主体偏好沿用"代表同行者"，升级后视觉不变。
+    check('桌宠主体偏好迁移为 companion', state.settings.petSubjectRole === 'companion', String(state.settings.petSubjectRole));
     check('旧会议自动归属工作区本人', state.events.length > 0 && state.events.every(event => event.person === 'me'));
     check('档案 id 未被重写', state.profiles.map(p => p.id).join(',') === 'me,partner', state.profiles.map(p => p.id).join(','));
     // Phase 2A：每个档案都有合法作息；只有桌宠主体（同行者）拿到 0.2.x 默认时间表。
@@ -69,8 +71,8 @@ app.whenReady().then(async () => {
       backups.some(n => n.endsWith('.dayhub')) && backups.some(n => n.endsWith('.sqlite')) && backups.some(n => n.endsWith('.json')),
       backups.join(','));
     const receipt = JSON.parse(fs.readFileSync(path.join(output, 'backups', backups.find(n => n.endsWith('.json'))), 'utf8'));
-    check('备份回执记录 v1 → v6 与迁移前数量',
-      receipt.fromDomainVersion === 1 && receipt.targetDomainVersion === 6 && receipt.counts.courses === 15 && receipt.counts.reminders === 3);
+    check('备份回执记录 v1 → v7 与迁移前数量',
+      receipt.fromDomainVersion === 1 && receipt.targetDomainVersion === 7 && receipt.counts.courses === 15 && receipt.counts.reminders === 3);
 
     check('双人状态行仍然渲染两条', await panel.webContents.executeJavaScript("document.querySelectorAll('.dual-status .person-status').length===2"));
     check('导航仍然是七项', await panel.webContents.executeJavaScript("document.querySelectorAll('.nav-item').length===7"));

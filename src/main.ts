@@ -46,7 +46,12 @@ const notifications=new Set<Notification>();
 const windows=()=>[orb,panel,companion?.bubble,companion?.mini,companion?.tip,companion?.sheet].filter((w):w is BrowserWindow=>!!w&&!w.isDestroyed());
 // 正式日志先写文件；控制台只在开发环境或控制台仍可用时作为镜像。
 function runtimeLog(level:string,message:string){logLine(level,message);}
-function changed(){companion?.reset();for(const w of windows())w.webContents.send('dayhub:changed');}
+function changed(){
+  companion?.reset();
+  // 桌宠开关是设置的一部分：任何一次状态提交之后都按当前值对齐窗口可见性。
+  applyPetVisibility();
+  for(const w of windows())w.webContents.send('dayhub:changed');
+}
 function showPanel(){if(panel.isMinimized())panel.restore();panel.show();panel.focus();void syncPanelViewport('showPanel');}
 function errorMessage(error:unknown){return error instanceof Error?error.message:String(error);}
 const delay=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -121,12 +126,30 @@ function pauseBubbles(minutes:number){
   void store.update(s=>{s.settings.pet={...petDefaults,...s.settings.pet,pausedUntil:until};return s;}).then(()=>{changed();refreshTrayMenu();});
 }
 // 托盘菜单、桌宠右键菜单与全局快捷键共用同一个开关，三处永远不会出现两种行为。
+/**
+ * 桌面桌宠是可选能力（Phase 5B1）：`settings.petEnabled === false` 时只隐藏桌宠窗口，
+ * 不碰 Profile / Avatar / Routine / CurrentState —— YD Core 完全不依赖桌宠。
+ * 这里从不创建或重建窗口，因此「开 → 关 → 开」不会 race 出第二个桌宠。
+ */
+function applyPetVisibility(){
+  if(!orb||orb.isDestroyed())return;
+  if(store.state.settings.petEnabled===false){
+    companion?.reset();
+    if(orb.isVisible())orb.hide();
+    return;
+  }
+  if(!orb.isVisible()){orb.showInactive();assertDockTopmost();}
+  refreshTrayMenu(true);
+}
 function togglePetWindow(){
   if(!orb||orb.isDestroyed())return;
+  // 设置里关掉桌宠之后，托盘 / 快捷键 / 右键菜单都不能把它偷偷叫回来。
+  if(store.state.settings.petEnabled===false){showPanel();panel.webContents.send('dayhub:settings');return;}
   if(orb.isVisible()){companion?.hideMenu();orb.hide();}
   else{orb.showInactive();assertDockTopmost();refreshTrayMenu(true);}
 }
 let trayMenuPaused:boolean|undefined;
+let trayMenuPetEnabled:boolean|undefined;
 // 托盘图标 = Asset 06 / 07（同一枚字标的深灰青 / 近白两版）。
 // 主题只换图标、绝不重建 Tray：菜单、事件监听与句柄都保持不变。
 let trayTheme:'light'|'dark'|undefined;
@@ -146,10 +169,14 @@ function applyTrayTheme(){
 }
 function refreshTrayMenu(force=false){
   const paused=(store.state.settings.pet?.pausedUntil??0)>Date.now();
-  if(!force&&paused===trayMenuPaused)return;
+  const petEnabled=store.state.settings.petEnabled!==false;
+  if(!force&&paused===trayMenuPaused&&petEnabled===trayMenuPetEnabled)return;
   trayMenuPaused=paused;
+  trayMenuPetEnabled=petEnabled;
   tray.setContextMenu(Menu.buildFromTemplate([
-    {label:'显示／隐藏桌宠',click:togglePetWindow},
+    store.state.settings.petEnabled===false
+      ?{label:'桌宠已在设置中关闭',click:togglePetWindow}
+      :{label:'显示／隐藏桌宠',click:togglePetWindow},
     {label:'打开 YD',click:showPanel},
     {type:'separator'},
     {label:paused?'恢复气泡提醒':'暂停气泡提醒 1 小时',click:()=>pauseBubbles(paused?0:60)},
@@ -581,7 +608,9 @@ else{
     companion.setShortcut({label:companionToggleShortcut.label,ready:shortcutReady});
     runtimeLog(shortcutReady?'info':'warn',`桌宠显示/隐藏快捷键 ${companionToggleShortcut.label} ${shortcutReady?'已注册':'注册失败（可能被其它程序占用）'}`);
     const openedAtLogin=app.getLoginItemSettings().wasOpenedAtLogin;
-    orb.showInactive();assertDockTopmost();if(showPanelOnLaunch(openedAtLogin,store.state.settings.setup))showPanel();
+    // 桌宠是否出现在桌面上由 settings.petEnabled 决定（fresh install 默认关闭）。
+    applyPetVisibility();
+    if(showPanelOnLaunch(openedAtLogin,store.state.settings.setup))showPanel();
     void syncPanelViewport('startup');
     runtimeLog('info',`启动显示 主窗口=${panel.isVisible()} 开机自启=${openedAtLogin}`);
     if(store.recovered)dialog.showMessageBox(panel,{type:'warning',message:'已从上一份本地副本恢复',detail:'原数据库读取失败，损坏文件已保留。请核对最近的修改。'});
