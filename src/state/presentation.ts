@@ -64,15 +64,22 @@ export interface PersonStatusPresentationInput {
 /**
  * 一个人此刻的状态投影（首页状态卡 / Dock compact / Dock hover / Detail 共用一份）。
  *
- * 分层是这次修复的核心：
+ * 分层是这里唯一要守住的东西：一行只说一件事，不写口语连接词。
  *   primaryLabel   = 此刻在做什么（永远来自 CurrentState，空闲就是「空闲」）
- *   secondaryLabel = 有价值的上下文（还有 35 分钟 / 今日课程已结束 / 下一项 明天 08:00）
+ *   statusNote     = 这件事自身的补充（12:30 结束 / 按作息 · 13:10 结束 / 今天无课）
+ *   nextLine       = 下一件事的短写法（明天 08:00 · 研究生英语），已经隐含"接下来"，
+ *                    因此不再写「下一项」；没有下一项就是空字符串。
+ *   secondaryLabel = 单行上下文（Dock hover / 详情卡用）：状态注优先，其次下一件事。
  *
- * 「今日课程已结束」是日程阶段，只能出现在 secondary；它以前占着 compact 的主文案位，
+ * 「今日课程已结束」是日程阶段，只能出现在 statusNote；它以前占着 compact 的主文案位，
  * 才会出现"文字说结束、圆点还是兴奋的颜色"这种自相矛盾。
  */
 export interface PersonStatusPresentation {
   primaryLabel: string;
+  /** 状态自身的短注（结束时间 / 来源 / 日程阶段），可为空。 */
+  statusNote: string;
+  /** 下一件事：`明天 08:00 · 研究生英语`，无下一项时为空。 */
+  nextLine: string;
   secondaryLabel: string;
   tone: CompanionTone;
   /** 状态指示灯：绿 = 空闲，红 = 忙碌，灰 = 下线（睡眠）。见 statusLight。 */
@@ -126,29 +133,33 @@ export function buildPersonStatusPresentation(input: PersonStatusPresentationInp
   const elapsed = current.startAt ? Math.max(1, Math.ceil((now - current.startAt) / 60000)) : 0;
   const remainingText = current.kind === 'idle' ? '' : remaining ? `还有 ${durationText(remaining)}` : current.kind === 'focus' && elapsed ? `已专注 ${durationText(elapsed)}` : '进行中';
 
-  // 上下文：进行中的事项先说剩余时间；空闲时才用日程阶段说明。
-  // 这一句要能在 Dock 的第二行里完整显示，因此只说一件最有价值的事；
-  // 「下一项」是独立字段（nextItem），由首页 / 详情浮层负责排版。
+  // 日程阶段：只在"空闲"时解释这一天，不再把"下一项"塞进这句话（下一件事有自己的字段）。
   const scheduleContext = (() => {
     switch (code) {
-      case 'UPCOMING': return nextItem ? `下一项 ${nextItem.relativeDay === '今天' ? nextItem.time : `${nextItem.relativeDay} ${nextItem.time}`}` : '即将有安排';
       case 'DAY_FINISHED': return '今日课程已结束';
-      case 'NO_CLASS_TODAY': return '今天没有课';
+      case 'NO_CLASS_TODAY': return '今天无课';
       case 'TERM_NOT_STARTED': return '课表尚未开始';
       case 'TERM_ENDED': return '本学期课程已结束';
       case 'NO_SCHEDULE': return '尚未录入课表';
       case 'UNKNOWN': return '状态暂不可用';
-      default: return nextItem ? `下一项 ${nextItem.relativeDay === '今天' ? nextItem.time : `${nextItem.relativeDay} ${nextItem.time}`}` : '暂无后续安排';
+      // 其余码（即将开始 / 空闲）由下一件事那一行说明，这里不重复。
+      default: return '';
     }
   })();
-  const secondaryLabel = conflict ? '安排冲突'
+  // 来源说明只留一个词（按作息 / 本人设置）：它是注释，不是主信息。
+  const sourceNote = current.source === 'routine' ? '按作息' : current.source === 'manual' ? '本人设置' : '';
+  // 有结束时刻就说结束时刻（不写"预计"），没有才退回剩余时长。
+  const endNote = endText ? `${endText} ${current.kind === 'sleep' ? '起床' : '结束'}` : remainingText;
+  const statusNote = conflict ? '安排冲突'
     : current.kind === 'idle' ? scheduleContext
-    : current.kind === 'sleep' || current.kind === 'nap' || current.kind === 'rest' ? (endText ? `预计 ${endText} ${current.kind === 'sleep' ? '起床' : '结束'}` : remainingText)
-    : current.kind === 'meal' ? (endText ? `预计 ${endText} 结束` : remainingText)
-    : remainingText;
+    : [sourceNote, endNote].filter(Boolean).join(' · ');
+  const nextLine = nextItem?.text ?? '';
+  const secondaryLabel = statusNote || nextLine || '暂无后续安排';
 
   return {
     primaryLabel,
+    statusNote,
+    nextLine,
     secondaryLabel,
     tone,
     light,

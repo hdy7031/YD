@@ -2373,7 +2373,16 @@ body.main-body .person-status + .person-status { padding-left: 20px; border-colo
 body.main-body .person-status-label { color: var(--yd-faint); font-size: 11px; letter-spacing: .08em; }
 body.main-body .person-status strong { margin-top: 2px; font-size: 15px; }
 body.main-body .person-status small { margin-top: 3px; color: var(--yd-muted); font-size: 12px; }
-body.main-body .person-status-set { color: var(--yd-brand-deep); }
+/* 状态卡的两行辅助：状态注（结束时间 / 来源）更浅，下一件事略深一档，各自只占一行。 */
+body.main-body .person-status-note { margin-top: 2px; color: var(--yd-faint); font-size: 11.5px; line-height: 1.5; }
+body.main-body .person-status-next { margin-top: 1px; color: var(--yd-muted); font-size: 12px; line-height: 1.5; }
+/* 「设置当前状态」是轻量操作入口，不是正文：小胶囊 + 低对比，停在卡片右上角。 */
+body.main-body .person-status-set {
+  align-self: start; margin-top: 1px; padding: 4px 10px;
+  border: 1px solid var(--yd-line); border-radius: 999px;
+  color: var(--yd-muted); background: transparent; font-size: 11.5px; line-height: 1.2;
+}
+body.main-body .person-status-set:hover { border-color: var(--yd-brand-line); color: var(--yd-brand-deep); background: var(--yd-brand-soft); }
 
 body.main-body .attention-panel { padding: 15px 18px; border-color: #E4D6C8; background: #FCFAF7; }
 body.main-body .attention-panel .attention-title h2 { color: var(--yd-ink); }

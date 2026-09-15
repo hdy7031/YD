@@ -71,15 +71,17 @@ function nextCourseText(course:Occurrence,now:number){
 function PartnerStatusCard({status,updatedAt,now}:{status:PersonStatus;updatedAt:number;now:number}){
   // 当前状态来自统一状态引擎（日程或作息）；文案与 Home / Mini / Tip / Tray 完全同源。
   const current=status.current,next=status.nextCourse,active=current.kind!=='idle';
-  // 只有"空闲"时才用日程阶段补充说明这一天的课表情况。
-  const summary:Record<string,string>={DAY_FINISHED:`今天共 ${status.todayCount} 节课`,NO_CLASS_TODAY:'今天没有已录入课程',NO_SCHEDULE:'导入课表后，这里会显示当前和下一节安排。',TERM_ENDED:'当前学期已结束，没有下一节已录入课程。'};
+  // 空闲时只补一条标题里没有的事实（今天共几节课）；「尚未录入课表 / 今天无课 / 本学期结束」
+  // 已经是标题本身，不再用第二句话说一遍。
+  const summary:Record<string,string>={DAY_FINISHED:`今天共 ${status.todayCount} 节课`};
   return h('section',{className:'partner-status-card'},
     h('div',{className:'partner-status-main'},
       h('div',{className:'partner-status-kicker'},'当前状态'),
       h('h2',{className:'partner-status-headline'},statusLabel(status)),
       active?h(React.Fragment,null,h('p',{className:'partner-current-title'},current.label),h('p',{className:'partner-current-time'},`${fmt(current.startAt)} — ${fmt(current.endAt??current.startAt)}`)):null,
       !active&&summary[status.code]?h('p',{className:'partner-status-summary'},summary[status.code]):null,
-      next?h('p',{className:'partner-next-course'},h('span',null,status.code==='TERM_NOT_STARTED'?'首节 · ':'下一节 · '),nextCourseText(next,now)):null),
+      // 下一节课自带相对日期，位置本身已经说明"接下来"，不再写「下一节 ·」这类提示词。
+      next?h('p',{className:'partner-next-course'},nextCourseText(next,now)):null),
     h('small',{className:'partner-status-meta'},`课表更新 · ${fmt(updatedAt,true)}`));
 }
 function ReminderWorkbench({items,now,render}:{items:Reminder[];now:number;render:(item:Reminder)=>React.ReactNode}){
@@ -365,7 +367,7 @@ function App(){
         attention.total?h('section',{className:'attention-panel'},h('div',{className:'attention-title'},h('div',null,h('div',{className:'eyebrow'},'需要处理'),h('h2',null,`需要处理 ${attention.total}`))),h('div',{className:'attention-items'},attention.notices?b(`${attention.notices} 条通知待核对`,()=>setTab('inbox'),'attention-link'):null,attention.reminders?b(`${attention.reminders} 个提醒已到时间`,()=>setTab('reminders'),'attention-link'):null,attention.overdue?b(`${attention.overdue} 个待办已逾期`,()=>setTab('tasks'),'attention-link'):null)):null,
         h('div',{className:'home-grid'},
           h('div',{className:'home-primary'},
-            h('section',{className:'focus-strip'},h('div',{className:'focus-copy'},h('div',{className:'eyebrow icon-eyebrow'},uiIcon(Clock3),'接下来'),h('h2',null,next?.title||'今天没有后续安排'),h('p',null,next?`${fmt(next.start,true)} · ${next.place||'地点未填写'}`:'当前没有即将发生的课程或会议')),h('div',{className:'focus-detail'},next?h('span',null,until(now,next.start)):h('span',null,'可以安心安排其他事情'),current&&current.kind!=='idle'?h('small',null,`正在进行：${current.label}${current.endAt?` · ${fmt(current.endAt)} 结束`:''}`):null)),
+            h('section',{className:'focus-strip'},h('div',{className:'focus-copy'},h('div',{className:'eyebrow icon-eyebrow'},uiIcon(Clock3),'接下来'),h('h2',null,next?.title||'今天没有后续安排'),h('p',null,next?`${fmt(next.start,true)} · ${next.place||'地点未填写'}`:'今天没有课程或会议')),h('div',{className:'focus-detail'},next?h('span',null,until(now,next.start)):h('span',null,'今天无更多安排'),current&&current.kind!=='idle'?h('small',null,`正在进行：${current.label}${current.endAt?` · ${fmt(current.endAt)} 结束`:''}`):null)),
             h('section',{className:'panel daily-panel'},
               h(DailySummary,{plan:selfPlan,heading:selectedIsToday?'今日日程':'当日日程',unit:'项安排',countPrefix:selectedIsToday?'今天':'这天',rangeLabel:'时间范围',emptyRangeText:'当天没有需要占用的时间段',icon:uiIcon(CalendarDays,'section-icon'),
                 actions:h('input',{'aria-label':'查看日期',type:'date',value:selectedDate,onChange:(e:any)=>{if(e.target.value)setDate(e.target.value);}})}),

@@ -77,7 +77,11 @@ app.whenReady().then(async () => {
     })`);
     await wait(1300);
     const before = await selfRow();
-    check('上课时间首页显示「上课中」（按课表推测）', before?.label === '上课中' && /按课表推测/.test(before.detail ?? ''), JSON.stringify(before));
+    const beforeLive = await live();
+    // 首页只写"此刻在做什么 + 什么时候结束"，来源不再挤进文案：
+    // 课表来源由 CurrentState.source 这一条事实断言（文案层不再写「按课表推测」）。
+    const beforeSource = beforeLive.people.find(p => p.person === 'me').current.source;
+    check('上课时间首页显示「上课中」（课表来源）', before?.label === '上课中' && /^\d{2}:\d{2} 结束$/.test(before.detail ?? '') && beforeSource === 'schedule', JSON.stringify({ before, source: beforeSource }));
     check('本人上课时桌宠显示忙碌（另一位在忙）', (await pet("document.querySelector('.companion-figure')?.dataset.assetSlot")) === 'busy_work');
 
     /* ---------- 1. 首页入口：设置「专注」到 11:30 ---------- */
@@ -121,7 +125,7 @@ app.whenReady().then(async () => {
     setClock(11, 31);
     await wait(1300);
     const expiredRow = await selfRow();
-    check('到期后回落为「上课中」', expiredRow?.label === '上课中' && /按课表推测/.test(expiredRow.detail ?? ''), JSON.stringify(expiredRow));
+    check('到期后回落为「上课中」', expiredRow?.label === '上课中' && /^\d{2}:\d{2} 结束$/.test(expiredRow.detail ?? ''), JSON.stringify(expiredRow));
     check('引擎来源回到 schedule', (await live()).people.find(p => p.person === 'me').current.source === 'schedule');
 
     /* ---------- 3. 取消立即回落 ---------- */

@@ -2,9 +2,10 @@
 //
 // 这组测试锁住本次修复的核心不变量：
 //   * CurrentState 仍然是"此刻在做什么"的唯一真相（manual > schedule > routine > idle）；
-//   * 「今日课程已结束」只能出现在 secondary，不能占着 compact 的主文案；
+//   * 「今日课程已结束」只能出现在状态注（statusNote），不能占着主文案；
 //   * 状态点只表达此刻状态：课程结束后空闲的人不会保留 busy / 红粉色调；
-//   * 「下一项」永远带相对日期（明天 / 后天 / 周X），不再只给裸时间。
+//   * 下一件事单独一行（nextLine）且永远带相对日期（明天 / 后天 / 周X），
+//     不再写成「下一项 明天 08:00 · 课程名」这种口语串联句。
 //
 // 交互层（hover 进出、drag > 4px 不触发 detail、drag cleanup 无残留）由真实
 // Electron 验收脚本 verify-v030-dock.cjs 覆盖——那些行为只有在真实窗口 + 真实
@@ -57,7 +58,9 @@ test('A：课程进行中 CurrentState = schedule，presentation = 上课中', (
   assert.equal(view.primaryLabel, '上课中');
   assert.equal(view.tone, 'busy');
   assert.equal(view.dotTone, 'busy');
-  assert.equal(view.secondaryLabel, '还有 45 分钟');
+  // 有结束时刻就说结束时刻（不写"预计"），信息只有一件事。
+  assert.equal(view.statusNote, '12:30 结束');
+  assert.equal(view.secondaryLabel, '12:30 结束');
 });
 
 test('B：课程 end − 1ms 仍然 active，presentation 是上课中', () => {
@@ -81,7 +84,9 @@ test('C/D：课程 end 与 end + 1ms 都不再 active；最后一节结束后空
     const view = personPresentation(status);
     // 「今日课程已结束」只能是上下文，不能是此刻状态。
     assert.equal(view.primaryLabel, '空闲');
+    assert.equal(view.statusNote, '今日课程已结束');
     assert.equal(view.secondaryLabel, '今日课程已结束');
+    assert.equal(view.nextLine, '', '当天没有下一项时不留占位文案');
     assert.equal(view.tone, 'calm');
     assert.equal(view.dotTone, 'calm');
     assert.equal(companionTone(presenceStateFor(status)), 'calm');
@@ -110,7 +115,8 @@ test('F：课程结束后命中 routine 时使用 routine，而不是 idle', () 
   assert.equal(status.current.source, 'routine');
   const view = personPresentation(status);
   assert.equal(view.primaryLabel, '吃饭中');
-  assert.equal(view.secondaryLabel, '预计 13:10 结束');
+  // 来源只留一个词，结束时间不再写"预计"。
+  assert.equal(view.statusNote, '按作息 · 13:10 结束');
 });
 
 test('F2：课程进行中时 manual > schedule 仍然成立（manual 不会被课表抢走）', () => {
@@ -148,7 +154,9 @@ test('H：Solo 工作区不依赖 companion，presentation 照常给出结论', 
   assert.equal(live.role, 'self');
   const view = personPresentation(live);
   assert.equal(view.primaryLabel, '空闲');
+  assert.equal(view.statusNote, '今日课程已结束');
   assert.equal(view.secondaryLabel, '今日课程已结束');
+  assert.equal(view.nextLine, '明天 08:00 · 研究生英语');
   assert.equal(view.nextItem?.relativeDay, '明天');
 });
 

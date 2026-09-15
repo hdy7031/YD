@@ -6,7 +6,6 @@ import {DEFAULT_AVATAR_PACK_ID,getAvatarPack,listAvatarPacks,type AvatarPackMani
 import {resolveAvatarPickerSelection} from '../avatar-picker.ts';
 import {companionDisplayLabels} from '../companion-display.ts';
 import {companionVisualStates,type CompanionDisplayState} from '../companion-visual.ts';
-import {stateSourceLabel} from '../state/presentation.ts';
 import {companionTone,type CompanionTone} from '../companion-colors.ts';
 import {companionDock,companionFrame,companionRail,dockDetail,dockDetailPanel,dockSurfaceMetrics,type DockMeasure} from '../companion-layout.ts';
 // Asset 03 语义图标（素材图 4 的七枚原素材）：只在表现层把 CurrentState / 下一项
@@ -28,31 +27,24 @@ import type {CompanionMenuItem} from '../companion-menu.ts';
 import {BrandGlyph} from './brand.ts';
 const h=React.createElement,api=window.dayhub;
 export function useLive(){const [live,set]=useState<LiveSnapshot|null>(null);useEffect(()=>{let mounted=true,received=false;const off=api.onLive(v=>{received=true;if(mounted)set(v);});void api.live().then(v=>{if(mounted&&!received)set(v);});return()=>{mounted=false;off();};},[]);return live;}
-/**
- * 首页状态卡的第二行：日程阶段 / 剩余时间 + 下一项（带相对日期）。
- * 全部来自同一个 presentation：首页、Dock、详情浮层说的是同一件事。
- */
-function homeSecondary(view:ReturnType<typeof personPresentation>,current:PersonStatus['current']):string{
-  const next=view.nextItem;
-  const nextText=next?`下一项 ${next.relativeDay} ${next.time} · ${next.title}`:'';
-  if(current.kind==='idle')return [view.secondaryLabel,nextText].filter(Boolean).join(' · ');
-  return [stateSourceLabel(current),view.secondaryLabel,nextText].filter(Boolean).join(' · ');
-}
 export function StatusRows({live,compact=false,detailed=false,onSetStatus}:{live:LiveSnapshot|null;compact?:boolean;detailed?:boolean;onSetStatus?:(person:PersonId)=>void}){
   const rows=(live?.people||[]).map(p=>{
     // 称呼来自档案自身的显示名称（「我 / TA / 丹 / 喻老师」都由 Profile 提供）；
     // 紧凑标签仍可用短代号，但不再把本人硬编码成「我的」。
     const identity=compact?p.alias:p.name;
     const view=personPresentation(p);
-    const secondary=compact&&!detailed?view.secondaryLabel:homeSecondary(view,p.current);
-    // 三个层级：称呼（谁）→ 状态（发生了什么）→ 依据（时间与地点），
-    // 这样“我的 / Ta”并列时读起来是两块状态，而不是两行普通文字。
+    // 紧凑形态只有一行上下文；完整形态是"标题 + 两行短辅助"：
+    //   称呼（谁）→ 状态（大字）→ 状态注（结束时间 / 来源 / 今天无课）→ 下一件事。
+    // 每行只说一件事，不再用「·」把来源、结束时间、下一项、课程名串成一句话。
+    const note=compact&&!detailed?view.secondaryLabel:view.statusNote;
+    const next=compact&&!detailed?'':view.nextLine;
     return h('div',{className:'person-status',key:p.person},
       h('span',{className:`person-dot tone-${view.dotTone} ${p.person}`}),
       h('div',{className:'person-status-body'},
         h('span',{className:'person-status-label'},identity),
         h('strong',null,view.primaryLabel),
-        h('small',null,secondary)),
+        note?h('small',{className:'person-status-note'},note):null,
+        next?h('small',{className:'person-status-next'},next):null),
       // 只给本人开入口：状态由状态主体本人确认（Phase 3C §7）。
       onSetStatus&&p.role==='self'?h('button',{type:'button',className:'text-button person-status-set','data-set-status':p.person,onClick:()=>onSetStatus(p.person)},'设置当前状态'):null
     );
@@ -361,7 +353,9 @@ export function Mini({variant,frame}:MiniProps){
         h('span',{className:'detail-alias'},status.alias),
         icon?h('img',{className:'detail-icon',src:iconSrc(icon),alt:'','aria-hidden':true,draggable:false}):null),
       h('strong',{className:'detail-state',title:view.primaryLabel},view.primaryLabel),
-      h('small',{className:'detail-context',title:view.secondaryLabel},view.secondaryLabel),
+      // 上下文只说状态自身（结束时间 / 来源 / 今天的课表阶段）；下一件事在下面那行说，
+      // 因此这里不再重复「下一项 …」。
+      view.statusNote?h('small',{className:'detail-context',title:view.statusNote},view.statusNote):null,
       next
         ?h('button',{type:'button',className:'detail-next','data-person':status.person,onClick:()=>void api.window('open')},
           h('span',{className:'detail-next-title',title:next.title},next.title),
