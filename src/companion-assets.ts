@@ -25,6 +25,10 @@ function readManifest(file: string): CompanionManifest {
   const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as CompanionManifest;
   if (raw?.format !== 'dayhub-companion' || raw.version !== 1) throw new Error('素材清单格式不受支持');
   if (!raw.canvas || !Number.isFinite(raw.canvas.width) || !Number.isFinite(raw.canvas.height) || raw.canvas.width <= 0 || raw.canvas.height <= 0) throw new Error('素材画布尺寸无效');
+  const visual = raw.visualBounds;
+  if (visual && (!Number.isFinite(visual.x) || !Number.isFinite(visual.y) || !Number.isFinite(visual.width) || !Number.isFinite(visual.height)
+    || visual.x < 0 || visual.y < 0 || visual.width <= 0 || visual.height <= 0
+    || visual.x + visual.width > raw.canvas.width || visual.y + visual.height > raw.canvas.height)) throw new Error('素材视觉边界无效');
   if (!raw.states || typeof raw.states !== 'object') throw new Error('素材清单缺少状态表');
   return raw;
 }

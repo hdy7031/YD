@@ -308,6 +308,17 @@ def write_preview(canvases: dict[str, Image.Image], meta: dict, columns: int) ->
     stack.convert("RGB").save(PREVIEW_DIR / "state-stack.png")
 
 
+def visual_bounds(canvases: dict[str, Image.Image]) -> dict[str, int]:
+    """Return one stable alpha-content rectangle covering every state."""
+    masks = [np.array(image)[:, :, 3] > ALPHA_FLOOR for image in canvases.values()]
+    combined = np.logical_or.reduce(masks)
+    rows = np.where(combined.any(axis=1))[0]
+    cols = np.where(combined.any(axis=0))[0]
+    left, right = int(cols[0]), int(cols[-1])
+    top, bottom = int(rows[0]), int(rows[-1])
+    return {"x": left, "y": top, "width": right - left + 1, "height": bottom - top + 1}
+
+
 def load_clean_rgba(path: Path) -> np.ndarray:
     """读入透明 PNG 并按合集图相同的规则清理低 alpha 生成噪声。"""
     if not path.exists():
@@ -416,6 +427,7 @@ def main() -> None:
         "version": 1,
         "character": "专属角色桌宠",
         "canvas": {"width": meta["width"], "height": meta["height"]},
+        "visualBounds": visual_bounds(canvases),
         "baseline": meta["baseline"],
         "bodyHeight": meta["bodyHeight"],
         "sheet": {"file": sheet_path.name, "columns": columns, "rows": rows, "figures": len(states)},

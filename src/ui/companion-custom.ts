@@ -9,6 +9,7 @@ import { companionRailLabel, type CompanionDisplay } from '../companion-display.
 import { companionTone } from '../companion-colors.ts';
 import { resolveCompanionFrame, type CompanionAssets, type ResolvedCompanionFrame } from '../companion-frame.ts';
 import { presenceStateFor, type LiveSnapshot } from '../live.ts';
+import { companionInteractionRect } from '../companion-layout.ts';
 const h=React.createElement;
 const api=()=>window.dayhub;
 
@@ -165,6 +166,8 @@ export function CustomCompanionArt({assets,display,animate,reduceMotion,frozen=f
   const motion=animate&&!reduceMotion;
   const visualKey=assets?`${assets.resolvedPackId}@${assets.pack.version}`:undefined;
   const layers=useCrossfade(frame,motion?150:0,frozen,visualKey);
+  const bodyRef=useRef<HTMLDivElement>(null);
+  const [interactionStyle,setInteractionStyle]=useState<React.CSSProperties>();
   const [nudging,setNudging]=useState(false);
   const nudgeId=display?.nudgeId??0;
   const seen=useRef(nudgeId);
@@ -176,9 +179,30 @@ export function CustomCompanionArt({assets,display,animate,reduceMotion,frozen=f
     const timer=window.setTimeout(()=>setNudging(false),1500);
     return()=>window.clearTimeout(timer);
   },[nudgeId,motion]);
+  const resolvedPack=frame?resolveAvatarPack(frame.resolvedPackId):undefined;
+  const loadedBounds=frame?assets?.packs[frame.resolvedPackId]?.manifest?.visualBounds:undefined;
+  const visualBounds=loadedBounds??resolvedPack?.visualBounds;
+  useLayoutEffect(()=>{
+    if(!hitbox||!frame||!resolvedPack||!visualBounds){setInteractionStyle(undefined);return;}
+    const node=bodyRef.current;
+    if(!node){setInteractionStyle(undefined);return;}
+    const update=()=>{
+      const rect=companionInteractionRect({
+        container:{width:node.clientWidth,height:node.clientHeight},
+        canvas:resolvedPack.canvas,
+        visualBounds,
+        geometry:frame.geometry,
+      });
+      setInteractionStyle(rect?{left:`${rect.left}px`,top:`${rect.top}px`,width:`${rect.width}px`,height:`${rect.height}px`}:undefined);
+    };
+    update();
+    const observer=typeof ResizeObserver==='function'?new ResizeObserver(update):null;
+    observer?.observe(node);
+    return()=>observer?.disconnect();
+  },[hitbox,frame?.resolvedPackId,frame?.asset,frame?.geometry.scale,frame?.geometry.offsetX,frame?.geometry.offsetY,resolvedPack,visualBounds]);
   const className='companion-figure'+(motion?' is-breathing':'')+(nudging?' is-nudging':'');
   return h('div',{className,role:'img','aria-label':display?`专属角色桌宠 · ${display.label}`:'专属角色桌宠','data-asset-slot':display?.state??'idle','data-asset-key':frame?.asset??'idle','data-avatar-pack':frame?.resolvedPackId,'data-avatar-state':frame?.resolvedState,'data-avatar-fallback':frame?.fallback},
-    h('div',{className:'companion-body'},...layers.map((layer,index)=>{
+    h('div',{className:'companion-body',ref:bodyRef},...layers.map((layer,index)=>{
       return h('img',{
         key:layer.key,
         className:'companion-frame '+(index===layers.length-1?'is-current':'is-leaving'),
@@ -186,10 +210,9 @@ export function CustomCompanionArt({assets,display,animate,reduceMotion,frozen=f
         alt:'',
         draggable:false,
         decoding:'async',
-        'data-hitbox':hitbox&&index===layers.length-1?'sprite':undefined,
         style:{'--pet-scale':layer.geometry.scale,'--pet-x':layer.geometry.offsetX+'px','--pet-y':layer.geometry.offsetY+'px'} as React.CSSProperties,
       });
-    })));
+    }),hitbox&&interactionStyle?h('span',{'data-hitbox':'sprite',className:'companion-hitbox',style:interactionStyle,'aria-hidden':true}):null));
 }
 
 // Low key D / Y rail: a letter and a coloured dot per person, plus a very small

@@ -6,6 +6,12 @@
     "width": 401,
     "height": 398
   },
+  "visualBounds": {
+    "x": 2,
+    "y": 14,
+    "width": 396,
+    "height": 384
+  },
   "baseline": 398,
   "bodyHeight": 370,
   "sourceGrid": {

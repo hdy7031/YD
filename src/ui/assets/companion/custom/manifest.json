@@ -6,6 +6,12 @@
     "width": 412,
     "height": 411
   },
+  "visualBounds": {
+    "x": 14,
+    "y": 15,
+    "width": 384,
+    "height": 382
+  },
   "baseline": 397,
   "bodyHeight": 373,
   "sheet": {

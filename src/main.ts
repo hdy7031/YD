@@ -49,6 +49,7 @@ let busy=false, ocrBusy=false, lastTick=Date.now(), timer:ReturnType<typeof setI
 // 渲染层指针增量，两条路径都只改窗口位置，不碰任何 CSS 变换。
 let dragAnchor:DragAnchor|undefined,dragActive=false;
 const notifications=new Set<Notification>();
+function liveOrbWindow(){return orb&&!orb.isDestroyed()?orb:undefined;}
 const windows=()=>[orb,panel,companion?.bubble,companion?.mini,companion?.tip,companion?.sheet].filter((w):w is BrowserWindow=>!!w&&!w.isDestroyed());
 // 正式日志先写文件；控制台只在开发环境或控制台仍可用时作为镜像。
 function runtimeLog(level:string,message:string){logLine(level,message);}
@@ -199,17 +200,23 @@ function clampPosition(x:number,y:number,snap=false,size?:{width:number;height:n
   const {workArea:a}=screen.getDisplayNearestPoint({x:Math.round(x+38),y:Math.round(y+38)});
   // 启动时窗口还没创建，必须用即将使用的真实画布尺寸回收；
   // 否则会把一个本来合法的保存位置按占位尺寸（300×128）挤到屏幕另一侧。
-  const [width,height]=size?[size.width,size.height]:orb&&!orb.isDestroyed()?orb.getSize():[300,128];
+  const dock=liveOrbWindow();
+  const [width,height]=size?[size.width,size.height]:dock?dock.getSize():[300,128];
   return clampToArea(x,y,width,height,a,snap);
 }
 function moveOrb(x:number,y:number,width?:number,height?:number){
-  const [currentWidth,currentHeight]=orb.getSize();
+  const dock=liveOrbWindow();
+  if(!dock)return false;
+  if(dock.isDestroyed())return false;
+  const [currentWidth,currentHeight]=dock.getSize();
   const targetWidth=width??currentWidth,targetHeight=height??currentHeight;
   // 尺寸没变时只移动位置：setBounds 会让 Windows 把透明窗口重新对齐到物理像素，
   // 拖动过程中反复调用就会出现 1px 的尺寸抖动与贴图残影。
-  if(targetWidth===currentWidth&&targetHeight===currentHeight){orb.setPosition(Math.round(x),Math.round(y));assertDockTopmost();return;}
-  orb.setBounds({x:Math.round(x),y:Math.round(y),width:targetWidth,height:targetHeight},false);
+  if(targetWidth===currentWidth&&targetHeight===currentHeight){if(dock.isDestroyed())return false;dock.setPosition(Math.round(x),Math.round(y));assertDockTopmost();return true;}
+  if(dock.isDestroyed())return false;
+  dock.setBounds({x:Math.round(x),y:Math.round(y),width:targetWidth,height:targetHeight},false);
   assertDockTopmost();
+  return true;
 }
 /**
  * Dock 必须始终在普通桌面窗口之上。alwaysOnTop 是窗口的扩展样式位，
@@ -227,12 +234,13 @@ function assertDockTopmost(){
 }
 function canonicalOrbSize(){
   const p={...petDefaults,...store.state.settings.pet};
-  const {width,height}=companion?.geometry(p)??{width:orb.getBounds().width,height:orb.getBounds().height};
+  const dock=liveOrbWindow(),fallback=dock?dock.getBounds():{width:300,height:128};
+  const {width,height}=companion?.geometry(p)??{width:fallback.width,height:fallback.height};
   return {width,height};
 }
 // 位置落盘时连窗口尺寸一起记下：Dock 宽度随内容变化，还原时要用"牌面右下角"
 // 这个视觉锚点（见 types.ts 的说明），否则状态词变长会让 Dock 横向漂。
-async function savePosition(){const [x,y]=orb.getPosition(),size=canonicalOrbSize(),pos=clampPosition(x,y,true,size);moveOrb(pos.x,pos.y,size.width,size.height);if(store.state.settings.pet?.rememberPosition===false)return;await store.update(s=>{s.settings.orb={...pos,w:size.width,h:size.height};return s;});}
+async function savePosition(){const dock=liveOrbWindow();if(!dock)return;const [x,y]=dock.getPosition(),size=canonicalOrbSize(),pos=clampPosition(x,y,true,size);if(!moveOrb(pos.x,pos.y,size.width,size.height))return;if(store.state.settings.pet?.rememberPosition===false)return;await store.update(s=>{s.settings.orb={...pos,w:size.width,h:size.height};return s;});}
 async function processReminders(forceSummary=false){
   if(busy)return;busy=true;
   try{
@@ -423,7 +431,9 @@ function setupHandlers(){
   handler('version',()=>PRODUCT_VERSION||app.getVersion());
   handler('beginDrag',(pointerX:number,pointerY:number)=>{
     if(!Number.isFinite(pointerX)||!Number.isFinite(pointerY))throw new Error('拖动参数无效');
-    const {x:windowX,y:windowY}=orb.getBounds(),{width,height}=canonicalOrbSize(),cursor=screen.getCursorScreenPoint();
+    const dock=liveOrbWindow();
+    if(!dock){dragAnchor=undefined;dragActive=false;return;}
+    const {x:windowX,y:windowY}=dock.getBounds(),{width,height}=canonicalOrbSize(),cursor=screen.getCursorScreenPoint();
     dragAnchor={windowX,windowY,pointerX,pointerY,cursorX:cursor.x,cursorY:cursor.y,width,height,cursorMode:false};
     dragActive=false;
     // pointer down 只保存初始光标与窗口 bounds；超过阈值后的第一帧才进入 drag。
@@ -431,12 +441,17 @@ function setupHandlers(){
   });
   handler('drag',(pointerX:number,pointerY:number)=>{
     if(!dragAnchor||!Number.isFinite(pointerX)||!Number.isFinite(pointerY))throw new Error('拖动参数无效');
+    const stopDrag=()=>{if(dragActive)companion?.dragEnd();dragAnchor=undefined;dragActive=false;};
+    const dock=liveOrbWindow();
+    if(!dock){stopDrag();return;}
     const cursor=screen.getCursorScreenPoint();
     if(!dragActive){
       dragActive=true;
-      const before=orb.getBounds();
+      const before=dock.getBounds();
       companion?.dragStart();
-      const after=orb.getBounds();
+      const afterDock=liveOrbWindow();
+      if(!afterDock){stopDrag();return;}
+      const after=afterDock.getBounds();
       // 拖动开始时收起详情会把窗口从"详情画布"还原成"状态牌画布"（牌面在屏幕上
       // 并没有移动，但窗口原点变了）。这里按新的原点重新对齐锚点，避免第一帧跳一下。
       if(after.x!==before.x||after.y!==before.y||after.width!==before.width||after.height!==before.height){
@@ -446,8 +461,10 @@ function setupHandlers(){
     const step=resolveDragStep(dragAnchor,{x:pointerX,y:pointerY},cursor);
     if(step.adoptedCursor){
       // 改用系统光标时按当前位置重新对齐锚点，避免切换瞬间跳一下。
-      const now=orb.getBounds();
-      dragAnchor={...dragAnchor,cursorMode:true,windowX:now.x,windowY:now.y,cursorX:cursor.x,cursorY:cursor.y,pointerX,pointerY};
+      const now=liveOrbWindow();
+      if(!now){stopDrag();return;}
+      const nowBounds=now.getBounds();
+      dragAnchor={...dragAnchor,cursorMode:true,windowX:nowBounds.x,windowY:nowBounds.y,cursorX:cursor.x,cursorY:cursor.y,pointerX,pointerY};
     }
     const pos=clampPosition(dragAnchor.windowX+step.delta.x,dragAnchor.windowY+step.delta.y);
     // 拖动只移动位置。把 getBounds() 经过 DPI 物理像素取整后的宽高再写回
@@ -455,7 +472,7 @@ function setupHandlers(){
     // Always write the canonical DIP size together with the new position. On
     // Windows fractional DPI, setPosition() alone can preserve a re-quantized
     // native width and then grow the transparent window again on the next move.
-    moveOrb(pos.x,pos.y,dragAnchor.width,dragAnchor.height);
+    if(!moveOrb(pos.x,pos.y,dragAnchor.width,dragAnchor.height))stopDrag();
   });
   handler('endDrag',async()=>{try{if(dragActive){companion?.dragEnd();await savePosition();}}finally{dragAnchor=undefined;dragActive=false;}});
   handler('importImage',async()=>{const r=await dialog.showOpenDialog(panel,{title:'选择课表或通知图片',properties:['openFile'],filters:[{name:'PNG / JPEG 图片',extensions:['png','jpg','jpeg']}]});if(r.canceled)return null;const file=r.filePaths[0];if(!/\.(png|jpe?g)$/i.test(file)||fs.statSync(file).size>20*1024*1024)throw new Error('请选择不超过 20 MB 的 PNG 或 JPEG 图片');return storeImage(nativeImage.createFromPath(file));});

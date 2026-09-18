@@ -2,7 +2,7 @@
 // The main process performs IO; renderer windows resolve Avatar frames against
 // these already-loaded data URLs without importing Node APIs.
 import { companionFallbackIdle } from './companion-fallback-idle.ts';
-import { DEFAULT_AVATAR_PACK_ID, EMBEDDED_AVATAR_ASSET, resolveAvatarFrame, type AvatarPackId, type AvatarPackManifest, type ResolvedAvatarFrame } from './avatar.ts';
+import { DEFAULT_AVATAR_PACK_ID, EMBEDDED_AVATAR_ASSET, resolveAvatarFrame, type AvatarPackId, type AvatarPackManifest, type AvatarVisualBounds, type ResolvedAvatarFrame } from './avatar.ts';
 import type { CompanionDisplayState } from './companion-visual.ts';
 
 export interface CompanionAssetManifest {
@@ -10,6 +10,7 @@ export interface CompanionAssetManifest {
   version: number;
   character?: string;
   canvas: { width: number; height: number };
+  visualBounds?: AvatarVisualBounds;
   baseline?: number;
   bodyHeight?: number;
   states: Record<string, { file: string; label?: string; note?: string }>;

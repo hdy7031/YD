@@ -1059,6 +1059,7 @@ button.attention-link { min-height:34px; color:#714d34; border-color:rgba(183,13
 }
 .companion-figure { position:relative; width:100%; height:100%; }
 .companion-body { position:relative; display:block; width:100%; height:100%; }
+.companion-hitbox { position:absolute; z-index:3; pointer-events:none; }
 .companion-figure.is-breathing .companion-body {
   animation:companion-breathe 6.4s ease-in-out infinite;
   transform-origin:50% 100%;

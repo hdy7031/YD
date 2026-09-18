@@ -159,6 +159,10 @@ function useSurface(name:string,onHit?:(hit:HitState)=>void){
       }).filter(region=>region.w>0&&region.h>0);
       void api.reportHitRegions(regions).catch(()=>{});
     };
+    // Sprite hitbox is mounted after avatar decode. Report again at that exact
+    // DOM transition so the main process never keeps an empty first-frame map.
+    const mutation=typeof MutationObserver==='function'?new MutationObserver(report):null;
+    mutation?.observe(document.body,{childList:true,subtree:true});
     // DOM 路径只在窗口"接收鼠标"时才有事件（点击穿透窗口收不到真实 mousemove），
     // 因此它只负责"当下的即时反馈"；指针离开后的收起由主进程的指针状态兜底。
     const pointer=(e:MouseEvent)=>{if(dragging())return;publish(hitRegionAt(e.clientX,e.clientY));};
@@ -175,7 +179,7 @@ function useSurface(name:string,onHit?:(hit:HitState)=>void){
     observer?.observe(document.documentElement);
     report();
     const refresh=setInterval(resync,500);
-    return ()=>{offPointer();clearInterval(refresh);document.removeEventListener('mousemove',pointer);document.removeEventListener('mouseleave',leave);window.removeEventListener('resize',resync);observer?.disconnect();};
+    return ()=>{offPointer();clearInterval(refresh);mutation?.disconnect();document.removeEventListener('mousemove',pointer);document.removeEventListener('mouseleave',leave);window.removeEventListener('resize',resync);observer?.disconnect();};
   },[name]);
 }
 export function DesktopPet(){

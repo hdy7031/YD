@@ -16,6 +16,14 @@ export interface AvatarFrameGeometry {
   offsetY: number;
 }
 
+/** Alpha-content bounds in the pack canvas, at the pack's normal threshold. */
+export interface AvatarVisualBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface AvatarFrameSpec {
   /** Logical asset key. Disk/package paths belong to the asset loader. */
   asset: string;
@@ -30,6 +38,8 @@ export interface AvatarPackManifest {
   /** Logical path below the packaged assets directory. */
   assetRoot: string;
   canvas: { width: number; height: number };
+  /** Stable interaction rectangle covering the pack's visible states. */
+  visualBounds?: AvatarVisualBounds;
   previewState: CompanionDisplayState;
   fallbackState: CompanionDisplayState;
   frames: Partial<Record<CompanionDisplayState, AvatarFrameSpec>>;
@@ -69,6 +79,7 @@ export const ydDefaultAvatarPack: AvatarPackManifest = {
   source: 'builtin',
   assetRoot: 'companion/custom',
   canvas: { width: 412, height: 411 },
+  visualBounds: { x: 14, y: 15, width: 384, height: 382 },
   previewState: 'idle',
   fallbackState: 'idle',
   frames: {
@@ -95,6 +106,7 @@ export const ydPixelAvatarPack: AvatarPackManifest = {
   source: 'builtin',
   assetRoot: 'companion/pixel',
   canvas: { width: 401, height: 398 },
+  visualBounds: { x: 2, y: 14, width: 396, height: 384 },
   previewState: 'idle',
   fallbackState: 'idle',
   frames: {
@@ -126,6 +138,12 @@ export function avatarPackValidationErrors(manifest: AvatarPackManifest): string
   if (typeof manifest.assetRoot !== 'string' || !logicalPath(manifest.assetRoot)) errors.push('assetRoot must be a safe logical path');
   if (!Number.isFinite(manifest.canvas?.width) || manifest.canvas.width <= 0) errors.push('canvas width must be positive');
   if (!Number.isFinite(manifest.canvas?.height) || manifest.canvas.height <= 0) errors.push('canvas height must be positive');
+  const visual = manifest.visualBounds;
+  if (visual && (!Number.isFinite(visual.x) || !Number.isFinite(visual.y) || !Number.isFinite(visual.width) || !Number.isFinite(visual.height)
+    || visual.x < 0 || visual.y < 0 || visual.width <= 0 || visual.height <= 0
+    || visual.x + visual.width > manifest.canvas.width || visual.y + visual.height > manifest.canvas.height)) {
+    errors.push('visualBounds must fit inside canvas');
+  }
   if (!isCompanionDisplayState(manifest.fallbackState)) errors.push('fallbackState is invalid');
   if (!isCompanionDisplayState(manifest.previewState)) errors.push('previewState is invalid');
   const frameEntries = manifest.frames && typeof manifest.frames === 'object' ? Object.entries(manifest.frames) : [];

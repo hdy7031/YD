@@ -6,6 +6,7 @@
 // does can ever resize or shift the window. The main process uses these numbers
 // to size the BrowserWindow and the renderer uses the same numbers (through CSS
 // custom properties) to place the rail, which keeps both sides in sync.
+import type { AvatarFrameGeometry, AvatarVisualBounds } from './avatar.ts';
 import type { PetPreferences } from './live.ts';
 
 export type CompanionSize = PetPreferences['size'];
@@ -26,6 +27,40 @@ export const companionFrame = {
   padX: 14,
   padY: 14,
 };
+
+/**
+ * Map the pack's alpha-content bounds into a contain-fit companion stage.
+ * The returned rectangle is local to the stage and is used only for pointer
+ * hit testing; the rendered image remains the original full transparent canvas.
+ */
+export function companionInteractionRect(input: {
+  container: { width: number; height: number };
+  canvas: { width: number; height: number };
+  visualBounds: AvatarVisualBounds;
+  geometry?: AvatarFrameGeometry;
+}): { left: number; top: number; width: number; height: number } | undefined {
+  const { container, canvas, visualBounds } = input;
+  if (!(container.width > 0 && container.height > 0 && canvas.width > 0 && canvas.height > 0)) return undefined;
+  const scale = Math.min(container.width / canvas.width, container.height / canvas.height);
+  const drawnWidth = canvas.width * scale;
+  const drawnHeight = canvas.height * scale;
+  const imageLeft = (container.width - drawnWidth) / 2;
+  // The production image uses object-position: center bottom.
+  const imageTop = container.height - drawnHeight;
+  const frameScale = input.geometry?.scale ?? 1;
+  const offsetX = input.geometry?.offsetX ?? 0;
+  const offsetY = input.geometry?.offsetY ?? 0;
+  const originX = container.width / 2;
+  const originY = container.height;
+  const left = originX + (imageLeft + visualBounds.x * scale - originX) * frameScale + offsetX;
+  const top = originY + (imageTop + visualBounds.y * scale - originY) * frameScale + offsetY;
+  return {
+    left,
+    top,
+    width: visualBounds.width * scale * frameScale,
+    height: visualBounds.height * scale * frameScale,
+  };
+}
 
 export const companionCharacter = {
   // 可见人物高度（DIP）。0.2.20 的新素材细节更多，因此整体收小一档，

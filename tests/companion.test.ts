@@ -14,7 +14,8 @@ import {presenceStateFor,statusLabel} from '../src/live.ts';
 import {resolveCompanionAssets,companionRequiredStates} from '../src/companion-assets.ts';
 import {resolveCompanionFrame} from '../src/companion-frame.ts';
 import {companionFallbackIdle} from '../src/companion-fallback-idle.ts';
-import {companionGeometry,companionCharacter,companionFrame as companionFrameBox,companionRail} from '../src/companion-layout.ts';
+import {companionGeometry,companionCharacter,companionFrame as companionFrameBox,companionInteractionRect,companionRail} from '../src/companion-layout.ts';
+import {CompanionWindowSlot} from '../src/companion-window.ts';
 import {companionVisualStates} from '../src/companion-visual.ts';
 import {DEFAULT_AVATAR_PACK_ID,resolveAvatarFrame,ydDefaultAvatarPack} from '../src/avatar.ts';
 import {buildCompanionMenu,companionMenuHeight,companionMenuMetrics,companionToggleShortcut,type CompanionMenuItem} from '../src/companion-menu.ts';
@@ -566,6 +567,34 @@ test('0.2.20 桌宠窗口固定且比人物本体大一圈，姿态偏移集中�
   assert.ok(dock.width>dock.height,'Dock 不是正方形球体');
   assert.equal(dock.shape,'rounded');
   assert.deepEqual(dock,companionGeometry('orb','medium',0.68),'Dock 不消费素材比例');
+});
+
+test('P0 桌宠辅助窗口引用：销毁后立即失效，旧窗口事件不会清空新引用',()=>{
+  let firstDestroyed=false;
+  const first={isDestroyed:()=>firstDestroyed};
+  const replacement={isDestroyed:()=>false};
+  const slot=new CompanionWindowSlot<typeof first>();
+  slot.set(first);
+  assert.equal(slot.get(),first);
+  firstDestroyed=true;
+  assert.equal(slot.get(),undefined,'销毁的 BrowserWindow 不得继续从槽位读出');
+  slot.set(replacement);
+  slot.clear(first);
+  assert.equal(slot.get(),replacement,'旧 closed/destroyed 回调不得清空后来创建的窗口');
+  slot.clear(replacement);
+  assert.equal(slot.get(),undefined);
+});
+
+test('P1 桌宠人物命中区按 visualBounds 收紧，不再使用整张透明画布',()=>{
+  const pack=ydDefaultAvatarPack,visual=pack.visualBounds!;
+  const geometry=companionGeometry('custom','medium',pack.canvas.width/pack.canvas.height);
+  const container={width:geometry.width-companionFrameBox.padX*2,height:geometry.height-companionRail.height};
+  const frame=resolveAvatarFrame(DEFAULT_AVATAR_PACK_ID,'idle');
+  const full=companionInteractionRect({container,canvas:pack.canvas,visualBounds:{x:0,y:0,width:pack.canvas.width,height:pack.canvas.height},geometry:frame.geometry})!;
+  const sprite=companionInteractionRect({container,canvas:pack.canvas,visualBounds:visual,geometry:frame.geometry})!;
+  assert.ok(sprite.width<full.width&&sprite.height<full.height);
+  assert.ok(sprite.left>full.left||sprite.top>full.top);
+  assert.ok(sprite.left+sprite.width<full.left+full.width||sprite.top+sprite.height<full.top+full.height);
 });
 
 test('0.2.20 内置小猫桌宠已彻底删除：没有猫的形象、几何或素材',()=>{

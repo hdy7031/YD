@@ -10,6 +10,7 @@ import { resolvePetInstance } from './pet-instance.ts';
 import { activeProfiles } from './people.ts';
 import { loadLocalPage } from './renderer-load.ts';
 import { logError } from './logging.ts';
+import { CompanionWindowSlot } from './companion-window.ts';
 import type { Store } from './store.ts';
 import type { PersonId } from './types.ts';
 
@@ -30,35 +31,54 @@ export class Companion {
   // both visible and sized until avatarVisualReady accepts the transaction.
   private activeAvatar:{requestedPackId:string;resolvedPackId:string;version:string};
   private pendingAvatar?:{requestedPackId:string;resolvedPackId:string;version:string};
-  readonly bubble:BrowserWindow;readonly mini:BrowserWindow;readonly tip:BrowserWindow;readonly sheet:BrowserWindow;
+  private bubbleSlot=new CompanionWindowSlot<BrowserWindow>();
+  private miniSlot=new CompanionWindowSlot<BrowserWindow>();
+  private tipSlot=new CompanionWindowSlot<BrowserWindow>();
+  private sheetSlot=new CompanionWindowSlot<BrowserWindow>();
+  get bubble(){return this.bubbleSlot.get();}
+  get mini(){return this.miniSlot.get();}
+  get tip(){return this.tipSlot.get();}
+  get sheet(){return this.sheetSlot.get();}
   private shortcut={label:companionToggleShortcut.label,ready:false};
   private actions:{settings:()=>void;status:()=>void;quit:()=>void;toggleVisible:()=>void}={settings:()=>{},status:()=>{},quit:()=>{},toggleVisible:()=>{}};
+  private registerWindow(slot:CompanionWindowSlot<BrowserWindow>,window:BrowserWindow){
+    slot.set(window);
+    const clear=()=>slot.clear(window);
+    window.once('closed',clear);
+    window.webContents.once('destroyed',clear);
+    return window;
+  }
+  private liveOrb(){return this.orb&&!this.orb.isDestroyed()?this.orb:undefined;}
+  private livePanel(){return this.panel&&!this.panel.isDestroyed()?this.panel:undefined;}
+  private hideWindow(window:BrowserWindow|undefined){if(window&&!window.isDestroyed())window.hide();}
+  private showWindow(window:BrowserWindow|undefined,focus=false){if(!window||window.isDestroyed())return false;focus?window.show():window.showInactive();if(focus)window.focus();return true;}
   constructor(private store:Store,readonly orb:BrowserWindow,private panel:BrowserWindow,options:Electron.BrowserWindowConstructorOptions,private file:string,lock:(w:BrowserWindow)=>void){
     this.activeAvatar=this.avatarIdentity();
     // Windows 会给"透明窗口"按窗口矩形画一圈原生 DWM 阴影：透明窗口 + CSS 阴影
     // 就会叠成明显的黑框（详情面板与提醒气泡都属于这一层）。这里统一关掉原生阴影，
     // 阴影只由 renderer 的 CSS 在窗口内绘制。
-    this.bubble=new BrowserWindow({...options,width:330,height:180,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false,hasShadow:false,roundedCorners:false});
+    const bubble=this.registerWindow(this.bubbleSlot,new BrowserWindow({...options,width:330,height:180,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false,hasShadow:false,roundedCorners:false}));
     const soloMini=activeProfiles(this.store.state).length<=1;
     // 详情浮层是 Dock 的 owner window（parent: orb）：它永远跟着 Dock 的 z-order，
     // 不会变成第二个无主透明窗口去和桌面上的浏览器抢层级。
     const detail=detailGeometry(soloMini?1:2);
-    this.mini=new BrowserWindow({...options,parent:this.orb,width:detail.width,height:detail.height,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,hasShadow:false,roundedCorners:false});
-    this.tip=new BrowserWindow({...options,width:150,height:32,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false,hasShadow:false,roundedCorners:false});
+    const mini=this.registerWindow(this.miniSlot,new BrowserWindow({...options,parent:this.orb,width:detail.width,height:detail.height,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,hasShadow:false,roundedCorners:false}));
+    const tip=this.registerWindow(this.tipSlot,new BrowserWindow({...options,width:150,height:32,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,focusable:false,hasShadow:false,roundedCorners:false}));
     // 右键菜单是自绘窗口：原生菜单无法沿用 YD 的字体、间距与品牌层级。
     // 它需要真正的焦点才能“点外面自动收起”，所以不加入点击穿透名单。
-    this.sheet=new BrowserWindow({...options,width:companionMenuMetrics.width,height:220,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,hasShadow:false,roundedCorners:false});
-    this.bubble.setTitle('YD · 提醒气泡');this.mini.setTitle('YD · 当前状态');this.tip.setTitle('YD · 状态');this.sheet.setTitle('YD · 桌宠菜单');
-    lock(this.bubble);lock(this.mini);lock(this.tip);lock(this.sheet);
-    this.mini.on('blur',()=>this.mini.hide());
-    this.mini.on('close',e=>{if(!this.closing){e.preventDefault();this.mini.hide();}});
+    const sheet=this.registerWindow(this.sheetSlot,new BrowserWindow({...options,width:companionMenuMetrics.width,height:220,thickFrame:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,hasShadow:false,roundedCorners:false}));
+    bubble.setTitle('YD · 提醒气泡');mini.setTitle('YD · 当前状态');tip.setTitle('YD · 状态');sheet.setTitle('YD · 桌宠菜单');
+    lock(bubble);lock(mini);lock(tip);lock(sheet);
+    mini.on('blur',()=>{if(this.mini===mini)this.hideWindow(mini);});
+    mini.on('close',e=>{if(this.mini===mini&&!this.closing){e.preventDefault();this.hideWindow(mini);}});
     // 详情浮层的可见性就是 Dock 的 collapsed / detail 状态来源，因此每一条隐藏路径
     // （blur、Dock 收起、外部代码、切换到主窗口）都必须广播一次，渲染层才不会
     // 永远停在 detail 上。
-    this.mini.on('hide',()=>this.broadcast());
+    mini.on('hide',()=>{if(this.mini===mini)this.broadcast();});
     // 隐藏 / 失去焦点都必须把详情收干净：Dock 重新出现时窗口必须是状态牌画布，
     // 而不是一个还停留在 detail 尺寸的画布。
-    this.orb.on('hide',()=>{this.topmostAsserted=false;this.collapseDetail();this.bubble.hide();this.mini.hide();this.tip.hide();});
+    this.orb.on('hide',()=>{this.topmostAsserted=false;this.collapseDetail();this.hideWindow(this.bubble);this.hideWindow(this.mini);this.hideWindow(this.tip);});
+    this.orb.on('closed',()=>{this.closing=true;this.dockDetail=false;this.dockDetailFrame=undefined;this.bubbleSlot.clear();this.miniSlot.clear();this.tipSlot.clear();this.sheetSlot.clear();});
     // 点击外部 = 窗口失去焦点：收起详情，但不把焦点抢回来（见 §13）。
     this.orb.on('blur',()=>{this.collapseDetail();this.clearPresence();});
     // Windows 上窗口的 z-order 样式位会被 hide/show、setIgnoreMouseEvents 等路径改写，
@@ -68,10 +88,10 @@ export class Companion {
     // 桌宠移动或收起时，右键菜单不能再悬在原处。
     this.orb.on('move',()=>{this.hideMenu();this.position();});
     this.orb.on('hide',()=>this.hideMenu());
-    this.sheet.on('blur',()=>this.hideMenu());
-    this.sheet.on('close',e=>{if(!this.closing){e.preventDefault();this.sheet.hide();}});
+    sheet.on('blur',()=>{if(this.sheet===sheet)this.hideMenu();});
+    sheet.on('close',e=>{if(this.sheet===sheet&&!this.closing){e.preventDefault();this.hideWindow(sheet);}});
     this.panel.on('show',()=>void this.pulse());
-    for(const w of [this.orb,this.bubble,this.tip])w.setIgnoreMouseEvents(true,{forward:true});
+    for(const w of [this.orb,bubble,tip])w.setIgnoreMouseEvents(true,{forward:true});
   }
   private avatarIdentity(){
     const requestedPackId=resolvePetInstance(this.store.state).avatarPackId;
@@ -83,7 +103,12 @@ export class Companion {
   }
   // 四个辅助窗口与主界面 / Dock 共用同一个本地页面：统一走 loadLocalPage
   // （有界重试 + 超时 + 日志），避免"某一个窗口偶发加载失败 → 整个 YD 无法启动"。
-  async load(){await Promise.all([loadLocalPage(this.bubble,this.file,'bubble'),loadLocalPage(this.mini,this.file,'mini'),loadLocalPage(this.tip,this.file,'tip'),loadLocalPage(this.sheet,this.file,'menu')]);this.resize();await this.pulse(true);this.pulseTimer=setInterval(()=>void this.pulse(),1000);}
+  async load(){
+    const bubble=this.bubble,mini=this.mini,tip=this.tip,sheet=this.sheet;
+    if(!bubble||!mini||!tip||!sheet)return;
+    await Promise.all([loadLocalPage(bubble,this.file,'bubble'),loadLocalPage(mini,this.file,'mini'),loadLocalPage(tip,this.file,'tip'),loadLocalPage(sheet,this.file,'menu')]);
+    this.resize();await this.pulse(true);this.pulseTimer=setInterval(()=>void this.pulse(),1000);
+  }
   stop(){this.closing=true;if(this.pulseTimer)clearInterval(this.pulseTimer);}
   get():LiveSnapshot{
     // Keep the projection self-consistent: the display state must never lag the
@@ -91,13 +116,15 @@ export class Companion {
     const now=Date.now();
     this.timeline.sync(pendingReminders(this.store.state).length,now);
     // 姿态由统一状态引擎在 snapshot() 内计算；这里只传提醒相关的表现层状态。
-    return {...snapshot(this.store.state,now,this.timeline.state()),detail:this.detailOpen(),...(this.dockDetailFrame?{detailFrame:this.dockDetailFrame}:{}),bubble:this.active?{...this.active,below:this.bubble.getBounds().y>this.orb.getBounds().y}:undefined,hoverTip:this.hoverTip};
+    const orb=this.liveOrb(),bubble=this.bubble;
+    const bubbleBounds=orb&&bubble?{bubbleY:bubble.getBounds().y,orbY:orb.getBounds().y}:undefined;
+    return {...snapshot(this.store.state,now,this.timeline.state()),detail:this.detailOpen(),...(this.dockDetailFrame?{detailFrame:this.dockDetailFrame}:{}),bubble:this.active&&bubbleBounds?{...this.active,below:bubbleBounds.bubbleY>bubbleBounds.orbY}:undefined,hoverTip:this.hoverTip};
   }
   broadcast(){
     // 悬停提示只描述仍然存在的档案：档案消失（例如以后移除同行者）时安静收起，
     // 绝不保留或显示一个不存在的人。
     if(this.hoverTip){const status=this.get().people.find(p=>p.person===this.hoverTip!.person);if(status)this.hoverTip={person:status.person,text:`${status.alias} · ${statusLabel(status)}`,state:presenceStateFor(status),side:this.hoverTip.side};else this.hoverTip=undefined;}
-    const live=this.get();for(const w of [this.orb,this.panel,this.bubble,this.mini,this.tip])if(!w.isDestroyed())w.webContents.send('dayhub:live',live);
+    const live=this.get();for(const w of [this.liveOrb(),this.livePanel(),this.bubble,this.mini,this.tip])if(w&&!w.isDestroyed()&&!w.webContents.isDestroyed())w.webContents.send('dayhub:live',live);
     this.assertTopmostOnce();
   }
   /**
@@ -106,7 +133,8 @@ export class Companion {
    * 落在"显示之后"，而 Electron 只会为 JS 侧标志的变化写原生 z-order。
    */
   private assertTopmostOnce(){
-    if(this.topmostAsserted||this.orb.isDestroyed()||!this.orb.isVisible())return;
+    const orb=this.liveOrb();
+    if(this.topmostAsserted||!orb||!orb.isVisible())return;
     this.topmostAsserted=true;
     this.ensureTopmost();
   }
@@ -127,8 +155,8 @@ export class Companion {
    * 因此既不会打断用户输入，也不需要 setInterval 强行 bringToFront。
    */
   private ensureTopmost(){
-    for(const w of [this.orb,this.mini,this.bubble,this.tip]){
-      if(w.isDestroyed()||!w.isVisible())continue;
+    for(const w of [this.liveOrb(),this.mini,this.bubble,this.tip]){
+      if(!w||w.isDestroyed()||!w.isVisible())continue;
       if(w.isAlwaysOnTop())continue;
       // 先归零再置顶，强制真正写一次原生 z-order：Electron 在"JS 侧仍记着 true、
       // 原生层级已被透明 / 分层 / 点击穿透这些样式改动打回普通层"时会直接跳过
@@ -151,7 +179,7 @@ export class Companion {
    * 详情是否打开。Dock 模式 = 窗口的画布状态；桌宠模式 = 独立详情浮层的可见性。
    * 两条路径互斥，渲染层不需要知道区别（只读 live.detail）。
    */
-  private detailOpen(){return this.dockMode()?this.dockDetail:!this.mini.isDestroyed()&&this.mini.isVisible();}
+  private detailOpen(){const mini=this.mini;return this.dockMode()?this.dockDetail:!!mini&&mini.isVisible();}
   private dockPlate(){
     const preferences={...petDefaults,...this.store.state.settings.pet};
     const people=Math.max(1,activeProfiles(this.store.state).length);
@@ -165,15 +193,19 @@ export class Companion {
    * （详情需要真实键盘焦点：ESC 与"点击外部收起"都靠它）。
    */
   private openDockDetail(){
+    const orb=this.liveOrb();
+    if(!orb)return;
     this.dockDetail=true;
     this.layoutDockDetail();
-    if(!this.orb.isFocused())this.orb.focus();
+    if(!orb.isFocused())orb.focus();
     this.broadcast();
   }
   /** 按当前牌面尺寸重算详情画布（打开详情 / 牌面测量变化共用同一条路径）。 */
   private layoutDockDetail(){
+    const orb=this.liveOrb();
+    if(!orb)return;
     const {surface,people}=this.dockPlate();
-    const bounds=this.orb.getBounds();
+    const bounds=orb.getBounds();
     const area=screen.getDisplayMatching(bounds).workArea;
     const frame=dockDetailFrame({people,plate:{width:surface.defaultWidth,height:surface.defaultHeight},bounds,area});
     this.dockDetailFrame={
@@ -182,7 +214,7 @@ export class Companion {
       below:frame.placement==='below',
     };
     this.applied='';
-    this.orb.setBounds({x:Math.round(frame.window.x),y:Math.round(frame.window.y),width:Math.round(frame.window.width),height:Math.round(frame.window.height)},false);
+    orb.setBounds({x:Math.round(frame.window.x),y:Math.round(frame.window.y),width:Math.round(frame.window.width),height:Math.round(frame.window.height)},false);
     this.ensureTopmost();
   }
   /**
@@ -191,7 +223,9 @@ export class Companion {
    */
   private closeDockDetail(){
     if(!this.dockDetail)return false;
-    const frame=this.dockDetailFrame,bounds=this.orb.getBounds(),pad=dockDetail.pad;
+    const orb=this.liveOrb();
+    if(!orb){this.dockDetail=false;this.dockDetailFrame=undefined;return false;}
+    const frame=this.dockDetailFrame,bounds=orb.getBounds(),pad=dockDetail.pad;
     this.dockDetail=false;this.dockDetailFrame=undefined;
     const {surface,preferences}=this.dockPlate();
     const {width,height}=this.geometry(preferences);
@@ -201,7 +235,7 @@ export class Companion {
     const anchorX=frame?bounds.x+plateLeft+surface.defaultWidth:bounds.x+bounds.width-pad;
     const anchorY=frame?bounds.y+plateTop+surface.defaultHeight:bounds.y+bounds.height-pad;
     const x=Math.round(anchorX-width+pad),y=Math.round(anchorY-height+pad);
-    if(bounds.x!==x||bounds.y!==y||bounds.width!==width||bounds.height!==height)this.orb.setBounds({x,y,width,height},false);
+    if(bounds.x!==x||bounds.y!==y||bounds.width!==width||bounds.height!==height)orb.setBounds({x,y,width,height},false);
     this.applied=`${width}x${height}`;
     this.ensureTopmost();
     this.broadcast();
@@ -210,17 +244,19 @@ export class Companion {
   /** 详情收起的统一入口（点击 Dock、点击外部、ESC、拖动、隐藏、几何变化）。 */
   collapseDetail(){
     if(this.closeDockDetail())return;
-    if(!this.mini.isDestroyed()&&this.mini.isVisible())this.mini.hide();
+    const mini=this.mini;if(mini&&mini.isVisible())this.hideWindow(mini);
   }
   private resizeMini(){
+    const mini=this.mini;
+    if(!mini)return;
     // 详情浮层是轻量 popover：窗口 = 卡片 + 8px 阴影画布。
     //   Together 316×152 / Solo 276×136（Solo 是独立配比，不是砍掉半边）
     const solo=activeProfiles(this.store.state).length<=1;
     const {width,height}=detailGeometry(solo?1:2);
-    if(this.mini.getSize()[0]!==width||this.mini.getSize()[1]!==height){
-      this.mini.setResizable(true);
-      this.mini.setSize(width,height,false);
-      this.mini.setResizable(false);
+    if(mini.getSize()[0]!==width||mini.getSize()[1]!==height){
+      mini.setResizable(true);
+      mini.setSize(width,height,false);
+      mini.setResizable(false);
     }
   }
   resize(){
@@ -252,7 +288,9 @@ export class Companion {
   }
   /** 按当前几何契约重排 Dock 画布（不改详情状态）。 */
   private applyCanvas(){
-    const p={...petDefaults,...this.store.state.settings.pet},before=this.orb.getBounds();
+    const orb=this.liveOrb();
+    if(!orb)return;
+    const p={...petDefaults,...this.store.state.settings.pet},before=orb.getBounds();
     const {width,height}=this.geometry(p);
     // 尺寸没变时不再重复 setBounds：Windows 每次都会把透明窗口重新对齐到
     // 物理像素栅格，重复调用会带来 1px 抖动与多余的透明合成。
@@ -272,7 +310,7 @@ export class Companion {
     // Dock 的圆角由 renderer CSS 绘制。Windows 在 fractional DPI 下会在每次
     // setPosition 后重新量化 setShape 的原生 region，造成窗口宽度持续增长，
     // 因此这里不能再对透明 Dock 使用 BrowserWindow.setShape()。
-    this.orb.setBounds({x,y,width,height},false);
+    orb.setBounds({x,y,width,height},false);
     this.applied=key;
     this.ensureTopmost();
     this.position();this.broadcast();
@@ -294,19 +332,30 @@ export class Companion {
     return true;
   }
   position(){
-    const b=this.orb.getBounds(),a=screen.getDisplayMatching(b).workArea;
-    const place=(w:BrowserWindow)=>{const [width,height]=w.getSize(),center=b.x+b.width/2,anchor=center<a.x+a.width/2?b.x:b.x+b.width-width;const x=Math.max(a.x,Math.min(anchor,a.x+a.width-width));let y=b.y-height-10;if(y<a.y)y=b.y+b.height+10;w.setPosition(Math.round(x),Math.round(Math.max(a.y,Math.min(y,a.y+a.height-height))));};
+    const orb=this.liveOrb();
+    if(!orb)return;
+    const b=orb.getBounds(),a=screen.getDisplayMatching(b).workArea;
+    const place=(w:BrowserWindow|undefined)=>{
+      if(!w||w.isDestroyed())return;
+      const [width,height]=w.getSize(),center=b.x+b.width/2,anchor=center<a.x+a.width/2?b.x:b.x+b.width-width;const x=Math.max(a.x,Math.min(anchor,a.x+a.width-width));let y=b.y-height-10;if(y<a.y)y=b.y+b.height+10;
+      if(!w.isDestroyed())w.setPosition(Math.round(x),Math.round(Math.max(a.y,Math.min(y,a.y+a.height-height))));
+    };
     place(this.bubble);
     // 详情面板与状态牌居中对齐：Asset 04 的对话尾巴在面板底部正中，正好指向状态牌。
     // 窗口底部贴着状态牌顶边，尾巴尖（距窗口底 4px）落在状态牌上方几个像素。
-    {
-      const [width,height]=this.mini.getSize();
+    const mini=this.mini;
+    if(mini&&!mini.isDestroyed()){
+      const [width,height]=mini.getSize();
       const x=Math.max(a.x,Math.min(Math.round(b.x+b.width/2-width/2),a.x+a.width-width));
       let y=b.y-height;
       if(y<a.y)y=b.y+b.height+10;
-      this.mini.setPosition(Math.round(x),Math.round(Math.max(a.y,Math.min(y,a.y+a.height-height))));
+      if(!mini.isDestroyed())mini.setPosition(Math.round(x),Math.round(Math.max(a.y,Math.min(y,a.y+a.height-height))));
     }
-    if(this.hoverTip){const [width,height]=this.tip.getSize(),side=this.hoverTip.side;let x=b.x+b.width*side-width/2,y=b.y+b.height+3;if(y+height>a.y+a.height)y=b.y-height-3;x=Math.max(a.x,Math.min(x,a.x+a.width-width));y=Math.max(a.y,Math.min(y,a.y+a.height-height));this.tip.setPosition(Math.round(x),Math.round(y));}
+    const tip=this.tip;
+    if(this.hoverTip&&tip&&!tip.isDestroyed()){
+      const [width,height]=tip.getSize(),side=this.hoverTip.side;let x=b.x+b.width*side-width/2,y=b.y+b.height+3;if(y+height>a.y+a.height)y=b.y-height-3;x=Math.max(a.x,Math.min(x,a.x+a.width-width));y=Math.max(a.y,Math.min(y,a.y+a.height-height));
+      if(!tip.isDestroyed())tip.setPosition(Math.round(x),Math.round(y));
+    }
   }
   toggleMini(){
     const p={...petDefaults,...this.store.state.settings.pet};
@@ -315,40 +364,44 @@ export class Companion {
       if(this.dockDetail)this.collapseDetail();else this.openDockDetail();
       return;
     }
-    if(this.mini.isVisible()){this.mini.hide();this.broadcast();return;}
-    this.clearPresence();if(!p.miniPanel){this.panel.show();this.panel.focus();return;}
-    this.resizeMini();this.position();this.broadcast();this.mini.show();this.ensureTopmost();this.broadcast();
+    const mini=this.mini;
+    if(!mini)return;
+    if(mini.isVisible()){this.hideWindow(mini);this.broadcast();return;}
+    this.clearPresence();if(!p.miniPanel){this.showWindow(this.livePanel(),true);return;}
+    this.resizeMini();this.position();this.broadcast();this.showWindow(mini,true);this.ensureTopmost();this.broadcast();
   }
   // 主进程注册全局快捷键后把结果告诉桌宠：菜单右侧的提示文字与真实可用性一致。
   setShortcut(shortcut:{label:string;ready:boolean}){this.shortcut=shortcut;}
   // 打开设置 / 退出 / 显示隐藏桌宠由 main 负责，这里只负责转达。
   setMenuActions(actions:{settings:()=>void;status:()=>void;quit:()=>void;toggleVisible:()=>void}){this.actions=actions;}
-  hideMenu(){if(!this.sheet.isDestroyed()&&this.sheet.isVisible())this.sheet.hide();}
+  hideMenu(){const sheet=this.sheet;if(sheet?.isVisible())this.hideWindow(sheet);}
   openMenu(){
+    const orb=this.liveOrb(),sheet=this.sheet;
+    if(!orb||!sheet)return;
     const p={...petDefaults,...this.store.state.settings.pet};
     const items=buildCompanionMenu({
       mode:p.mode==='orb'?'orb':'custom',
       paused:p.pausedUntil>Date.now(),
-      visible:this.orb.isVisible(),
+      visible:orb.isVisible(),
       shortcut:this.shortcut.label,
       shortcutReady:this.shortcut.ready,
     });
     const {width}=companionMenuMetrics,height=companionMenuHeight(items);
     // 贴桌宠右侧展开；贴边时翻到左侧，再贴边就压在桌宠上对齐。
-    const bounds=this.orb.getBounds(),area=screen.getDisplayMatching(bounds).workArea;
+    const bounds=orb.getBounds(),area=screen.getDisplayMatching(bounds).workArea;
     let x=Math.round(bounds.x+bounds.width+8);
     if(x+width>area.x+area.width)x=Math.round(bounds.x-width-8);
     x=Math.max(area.x,Math.min(x,area.x+area.width-width));
     const y=Math.max(area.y,Math.min(Math.round(bounds.y),area.y+area.height-height));
-    this.sheet.setBounds({x,y,width,height});
-    this.sheet.webContents.send('dayhub:menu',items);
-    this.sheet.show();this.sheet.focus();
+    sheet.setBounds({x,y,width,height});
+    if(!sheet.webContents.isDestroyed())sheet.webContents.send('dayhub:menu',items);
+    this.showWindow(sheet,true);
   }
   async menuAction(id:string){
     this.hideMenu();
     if(id==='dismiss')return;
     const p={...petDefaults,...this.store.state.settings.pet};
-    if(id==='open'){this.panel.show();this.panel.focus();return;}
+    if(id==='open'){this.showWindow(this.livePanel(),true);return;}
     if(id==='mini'){this.toggleMini();return;}
     if(id==='mode:custom'||id==='mode:orb'){
       await this.store.update(s=>{s.settings.pet={...petDefaults,...s.settings.pet,mode:id==='mode:orb'?'orb':'custom'};return s;});
@@ -367,7 +420,7 @@ export class Companion {
   action(action:string){
     if(action==='hold'&&!this.held){this.remaining=Math.max(0,this.expires-Date.now());this.held=true;}
     if(action==='release'&&this.held){this.held=false;this.expires=Date.now()+this.remaining;}
-    if(action==='close'){this.active=undefined;this.held=false;this.bubble.hide();this.next();this.broadcast();}
+    if(action==='close'){this.active=undefined;this.held=false;this.hideWindow(this.bubble);this.next();this.broadcast();}
   }
   presence(action:'enter'|'leave',person?:PersonId){
     if(action==='leave'){this.clearPresence();return;}
@@ -378,11 +431,11 @@ export class Companion {
     const side=people.length<2?.5:index===0?.29:.71;
     this.hoverTip={person:status.person,text:`${status.alias} · ${statusLabel(status)}`,state:presenceStateFor(status),side};
     const dock=(this.store.state.settings.pet?.mode??petDefaults.mode)==='orb';
-    if(dock){this.tip.hide();this.broadcast();return;}
-    this.position();this.broadcast();if(this.orb.isVisible())this.tip.showInactive();
+    if(dock){this.hideWindow(this.tip);this.broadcast();return;}
+    this.position();this.broadcast();if(this.liveOrb()?.isVisible())this.showWindow(this.tip);
   }
   // 拖动开始 = 所有 transient UI（详情 / 悬停提示 / 菜单）立刻收起，拖动期间只剩状态牌。
-  dragStart(){this.collapseDetail();this.dragging=true;this.mini.hide();this.hideMenu();this.clearPresence();}
+  dragStart(){this.collapseDetail();this.dragging=true;this.hideWindow(this.mini);this.hideMenu();this.clearPresence();}
   dragEnd(){
     this.dragging=false;
     this.clearPresence();
@@ -391,11 +444,11 @@ export class Companion {
     if(this.pendingResize){this.pendingResize=false;this.applied='';this.resize();}
     this.ensureTopmost();
   }
-  private clearPresence(){const changed=!!this.hoverTip||this.tip.isVisible();this.hoverTip=undefined;this.tip.hide();if(changed)this.broadcast();}
-  private next(){if(this.active||!this.queue.length)return;this.active=this.queue.shift();this.expires=Date.now()+(this.store.state.settings.pet?.duration??8)*1000;this.position();if(this.orb.isVisible())this.bubble.showInactive();}
+  private clearPresence(){const tip=this.tip,changed=!!this.hoverTip||!!tip?.isVisible();this.hoverTip=undefined;this.hideWindow(tip);if(changed)this.broadcast();}
+  private next(){if(this.active||!this.queue.length)return;this.active=this.queue.shift();this.expires=Date.now()+(this.store.state.settings.pet?.duration??8)*1000;this.position();if(this.liveOrb()?.isVisible())this.showWindow(this.bubble);}
   reset(){
     this.collapseDetail();
-    this.queue=[];this.active=undefined;this.hoverTip=undefined;this.held=false;this.bubble.hide();this.mini.hide();this.tip.hide();this.hideMenu();this.last=Date.now();this.monotonic=performance.now();
+    this.queue=[];this.active=undefined;this.hoverTip=undefined;this.held=false;this.hideWindow(this.bubble);this.hideWindow(this.mini);this.hideWindow(this.tip);this.hideMenu();this.last=Date.now();this.monotonic=performance.now();
     const requested=this.avatarIdentity();
     // Selection changes wait for renderer decode acknowledgement. All other
     // domain/display changes retain the current geometry behaviour.
@@ -416,12 +469,12 @@ export class Companion {
       this.timeline.sync(pendingReminders(this.store.state).length,now);
       if(fresh.length)await this.store.update(s=>{s.bubbleHistory=[...(s.bubbleHistory||[]),...fresh.map(e=>({id:e.id,at:e.at}))].filter(e=>e.at>=now-120*86400000).slice(-50000);return s;});
       if(recover||gap>10000||gap<0||clockJump){
-        this.queue=[];this.active=undefined;this.held=false;this.bubble.hide();
+        this.queue=[];this.active=undefined;this.held=false;this.hideWindow(this.bubble);
         const pending=pendingReminders(this.store.state).length;
         if(p.bubbles&&p.pausedUntil<=now&&(fresh.length||pending))this.queue.push({id:'recovery:'+now,text:`已经更新到当前时间啦。${pending} 条未处理提醒，点开桌宠查看。`});
-      }else if(p.bubbles&&p.pausedUntil<=now&&this.orb.isVisible())this.queue.push(...fresh.map(e=>({id:e.id,text:e.text})));
-      if(!p.bubbles||p.pausedUntil>now){this.queue=[];this.active=undefined;this.bubble.hide();}
-      if(this.active&&!this.held&&now>=this.expires){this.active=undefined;this.bubble.hide();}
+      }else if(p.bubbles&&p.pausedUntil<=now&&this.liveOrb()?.isVisible())this.queue.push(...fresh.map(e=>({id:e.id,text:e.text})));
+      if(!p.bubbles||p.pausedUntil>now){this.queue=[];this.active=undefined;this.hideWindow(this.bubble);}
+      if(this.active&&!this.held&&now>=this.expires){this.active=undefined;this.hideWindow(this.bubble);}
       this.next();this.broadcast();
     }catch(error){logError(error,'实时状态更新失败');}finally{this.busy=false;}
   }
