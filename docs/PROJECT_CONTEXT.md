@@ -1,14 +1,12 @@
 # PROJECT_CONTEXT
 
-Snapshot: 2026-10-06. Observed source HEAD: 4c6f154e5d50ebeaecbb0e384fddb25f01d6ab62.
+Updated: 2026-10-07.
 Primary objective: software / local-first Windows personal-work hub.
 This records current facts and stage policy; recheck them when the implementation or objective changes.
 
-## Current repository state
-- Test worktree: C:/Users/hdy/.codex/worktrees/yd-harness-v2; branch test/harness-v2, based on the current YD HEAD.
-- backup/pre-harness-v2 anchors the same source HEAD. Main checkout remains on v0.3-productization.
-- package.json declares 0.3.0; README still describes 0.2.17. README delivery/installation claims are historical, not current acceptance evidence. This Harness task does not repair those documents or establish release readiness.
-- No Git remote is configured in the observed repository. No remote URL or canonical-remote metadata is inferred.
+## Repository context
+- package.json declares 0.3.0; README still describes 0.2.17. README delivery/installation claims are historical, not current acceptance evidence. Release readiness must be verified independently.
+- Verified canonical GitHub remote (origin): https://github.com/hdy7031/YD.git.
 
 ## Tooling and repository map
 - npm with package-lock.json; Electron, strict TypeScript, React, esbuild, electron-builder and sql.js. Honor package.json engines.node (currently >=24.0). Use npm ci for locked dependencies.
@@ -23,7 +21,7 @@ This records current facts and stage policy; recheck them when the implementatio
 - Relevant verifiers: root verify-*.cjs; scripts/verify-*.{cjs,mjs}, scripts/verify-upgrade.mjs, scripts/ui-audit.cjs and scripts/visual-*.cjs. Electron/UI scripts may need npx electron <script>. There is no lint script.
 
 ## Current visual baseline and change restrictions
-Migrated from the prior AGENTS at this snapshot; this is the current stage policy, not an immutable design law.
+This is the current stage policy, not an immutable design law.
 - The accepted main window, navigation, card system, typography, palette, spacing, radii, shadows, icons and Mist & Sage direction are frozen.
 - Unless the user explicitly requests visual work or the bug is itself visual, do not redesign/polish, change colors/fonts/spacing/radii/shadows/icons/card proportions/layout, replace production assets, or change window size, information architecture or operation paths.
 - Reuse current components/tokens. Functional changes may produce only the minimum necessary visual difference. Do not broaden non-visual work into overall visual improvement.
